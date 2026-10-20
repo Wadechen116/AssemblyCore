@@ -10,6 +10,7 @@
 | `procs[]` | `name`、`emitted`、`startPc`/`endPc`、`callSites`、`slot`（softret：回傳編號所在的 `MAIN_SCRATCHPAD` 位移，-1 為不需要） |
 | `callSites[]` | `callee`、`file`/`line`、`transferPc`（進入程序的分支）、`returnPc`、`retId`（softret：存入回傳槽的 16 位元編號，0 為不需要） |
 | `symbols[]` | 標籤（`main:`／`peri:` 前綴）、`.equ`/`.csr`/`.service`/`.const`/`.devmap` |
+| `vectors[]` | `.vector` 宣告：`domain`、`id`、`label`、`pc`、`file`/`line` |
 | `wcet[]` | 每個查詢的 `from`、`to`、`bounded`、`cycles`、`note` |
 
 ## 用影子堆疊還原 call stack

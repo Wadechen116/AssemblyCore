@@ -37,11 +37,11 @@
 - [x] 環境檔／情境腳本／IDE 除錯面板相容
 
 ## 階段 4：硬體事件（A7）
-- [ ] 語法：事件向量與 handler（`.vector`）
-- [ ] 驗證：向量落在本 domain 的 opcode 邊界、ERET 只在 handler、Cascade／critical commit 內不可 safe、handler 所有正常出口都有 ERET
-- [ ] 靜態警告：handler 覆寫前景 live 的 ALU／scratchpad／RX／Poll／Timer／Error
-- [ ] 模擬器：event pending 注入、派送（只在 safe BR 退休）、全寬 resume PC、ERET、不巢狀、`fault_bad_eret_context`
-- [ ] 事件延遲的分項報告與「無上界」判定
+- [x] 語法：事件向量與 handler（`.vector`）
+- [x] 驗證：向量落在本 domain 的 opcode 邊界、ERET 只在 handler、Cascade／critical commit 內不可 safe、handler 所有正常出口都有 ERET
+- [x] 靜態警告：handler 覆寫前景 live 的 ALU／scratchpad／RX／Poll／Timer／Error
+- [x] 模擬器：event pending 注入、派送（只在 safe BR 退休）、全寬 resume PC、ERET、不巢狀、`fault_bad_eret_context`
+- [x] 事件延遲的分項報告與「無上界」判定
 
 ## 階段 5：新驗證項（B6、B8）
 - [ ] 感測器位元組序（big-endian 進 ALU）→ `E_SENSOR_BYTE_ORDER`

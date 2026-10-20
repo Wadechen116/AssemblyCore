@@ -18,6 +18,7 @@ asmdis --peri --annotate --labels names.txt -o peri.asm imu.peri.bin
 | `--main` / `--peri` | 映像檔屬於哪個 domain（必要；映像檔本身不帶這個資訊） |
 | `--layout FILE` | 映像的 ImageLayout（`asmc` 寫的 `PREFIX.main.layout.json`）。v31 起 layout 是旁路資料、不在映像內；預設讀 `image.layout.json`，找不到會明確說明 |
 | `--sram FILE` `--length N` | 改由 `PREFIX.sram.hex` 的 32 位元 word 還原邏輯映像（獨立驗證 word 打包），N 預設為最後一個區段結尾 |
+| `--events FILE` | `asmc --artifacts` 寫的 `PREFIX.events.json`：該 domain 的事件向量會變成標籤與 `.vector` 行，文字用同樣的檢查重新組譯。向量不在映像內，沒有它時 handler 程式碼仍會被解碼，只是成為不可達程式碼（W402），映像位元組相同 |
 | `--profile FILE` | 組譯時用的 profile（位元組順序、DeviceMap 排列、ALU 碼、SRAM 基底）。**要和組譯時一致**，否則會被偵測為版面錯誤 |
 | `--code-size N` | 程式碼的確切位元組數；不給就推斷（見下） |
 | `--labels FILE` | 標籤名稱，每行 `位址 名稱`（如 `0x0008 handle_gyro`）；沒給的目標以 `L_xxxx` 命名（`--label-prefix` 可改） |

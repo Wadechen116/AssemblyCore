@@ -121,12 +121,34 @@ CASCADE_END   區塊索引i, 離開標籤
 也可寫 `event_safe=1`。`event_safe` 是描述子的一部分，所以只差在 safe 的兩條分支用兩個描述子。
 `CASCADE_BEGIN`／`CASCADE_END`／`BR.ERET` 不可帶 `safe`（E208）；Cascade 區域內不可有一般分支、`BR.ERET` 或 safe（E304／E208）。
 `BR.ERET` 沒有運算元，描述子欄位固定為 0（Main：`br_type=3`；Peri：`br_type=8`），永遠不會往下執行。
-Peri 的分支同樣寫法：`BR.IF_READY 標籤, safe`、`JMP 標籤, safe`、`BR.ERET`。事件的完整機制與 handler 規則見規格 §16（組譯器端的向量與驗證：階段 4）。
+Peri 的分支同樣寫法：`BR.IF_READY 標籤, safe`、`JMP 標籤, safe`、`BR.ERET`。事件的機制與 handler 規則見下方「硬體事件」。
 條件：`ALWAYS PERI_RESULT_VALID PERI_RESULT_OVERRUN PERI_ERROR PERI_NO_ERROR ALU_CMP_TRUE ALU_OUT_OV16 MAIN_TIMER_DONE
 FRAME_END_EVT VBLANK_OPEN HBLANK_OPEN PGL_COMMIT_ELIGIBLE AE_COMMIT_ELIGIBLE LINE_COMMIT_ELIGIBLE`（`PROFILE_COND0` 需 profile 啟用）。
 也接受規格書的具名寫法 `BR.COND cond_sel=NAME, target=LABEL`。
 
 Cascade：BEGIN 之後的各區塊必須連續，每個區塊以 `CASCADE_END i, exit` 結尾，i 依序為 0、1、2…，且 BEGIN 的選擇值不得超過最後一個區塊索引。
+
+### 硬體事件：`.vector`、handler、`BR.ERET`（規格 v31 §16）
+
+硬體隨時可以記下一個「pending 事件」，但**只有成功退休的一般 BR 且 `event_safe=1`** 才會派送（並滿足：沒有 handler 在執行、Main 不在 Cascade 內、該事件有 vector）。沒有 context bank、不保存 ALU／scratchpad／RX／Poll／Timer／Error。
+
+```
+.main
+.vector 0, on_frame          ; 事件 0 的 handler 入口（目前 domain；id 0..event_count-1）
+loop: ...
+      BR.COND ALU_CMP_TRUE, loop, safe     ; 可以在這裡被打斷
+      JMP loop
+on_frame:                    ; handler 放在主流程的無條件 JMP 之後
+      ...
+      BR.ERET                ; 回到被打斷流程「已解析的下一個 PC」
+```
+
+- `.vector ID, label`：label 必須是本 domain 的流程標籤（不可在 `.proc` 內）、落在指令邊界、不可在 Cascade 本體內。ID 範圍由 profile `event_count` 決定（預設 8）；同一 domain 的同一 ID 只能宣告一次。向量的**來源、優先序、載入方式由目標 profile 決定**，組譯器只記錄你宣告的向量（`events.json`）。
+- 派送時把 BR 解析後的下一個 PC（taken 為目標、not-taken 為 pc+1）存成完整寬度的 resume PC；`BR.ERET` 跳回該 PC，不使用堆疊，且 ERET 本身不會再派送新事件。同時有多個 pending 時，模擬器先派送編號最小的。
+- 驗證（E315）：vector 標籤未定義／不在指令邊界／在 Cascade 內／ID 超出範圍；**從程式起點不經事件就走得到 `BR.ERET`**；handler 走不到 `BR.ERET`，或有任何路徑永遠到不了 ERET（迴圈）。沒有被任何 vector 或主流程碰到的 `BR.ERET` 只是不可達程式碼（W402），不是錯誤，這樣沒有向量資訊的反組譯結果仍可重新組譯。
+- **W512**：組譯器不替你決定哪個分支「安全」，`safe` 永遠由你寫。但如果某個 `safe` 分支之後的程式碼還要讀的狀態（ALU 運算元／結果／旗標、scratchpad／csrbuf／RX 位元組、Peri ready／error 狀態），handler 可能覆寫，就警告並指出狀態與 handler。無法證明 handler 有自行存取還原；修法：拿掉該分支的 `safe`、讓 handler 改用別的位元組，或自行存取還原後確認。限制：Timer／Poll 由 CSR 動作控制，其副作用不在靜態分析範圍；以 `.vector` 以外方式載入的向量也看不到。
+- **W513**：該 domain 沒有 `safe` 分支，或前景有一個迴圈上沒有 `safe` 分支 → 事件回應時間**沒有上界**，不可宣稱有界。
+- 事件時間（`Result::eventTiming`、`.map`、`events.json`）分開列出：pending→下一個 safe 分支（最壞）、派送、handler（vector→ERET 最長路徑）、ERET＋重取指；有界時給總和。數值是 profile 的規劃延遲（`event_dispatch`、`event_eret`），**不是簽核值**；偵測到 pending 之前的延遲與 SRAM／Frontend 競爭不在內。
 
 ## 5. Peri 指令
 
@@ -214,6 +236,7 @@ RET:     MOV MAIN_SCRATCHPAD[slot..+1] -> ALU_OPA
 | E312 | 映像大小超過 profile 的視窗容量 |
 | E313 | DeviceMap 項目欄位重疊或放不進 `device_map_entry_bytes` |
 | E314 | 某個 ImageLayout 偏移放不進旁路欄位寬度（`layout_offset_bits`） |
+| E315 | 事件向量／`BR.ERET` 錯誤（上面「硬體事件」） |
 | W401 | 程序從未被呼叫（不產生程式碼） |
 | W402 | 不可達的指令 |
 | W403 | Peri 不能用 softret，已改用 inline |
@@ -230,6 +253,8 @@ RET:     MOV MAIN_SCRATCHPAD[slot..+1] -> ALU_OPA
 | W508 | Peri `EXEC_PUB` 讀取尚未被 `EXEC_XFER` 讀入的 `PERI_RX_BUF` 位元組 |
 | W510 | Peri 發佈了某 service，但 Main 從不依該 service_id 分派 |
 | W511 | 同一個 service_id 以不同長度發佈 |
+| W512 | `safe` 分支之後仍要讀的狀態，可能被事件 handler 覆寫 |
+| W513 | 事件回應時間無上界（沒有 safe 分支或前景迴圈缺 safe） |
 
 ## 8. 映像檔佈局（規格 v31）
 
@@ -289,5 +314,4 @@ error 時代碼變成 E5xx 並使建置失敗）、`--no-warn W502`（可重複�
 ## 10. 目前尚未做的事
 
 - （模擬器已完成，見 `docs/SIM.md`。）
-- 反組譯器。
 - 以 timing 預測式（`*_COMMIT_ELIGIBLE`）自動產生 `CSR_WCET_*` 的值（目前只提供 `--wcet` 查詢）。

@@ -125,7 +125,20 @@ Peri 的 MultiByte CSR 與 `READ8`、MultiByte WRITE、DeviceMap 項目缺失或
 | `slot_busy cycles=N` | 結果槽忙碌 N 個週期（`consume_busy`） |
 | `fault_clear main\|peri` | 清除 fault 並讓該 domain 從原 pc 重新嘗試 |
 | `csr 0x120=5` | 直接寫一個 CSR |
+| `event main\|peri id=N` | 該 domain 的事件 N 變成 pending（見第 6b 節） |
 | `note 文字` | 在事件串流中留一筆備註 |
+
+## 6b. 硬體事件（規格 v31 §16）
+
+每個 domain 有自己的事件控制器：`pending`（位元遮罩）、`handler_active`、完整寬度的 `resume_pc`。
+
+- **派送**：只在「`event_safe=1` 的一般 BR 退休」時發生，且須：有 pending 事件、該 ID 有 `.vector`、`handler_active=0`、Main 不在 Cascade 內。派送把 BR 解析後的下一個 PC（taken＝目標、not-taken＝pc+1）存為 resume PC，pc 跳到 vector，並多花 `event_dispatch` 個週期。同時有多個 pending 時取編號最小者（優先序屬於 profile，這是模擬器的選擇）。
+- **`BR.ERET`**：`handler_active=1` 才合法，跳回 `resume_pc`（`event_eret` 個週期）；否則 fault `fault_bad_eret_context`。ERET 同一次退休不會再派送新事件，沒有巢狀：handler 執行中到達的事件維持 pending，等 ERET 後下一個前景 safe BR。
+- 沒有 vector 的事件只是 pending，永遠不會派送；沒有 safe 分支時也不會派送（這正是組譯器 W513 的情形）。
+- **自己跳到自己**的 `BR.COND ALWAYS`（halt 判定）若帶 `safe`，不視為停機：它在等事件。
+- 訊號：`main.in_handler` `peri.in_handler`（`handler_active`）、`main.events_pending` `peri.events_pending`（位元遮罩）。事件流有 `HwEvent`（`what` 為 `raise`／`dispatch`／`eret`）。
+- 介面：`Simulator::eventLog()` 回傳每個事件的 `EventRecord`（`raisedAt`、`dispatchedAt`、`returnedAt`、`resumePc`、`vectorPc`；`waited()`＝pending→派送，`handled()`＝派送→ERET）、`inHandler(d)`、`pendingEvents(d)`。
+- 尚未模擬：critical commit 區段（Main 的 commit 臨界區不派送）、「尚未退休的副作用」guard、事件偵測到 pending 的硬體延遲。
 
 ## 7. 情境腳本（`--scenario`、`runScenario`）
 

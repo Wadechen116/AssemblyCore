@@ -33,6 +33,9 @@ main_pc_width = 8                  ; the 8-bit BR target field still limits ordi
 peri_pc_width = 8
 boot_pad_byte = 0
 
+event_count = 8                    ; event ids 0..N-1 per domain (.vector); sources / priority are profile business (v31 16.7)
+; event_dispatch = 2 and event_eret = 2 below [latency] are PLANNING cycles for the redirect / return, not signoff values
+
 ; DeviceMap entry packing
 device_map_entry_bytes = 1
 device_map_bus_shift = 7
@@ -56,5 +59,7 @@ csr_done = 1
 pub_setup = 2
 pub_byte = 1
 xfer_issue = 2
+event_dispatch = 2
+event_eret = 2
 cpu_hz = 27000000
 i2c_hz = 400000
