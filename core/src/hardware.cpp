@@ -112,7 +112,7 @@ bool parseHardware(const std::string& text, Hardware& out, std::vector<std::stri
             HwConst c;
             c.name = s.name;
             for (auto& kv : s.kv) {
-                long long v;
+                long long v = 0;
                 if (kv.first == "width") { if (!parseNum(kv.second, v) || (v != 1 && v != 2)) err(s, "width must be 1 or 2"); else c.width = (int)v; }
                 else if (kv.first == "values") for (const std::string& x : splitTop(kv.second)) c.values.push_back(trim(x));
                 else if (kv.first == "description") c.description = kv.second;
@@ -123,7 +123,7 @@ bool parseHardware(const std::string& text, Hardware& out, std::vector<std::stri
             HwCsr c;
             c.name = s.name;
             for (auto& kv : s.kv) {
-                long long v;
+                long long v = 0;
                 const std::string& k = kv.first;
                 if (k == "addr") { if (!parseNum(kv.second, v)) err(s, "addr must be a number"); else c.addr = (int)v; }
                 else if (k == "kind") c.kind = lower(kv.second);
@@ -142,7 +142,7 @@ bool parseHardware(const std::string& text, Hardware& out, std::vector<std::stri
             HwDevice d;
             d.name = s.name;
             for (auto& kv : s.kv) {
-                long long v;
+                long long v = 0;
                 const std::string& k = kv.first;
                 if (k == "addr") { if (!parseNum(kv.second, v)) err(s, "addr must be a number"); else d.addr = (int)v; }
                 else if (k == "index") { if (!parseNum(kv.second, v)) err(s, "index must be a number"); else d.index = (int)v; }
@@ -157,7 +157,7 @@ bool parseHardware(const std::string& text, Hardware& out, std::vector<std::stri
             HwService sv;
             sv.name = s.name;
             for (auto& kv : s.kv) {
-                long long v;
+                long long v = 0;
                 const std::string& k = kv.first;
                 if (k == "id") { if (!parseNum(kv.second, v)) err(s, "id must be a number"); else sv.id = (int)v; }
                 else if (k == "len") { if (!parseNum(kv.second, v)) err(s, "len must be a number"); else sv.len = (int)v; }
@@ -376,7 +376,7 @@ bool importHardware(const std::string& incText, const std::string& envText, Hard
             } else if (low.compare(0, 5, ".csr ") == 0) {
                 std::string r = after(5);
                 size_t eq = r.find('=');
-                long long v;
+                long long v = 0;
                 if (eq == std::string::npos || !parseNum(r.substr(eq + 1), v)) { bad(".csr needs NAME = number"); out.rawInc.push_back(line); continue; }
                 HwCsr c;
                 c.name = trim(r.substr(0, eq));
@@ -386,7 +386,7 @@ bool importHardware(const std::string& incText, const std::string& envText, Hard
             } else if (low.compare(0, 8, ".csrbit ") == 0) {
                 std::string r = after(8);
                 size_t lb = r.find('['), rb = r.find(']'), eq = r.find('=');
-                long long bit;
+                long long bit = 0;
                 if (lb == std::string::npos || rb == std::string::npos || eq == std::string::npos || !parseNum(r.substr(lb + 1, rb - lb - 1), bit) || bit < 0 || bit > 7) { bad(".csrbit CSR[bit] = role"); out.rawInc.push_back(line); continue; }
                 pendingBits.push_back({trim(r.substr(0, lb)), (int)bit, lower(trim(r.substr(eq + 1))), n});
             } else if (low.compare(0, 9, ".service ") == 0) {
@@ -394,7 +394,7 @@ bool importHardware(const std::string& incText, const std::string& envText, Hard
                 size_t eq = r.find('=');
                 if (eq == std::string::npos) { bad(".service NAME = id"); out.rawInc.push_back(line); continue; }
                 std::vector<std::string> a = splitTop(r.substr(eq + 1));
-                long long id;
+                long long id = 0;
                 if (a.empty() || !parseNum(a[0], id)) { bad("the service id must be a number"); out.rawInc.push_back(line); continue; }
                 HwService s;
                 s.name = trim(r.substr(0, eq));
@@ -402,7 +402,7 @@ bool importHardware(const std::string& incText, const std::string& envText, Hard
                 s.description = note;
                 for (size_t k = 1; k < a.size(); k++) {
                     std::string o2 = lower(trim(a[k]));
-                    long long len;
+                    long long len = 0;
                     if (o2 == "big") s.wire = 'B';
                     else if (o2 == "little") s.wire = 'L';
                     else if (o2.compare(0, 4, "len=") == 0 && parseNum(o2.substr(4), len)) s.len = (int)len;
@@ -411,7 +411,7 @@ bool importHardware(const std::string& incText, const std::string& envText, Hard
                 out.services.push_back(s);
             } else if (low.compare(0, 8, ".devmap ") == 0) {
                 std::vector<std::string> a = splitTop(after(8));
-                long long idx, addr;
+                long long idx = 0, addr = 0;
                 if (a.size() < 3 || !parseNum(a[0], idx) || !parseNum(a[2], addr)) { bad(".devmap index, I2C, addr [, NAME]"); out.rawInc.push_back(line); continue; }
                 HwDevice d;
                 d.index = (int)idx;
@@ -458,7 +458,7 @@ bool importHardware(const std::string& incText, const std::string& envText, Hard
                 if (!c) { fresh.name = s.name; out.csrs.push_back(fresh); c = &out.csrs.back(); }
                 inEnv.insert(s.name);
                 for (auto& kv : s.kv) {
-                    long long v;
+                    long long v = 0;
                     const std::string& k = kv.first;
                     if (k == "addr" && parseNum(kv.second, v)) c->addr = (int)v;
                     else if (k == "kind") c->kind = lower(kv.second);
@@ -530,7 +530,7 @@ std::vector<HwProblem> validateHardware(const Hardware& hw) {
         symbol(c.name, w);
         if (c.values.empty()) err(w, "give at least one value");
         for (const std::string& v : c.values) {
-            long long x;
+            long long x = 0;
             if (parseNum(v, x)) {
                 const long long lo = c.width == 1 ? -128 : -32768, hi = c.width == 1 ? 255 : 65535;
                 if (x < lo || x > hi) err(w, "the value " + v + " does not fit " + (c.width == 1 ? "a byte (-128..255)" : "16 bits (-32768..65535)"));
@@ -605,7 +605,7 @@ std::vector<HwProblem> validateHardware(const Hardware& hw) {
             for (auto& kv : d.keys) {
                 const std::string& k = kv.first;
                 const std::string head = k.substr(0, k.find(' '));
-                long long v;
+                long long v = 0;
                 if (head == "reg" || head == "regseq" || head == "block") {
                     if (k.find(' ') == std::string::npos || !parseNum(k.substr(k.find(' ') + 1), v) || v < 0 || v > 0xFFFF) err(w, "'" + k + "': the register address must be a number");
                     std::string vals = kv.second;
