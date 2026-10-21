@@ -287,7 +287,7 @@ static void t_roundtrip() {
         std::vector<fs::path> asms;
         for (auto& e : fs::recursive_directory_iterator(root / dir)) {
             if (!e.is_regular_file() || e.path().extension() != ".asm") continue;
-            if (e.path().string().find("/out/") != std::string::npos) continue;
+            if (e.path().generic_string().find("/out/") != std::string::npos) continue;
             asms.push_back(e.path());
         }
         std::sort(asms.begin(), asms.end());
@@ -296,7 +296,7 @@ static void t_roundtrip() {
             const std::string text = slurp(p);
             ImportStats st;
             Document d = importAsm(text, p.filename().string(), &st);
-            const bool deliberateErrors = p.string().find("/07_errors/") != std::string::npos;        // those files are full of lines no block should cover
+            const bool deliberateErrors = p.generic_string().find("/07_errors/") != std::string::npos;        // those files are full of lines no block should cover
             if (!deliberateErrors) rawTotal += st.raw;
             if (st.raw && !deliberateErrors) rawNames += p.filename().string() + "(" + std::to_string(st.raw) + ") ";
             const std::string regenerated = generate(d).text;
