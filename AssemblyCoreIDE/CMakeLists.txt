@@ -12,6 +12,7 @@ target_link_libraries(acide_services PUBLIC Threads::Threads)
 
 add_executable(acide_services_tests tests/services_tests.cpp)
 target_link_libraries(acide_services_tests PRIVATE acide_services)
+target_compile_definitions(acide_services_tests PRIVATE ACIDE_SAMPLE_DIR="${CMAKE_CURRENT_LIST_DIR}/../sample")
 add_test(NAME acide_services_tests COMMAND acide_services_tests)
 
 find_package(Python3 QUIET COMPONENTS Interpreter)

@@ -1,0 +1,7 @@
+# AssemblyCoreIDE project
+name = 06_diagnostics
+source = warnings.asm
+call_model = inline
+dataflow = warn
+output_dir = out
+sample_expect = ok

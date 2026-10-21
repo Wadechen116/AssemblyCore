@@ -1,0 +1,9 @@
+# AssemblyCoreIDE project
+name = 07b_errors_instructions
+source = b_instructions.asm
+include_dir = ../common
+call_model = inline
+dataflow = warn
+output_dir = out
+sample_expect = fail
+sample_errors = E101 E102 E103 E201 E202 E203 E204 E205 E206 E208 E307

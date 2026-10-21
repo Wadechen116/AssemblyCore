@@ -1,0 +1,9 @@
+# AssemblyCoreIDE project
+name = 01_hello_csr
+source = hello.asm
+include_dir = ../common
+scenario = hello.scn
+call_model = inline
+dataflow = warn
+output_dir = out
+sample_expect = ok

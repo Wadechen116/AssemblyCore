@@ -1,0 +1,9 @@
+# AssemblyCoreIDE project
+name = 07a_errors_directives
+source = a_directives.asm
+include_dir = ../common
+call_model = inline
+dataflow = warn
+output_dir = out
+sample_expect = fail
+sample_errors = E104 E105 E106

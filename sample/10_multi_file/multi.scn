@@ -1,0 +1,3 @@
+run until csr[0x150] == 0x34 max 100000
+expect csr[0x150] == 0x34 && csr[0x151] == 0x12 :: Main committed the 16-bit temperature
+expect peri.error == 0

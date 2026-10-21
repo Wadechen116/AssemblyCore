@@ -1,0 +1,10 @@
+# AssemblyCoreIDE project
+name = 02_imu_gyro
+source = imu_gyro.asm
+include_dir = ../common
+environment = imu_env.cfg
+scenario = imu_gyro.scn
+call_model = inline
+dataflow = warn
+output_dir = out
+sample_expect = ok

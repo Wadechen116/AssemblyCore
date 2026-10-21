@@ -1,0 +1,10 @@
+# AssemblyCoreIDE project
+name = 05_events
+source = events.asm
+include_dir = ../common
+environment = events_env.cfg
+scenario = events.scn
+call_model = inline
+dataflow = warn
+output_dir = out
+sample_expect = ok

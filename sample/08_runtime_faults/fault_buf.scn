@@ -1,0 +1,8 @@
+; mode 3 -> fault_csrbuf_invalid.
+inject at 0 csr 0x50=3
+run until main.faulted max 5000
+expect_fault main fault_csrbuf_invalid
+; clearing the fault retries the SAME instruction: without fixing the cause it faults again
+inject in 1 fault_clear main
+run 20
+expect_fault main fault_csrbuf_invalid :: still the same fault (change the environment / profile, or edit the program, then restart)

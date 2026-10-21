@@ -1,0 +1,6 @@
+; scenario for 01_hello_csr: run to the end and check the result
+run until main.halted max 10000
+expect scratch[0..1] == 5 :: the counter reached the limit
+expect csr[0x120] == 5 :: WRITE_SP wrote the counter to the CSR (low byte)
+expect csr[0x010] == 0x10 :: WRITE8, SET8 and CLR8 left bit 4 set
+expect main.faulted == 0

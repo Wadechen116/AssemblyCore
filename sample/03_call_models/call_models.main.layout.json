@@ -1,0 +1,28 @@
+{
+ "spec":"MicroISA-v31",
+ "unit":"logical_byte_offset",
+ "domain":"Main",
+ "profile":"planning-default",
+ "logical_code_start":0,
+ "code_bytes":13,
+ "logical_image_bytes":20,
+ "sideband_field_bits":16,
+ "fields":{
+  "main_move_desc_offset":16,
+  "main_branch_desc_offset":16,
+  "main_csr_onebyte_desc_offset":18,
+  "main_csr_multibyte_desc_offset":20,
+  "main_alu_desc_offset":20,
+  "main_const_pool_offset":20
+ },
+ "sections":[
+  {"name":"code","offset":0,"size":13,"entries":0,"entry_bytes":1,"depth":256},
+  {"name":"MainMoveDesc_32b","offset":16,"size":0,"entries":0,"entry_bytes":4,"depth":64},
+  {"name":"MainBranchDesc_16b","offset":16,"size":2,"entries":1,"entry_bytes":2,"depth":64},
+  {"name":"MainCsrOneByteDesc_16b","offset":18,"size":2,"entries":1,"entry_bytes":2,"depth":32},
+  {"name":"MainCsrMultiByteDesc_16b","offset":20,"size":0,"entries":0,"entry_bytes":2,"depth":32},
+  {"name":"MainAluDesc_8b","offset":20,"size":0,"entries":0,"entry_bytes":1,"depth":64},
+  {"name":"MAIN_CONST_POOL","offset":20,"size":0,"entries":0,"entry_bytes":1,"depth":256}
+ ],
+ "note":"ImageLayout is delivered to the independent sideband latches; it is NOT part of the image bytes and is never prepended or appended to them. Values are logical BYTE offsets, not physical word addresses."
+}

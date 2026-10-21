@@ -1,0 +1,13 @@
+# AssemblyCoreIDE project
+name = 09_profile_artifacts
+source = profile_demo.asm
+include_dir = ../common
+profile = toy.profile
+environment = profile_env.cfg
+scenario = profile_demo.scn
+call_model = inline
+dataflow = warn
+wcet = start:dispatch
+output_dir = out
+sample_expect = ok
+sample_models = inline softret

@@ -1,0 +1,8 @@
+; mode 2 -> fault_csr_unmapped.
+inject at 0 csr 0x50=2
+run until main.faulted max 5000
+expect_fault main fault_csr_unmapped
+; clearing the fault retries the SAME instruction: without fixing the cause it faults again
+inject in 1 fault_clear main
+run 20
+expect_fault main fault_csr_unmapped :: still the same fault (change the environment / profile, or edit the program, then restart)

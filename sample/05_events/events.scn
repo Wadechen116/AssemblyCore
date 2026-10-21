@@ -1,0 +1,8 @@
+; Scenario for 05_events: the events come from the [inject] section of events_env.cfg; check what the handlers did.
+run 4000
+expect scratch[10..11] == 2 :: event 0 was handled twice
+expect csr[0x010] == 0xFF :: event 1 ran its handler
+expect csr[0x330] == 1 :: the Peri handler ran
+expect main.in_handler == 0 && peri.in_handler == 0 :: both domains are back in the foreground
+expect main.events_pending == 0 && peri.events_pending == 0 :: nothing is left pending
+expect main.faulted == 0 && peri.faulted == 0

@@ -42,6 +42,7 @@ SnapshotPtr buildNow(const BuildInput& in, const asmcore::lang::Language& langua
     }
     asmcore::IncludeResolver res = makeResolver(in);
     for (auto& s : in.sources) snap->sourcePaths.push_back(s.name);
+    snap->sources = in.sources;
     snap->result = asmcore::assemble(in.sources, res, opt);
     snap->index = asmcore::Index::build(in.sources, language, res);
     snap->map.reset(new asmcore::SourceMap(snap->result));

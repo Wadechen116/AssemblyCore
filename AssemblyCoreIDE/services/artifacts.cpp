@@ -16,11 +16,23 @@ std::vector<std::string> writeArtifacts(IFileSystem& fs, const std::string& pref
         if (!im.present) continue;
         std::string base = prefix + (d == asmcore::Domain::Main ? ".main" : ".peri");
         put(base + ".bin", std::string(im.bytes.begin(), im.bytes.end()));
+        put(base + ".layout.json", r.layoutJson(d));
         if (opt.hex) put(base + ".hex", r.intelHex(d));
     }
     if (opt.listing) put(prefix + ".lst", r.listing());
     if (opt.map) put(prefix + ".map", r.map());
     if (opt.debug) put(prefix + ".dbg.json", r.debugJson());
+    if (opt.v31) {
+        put(prefix + ".sram.hex", r.sramWordsHex());
+        put(prefix + ".boot.json", r.bootPlanJson());
+        put(prefix + ".memory.json", r.memoryProofJson());
+        put(prefix + ".sections.json", r.sectionMapJson());
+        put(prefix + ".descriptors.json", r.descriptorMapJson());
+        put(prefix + ".services.json", r.servicesJson());
+        put(prefix + ".events.json", r.eventVectorsJson());
+        put(prefix + ".validation.json", r.validationReportJson());
+        if (!opt.sources.empty()) put(prefix + ".manifest.json", r.buildManifestJson(opt.sources));
+    }
     return written;
 }
 

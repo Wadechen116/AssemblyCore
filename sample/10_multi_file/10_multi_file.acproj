@@ -1,0 +1,11 @@
+# AssemblyCoreIDE project
+name = 10_multi_file
+source = shared.inc
+source = main_part.asm
+source = peri_part.asm
+environment = temp_env.cfg
+scenario = multi.scn
+call_model = inline
+dataflow = warn
+output_dir = out
+sample_expect = ok

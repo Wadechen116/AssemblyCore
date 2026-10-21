@@ -1,0 +1,9 @@
+# AssemblyCoreIDE project
+name = 07d_errors_procedures
+source = d_procedures.asm
+include_dir = ../common
+call_model = inline
+dataflow = warn
+output_dir = out
+sample_expect = fail
+sample_errors = E305

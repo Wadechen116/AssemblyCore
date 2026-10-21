@@ -1,0 +1,13 @@
+# AssemblyCoreIDE project
+name = 08_runtime_faults
+source = faults.asm
+include_dir = ../common
+profile = faults.profile
+environment = faults_env.cfg
+scenario = fault_slot.scn
+scenario = fault_csr.scn
+scenario = fault_buf.scn
+call_model = inline
+dataflow = warn
+output_dir = out
+sample_expect = ok

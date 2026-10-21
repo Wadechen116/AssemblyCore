@@ -1,0 +1,12 @@
+run until main.halted max 100000
+expect scratch[8..9] == 325 :: ADD
+expect scratch[10..11] == 275 :: SUB
+expect scratch[12..13] == 7500 :: MUL
+expect scratch[14..15] == 8 :: AND
+expect scratch[16..17] == 317 :: OR
+expect scratch[18..19] == 309 :: XOR
+expect scratch[20..21] == 1200 :: SHL 2
+expect scratch[22..23] == 37 :: SHR 3
+expect csr[0x010] == 0x0F :: 0x01 then blocks 0, 1, 2 set bits 1, 2, 3
+expect csr[0x140] == 0x45 && csr[0x141] == 0x01 :: RESULT[0..1] = 325 = 0x0145 (WRITE_SP copies the scratchpad)
+expect main.faulted == 0

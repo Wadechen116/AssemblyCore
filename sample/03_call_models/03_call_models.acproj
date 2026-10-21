@@ -1,0 +1,11 @@
+# AssemblyCoreIDE project
+name = 03_call_models
+source = call_models.asm
+include_dir = ../common
+scenario = call_models.scn
+call_model = inline
+dataflow = warn
+wcet = start:done
+output_dir = out
+sample_expect = ok
+sample_models = inline softret

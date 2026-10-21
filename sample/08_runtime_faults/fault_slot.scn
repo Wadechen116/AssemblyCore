@@ -1,0 +1,14 @@
+; mode 1 -> fault_slot_not_valid: the program consumes the result slot while it is empty.
+inject at 0 csr 0x50=1
+run until main.faulted max 5000
+expect_fault main fault_slot_not_valid
+expect_pc main empty_slot :: the pc stays on the offending MOV
+; fix the cause: put a result in the slot, then clear the fault; the MOV is retried and now succeeds
+poke slot[0] = 0x42
+set slot.valid = 1
+inject in 1 fault_clear main
+run 5
+run until main.halted max 5000
+expect scratch[8] == 0x42 :: the retried MOV consumed the byte
+expect csr[0x010] == 0x77 :: and the program finished
+expect main.faulted == 0

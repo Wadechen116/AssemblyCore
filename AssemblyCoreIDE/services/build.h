@@ -25,6 +25,7 @@ struct BuildSnapshot {
     std::map<std::string, std::vector<asmcore::Diagnostic>> diagsByFile;
     std::vector<std::string> notes;               // problems outside the source (a profile that does not load...)
     std::vector<std::string> sourcePaths;
+    std::vector<asmcore::Source> sources;         // the texts that were built (the artifact manifest hashes them)
     std::string prefix;
     double milliseconds = 0;
 

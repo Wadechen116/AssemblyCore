@@ -1,0 +1,5 @@
+; the result must be the same in both call models
+run until main.halted max 100000
+expect csr[0x010] == 0x33 :: the last CSR write of the program
+expect main.faulted == 0
+log call stack is empty at the end, instructions executed are compared in the README

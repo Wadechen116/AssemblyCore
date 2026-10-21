@@ -114,6 +114,51 @@ static void t_workspace() {
     check(!ws.openProject("/w/none.acproj", errs), "a missing project fails");
 }
 
+// The sample projects (sample/) opened and built exactly the way the IDE does it: a Workspace over the real file system, buildNow().
+static void t_samples() {
+#ifdef ACIDE_SAMPLE_DIR
+    std::printf("\nSample projects (%s)\n", ACIDE_SAMPLE_DIR);
+    auto lang = std::make_shared<const asmcore::lang::Language>(asmcore::lang::Language::defaults());
+    RealFileSystem rfs;
+    auto fs = std::make_shared<RealFileSystem>();
+    int n = 0;
+    const std::string root = ACIDE_SAMPLE_DIR;
+    for (const std::string& dname : rfs.list(root)) {
+        const std::string dir = root + "/" + dname;
+        for (const std::string& fname : rfs.list(dir)) {
+            if (fname.size() < 7 || fname.compare(fname.size() - 7, 7, ".acproj") != 0) continue;
+            const std::string f = dir + "/" + fname;
+            Workspace ws(fs);
+            std::vector<std::string> errs;
+            if (!ws.openProject(f, errs)) { check(false, "opens " + f, errs.empty() ? "" : errs[0]); continue; }
+            n++;
+            std::string expect = "ok", want;
+            for (auto& kv : ws.project().extra) { if (kv.first == "sample_expect") expect = kv.second; if (kv.first == "sample_errors") want = kv.second; }
+            SnapshotPtr s = buildNow(ws.snapshot(), *lang);
+            const std::string name = ws.project().name;
+            if (expect == "fail") {
+                bool all = !s->result.ok;
+                for (size_t at = 0; at < want.size();) {
+                    size_t sp = want.find(' ', at);
+                    std::string code = want.substr(at, sp == std::string::npos ? std::string::npos : sp - at);
+                    bool found = false;
+                    for (auto& d : s->result.diags) if (d.code == code) found = true;
+                    all = all && found;
+                    if (sp == std::string::npos) break;
+                    at = sp + 1;
+                }
+                check(all, name + ": the build fails with the documented codes (" + want + ")", s->result.diagnosticsText().substr(0, 300));
+            } else {
+                check(s->result.ok && s->notes.empty(), name + ": builds in the IDE", s->result.diagnosticsText().substr(0, 300) + (s->notes.empty() ? "" : s->notes[0]));
+                // the symbol index and the line map work on it (outline, go to definition, listing sync)
+                check(s->map != nullptr && !s->index.symbols().empty(), name + ": index and source map exist");
+            }
+        }
+    }
+    check(n >= 10, "found the sample projects", std::to_string(n));
+#endif
+}
+
 static void t_build() {
     std::printf("\nBuild\n");
     auto lang = std::make_shared<const asmcore::lang::Language>(asmcore::lang::Language::defaults());
@@ -127,10 +172,20 @@ static void t_build() {
     check(s->map->instrsForLine("/w/main.asm", 3).size() == 1, "source map");
     {
         std::string werr;
-        auto files = writeArtifacts(*fs, "/w/out/imu", s->result, ArtifactOptions(), werr);
-        std::string bin;
-        check(werr.empty() && files.size() == 5 && fs->read("/w/out/imu.main.bin", bin) && bin.size() == s->result.main.bytes.size(), "artifacts are written next to each other", werr + std::to_string(files.size()));
-        check(!fs->exists("/w/out/imu.peri.bin"), "...only for the domains present");
+        ArtifactOptions ao;
+        ao.sources = s->sources;
+        auto files = writeArtifacts(*fs, "/w/out/imu", s->result, ao, werr);
+        std::string bin, layout, manifest;
+        check(werr.empty() && fs->read("/w/out/imu.main.bin", bin) && bin.size() == s->result.main.bytes.size(), "artifacts are written next to each other", werr + std::to_string(files.size()));
+        check(!fs->exists("/w/out/imu.peri.bin") && !fs->exists("/w/out/imu.peri.layout.json"), "...only for the domains present");
+        check(fs->read("/w/out/imu.main.layout.json", layout) && layout.find("main_move_desc_offset") != std::string::npos, "the sideband ImageLayout is written next to the image (v31: the .bin has none)");
+        check(fs->exists("/w/out/imu.sram.hex") && fs->exists("/w/out/imu.boot.json") && fs->exists("/w/out/imu.memory.json") && fs->exists("/w/out/imu.events.json") && fs->exists("/w/out/imu.validation.json"), "the v31 artifact set is written");
+        check(fs->read("/w/out/imu.manifest.json", manifest) && manifest.find("\"sources\"") != std::string::npos, "the manifest hashes the sources that were built");
+        ArtifactOptions plain;
+        plain.v31 = false;
+        std::string e2;
+        auto few = writeArtifacts(*fs, "/w/out/few", s->result, plain, e2);
+        check(e2.empty() && fs->exists("/w/out/few.main.layout.json") && !fs->exists("/w/out/few.sram.hex"), "with v31 off only the layout stays (it is not optional)");
     }
     // the unsaved buffer is what gets built, and the included buffer wins over the disk
     ws.setText("/w/main.asm", ".include \"defs.inc\"\n.main\nstart: EXEC_CSR WRITE8 NOPE, 1\nh: JMP h\n");
@@ -644,6 +699,7 @@ int main() {
     t_project();
     t_workspace();
     t_build();
+    t_samples();
     t_service();
     t_destroy();
     t_settings();

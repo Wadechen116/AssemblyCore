@@ -1,0 +1,9 @@
+# AssemblyCoreIDE project
+name = 07c_errors_flow
+source = c_flow.asm
+include_dir = ../common
+call_model = inline
+dataflow = warn
+output_dir = out
+sample_expect = fail
+sample_errors = E301 E304 E309 E315

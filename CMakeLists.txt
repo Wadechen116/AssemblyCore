@@ -70,6 +70,12 @@ target_link_libraries(asmcore_disasm_tests PRIVATE asmcore)
 target_compile_definitions(asmcore_disasm_tests PRIVATE ASMCORE_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
 add_test(NAME asmcore_disasm_tests COMMAND asmcore_disasm_tests)
 
+# The sample projects (sample/) double as an integration test: build, run the scenarios, disassemble and compare, with the tools just built
+find_package(Python3 QUIET COMPONENTS Interpreter)
+if(Python3_FOUND AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/sample/check_samples.py)
+  add_test(NAME sample_projects COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/sample/check_samples.py --bin-dir $<TARGET_FILE_DIR:asmc>)
+endif()
+
 # The IDE (services + Qt application). Off in a pure core build: cmake -DASMCORE_BUILD_IDE=OFF
 option(ASMCORE_BUILD_IDE "Build AssemblyCoreIDE (services, and the Qt application if Qt6 is found)" ON)
 if(ASMCORE_BUILD_IDE AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/AssemblyCoreIDE/CMakeLists.txt)

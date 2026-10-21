@@ -1,0 +1,9 @@
+# AssemblyCoreIDE project
+name = 04_alu_cascade
+source = alu_cascade.asm
+include_dir = ../common
+scenario = alu_cascade.scn
+call_model = inline
+dataflow = warn
+output_dir = out
+sample_expect = ok

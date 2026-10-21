@@ -513,7 +513,9 @@ void MainWindow::onSnapshot(SnapshotPtr s) {
         for (auto& d : s->result.diags) ctx_.log.fire(fromStd(d.loc.file) + ":" + QString::number(d.loc.line) + ": " + (d.sev == asmcore::Diagnostic::Error ? "error " : "warning ") + fromStd(d.code) + ": " + fromStd(d.msg));
         if (s->result.ok) {
             std::string err;
-            auto files = writeArtifacts(*ctx_.workspace.fileSystem(), s->prefix, s->result, ArtifactOptions(), err);
+            ArtifactOptions ao;
+            ao.sources = s->sources;
+            auto files = writeArtifacts(*ctx_.workspace.fileSystem(), s->prefix, s->result, ao, err);
             for (auto& f : files) ctx_.log.fire(tr("  wrote %1").arg(fromStd(f)));
             if (!err.empty()) ctx_.log.fire(tr("  cannot write %1").arg(fromStd(err)));
             for (const asmcore::WcetResult& wc : s->result.wcet) ctx_.log.fire(tr("  WCET %1: %2").arg(fromStd(wc.name), wc.bounded ? tr("%1 cycles").arg(wc.cycles) : tr("unbounded")));
