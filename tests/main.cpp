@@ -492,9 +492,12 @@ static void t_v31_artifacts() {
     std::string line;
     while (std::getline(is, line)) {
         if (line.compare(0, 2, "//") == 0) continue;
-        unsigned a, d;
-        if (std::sscanf(line.c_str(), "%x %x", &a, &d) != 2) { parse = false; continue; }
-        parsed[a] = d;
+        char* e1 = nullptr;
+        char* e2 = nullptr;
+        const unsigned long a = std::strtoul(line.c_str(), &e1, 16);
+        const unsigned long d = std::strtoul(e1, &e2, 16);
+        if (e1 == line.c_str() || e2 == e1) { parse = false; continue; }
+        parsed[(uint32_t)a] = (uint32_t)d;
         lines++;
     }
     check(parse && lines == 19 && parsed == sramContents(sramWrites(r)), "the SRAM word file has one 'ADDR DATA' line per word and equals the writes");

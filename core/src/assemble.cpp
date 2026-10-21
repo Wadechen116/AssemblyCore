@@ -320,7 +320,7 @@ void Front::directive(const Stmt& st, const std::string& d, const std::string& r
         // .csrbit CSRNAME[bit] = timer_start | timer_clear | poll_arm | poll_clear
         size_t lb = rest.find('['), rb = rest.find(']'), eq = rest.find('=');
         if (lb == std::string::npos || rb == std::string::npos || eq == std::string::npos || rb < lb || eq < rb) { c.error(loc, "E102", ".csrbit CSRNAME[bit] = timer_start | timer_clear | poll_arm | poll_clear"); return; }
-        int64_t addr, bit;
+        int64_t addr = 0, bit = 0;
         std::string role = lower(trim(rest.substr(eq + 1)));
         if (!c.eval(rest.substr(0, lb), addr, loc) || !c.eval(rest.substr(lb + 1, rb - lb - 1), bit, loc)) return;
         if (role != "timer_start" && role != "timer_clear" && role != "poll_arm" && role != "poll_clear") { c.error(loc, "E102", "bit role '" + role + "': use timer_start, timer_clear, poll_arm or poll_clear"); return; }

@@ -13,7 +13,9 @@ here = os.path.dirname(os.path.abspath(__file__))
 bin_dir = os.path.join(here, "..", "build")
 if "--bin-dir" in sys.argv:
     bin_dir = sys.argv[sys.argv.index("--bin-dir") + 1]
-exe = lambda n: os.path.join(bin_dir, n + (".exe" if os.name == "nt" else ""))
+def exe(n):
+    p = os.path.join(bin_dir, n)
+    return p + ".exe" if os.name == "nt" or (not os.path.exists(p) and os.path.exists(p + ".exe")) else p
 
 fails = 0
 def report(ok, what, detail=""):
@@ -37,13 +39,18 @@ def parse(path):
             p[k] = v
     return p
 
+# A Windows exe started from WSL understands the working directory but not /mnt/... arguments: give it paths relative to that directory.
+winexe_from_wsl = os.name != "nt" and exe("asmc").endswith(".exe")
+def arg(path, cwd):
+    return os.path.relpath(path, cwd) if winexe_from_wsl else path
+
 def run(cmd, cwd):
     r = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=120)
     return r.returncode, r.stdout + r.stderr
 
 projects = sorted(glob.glob(os.path.join(here, "[0-9]*", "*.acproj")))
 print("%d sample projects" % len(projects))
-tmp = tempfile.mkdtemp(prefix="acsample_")
+tmp = tempfile.mkdtemp(prefix="acsample_", dir=os.environ.get("ACSAMPLE_TMP"))
 for proj in projects:
     d = os.path.dirname(proj)
     p = parse(proj)
@@ -60,7 +67,7 @@ for proj in projects:
     expect = p.get("sample_expect", "ok")
     for model in models:
         prefix = os.path.join(tmp, name + "_" + model)
-        cmd = [exe("asmc"), "--call-model", model, "--artifacts"] + common + p["source"] + ["-o", prefix]
+        cmd = [exe("asmc"), "--call-model", model, "--artifacts"] + common + p["source"] + ["-o", arg(prefix, d)]
         rc, out = run(cmd, d)
         if expect == "fail":
             codes = {w.rstrip(":") for w in out.replace("error ", " error ").split() if len(w) >= 4 and w[0] == "E" and w[1:4].isdigit()}
@@ -75,9 +82,9 @@ for proj in projects:
             bin_ = prefix + "." + dom + ".bin"
             if not os.path.exists(bin_):
                 continue
-            cmd = [exe("asmdis"), "--" + dom, "--check", bin_, "--events", prefix + ".events.json"]
+            cmd = [exe("asmdis"), "--" + dom, "--check", arg(bin_, d), "--events", arg(prefix + ".events.json", d)]
             if p.get("profile"):
-                cmd += ["--profile", os.path.join(d, p["profile"])]
+                cmd += ["--profile", p["profile"]]
             rc2, out2 = run(cmd, d)
             report(rc2 == 0 and "check: OK" in out2, "%s: %s image -> asmdis -> same image" % (model, dom), out2)
         for scn in p["scenario"]:

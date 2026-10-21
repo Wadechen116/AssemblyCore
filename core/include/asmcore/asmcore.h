@@ -239,7 +239,7 @@ struct Result {
 
     std::string listing() const;
     std::string map() const;
-    // ---- build artifacts of spec v31 (see docs/ASM_SYNTAX.md "產物"); all JSON is UTF-8, numbers are decimal unless a field says hex
+    // ---- build artifacts of spec v31 (see docs/ASM_SYNTAX.md, "artifacts"); all JSON is UTF-8, numbers are decimal unless a field says hex
     std::string layoutJson(Domain d) const;              // the six ImageLayout sideband offsets + the section ranges
     std::string sectionMapJson() const;                  // code span, every section, padding, logical sizes and physical words
     std::string descriptorMapJson() const;               // every descriptor table: index, raw bytes, value, decoded text, users
