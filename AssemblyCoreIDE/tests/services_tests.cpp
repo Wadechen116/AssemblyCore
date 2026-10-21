@@ -11,6 +11,7 @@
 #include "build.h"
 #include "debugger.h"
 #include "hardware_link.h"
+#include "asmcore/profile_info.h"
 #include "dispatcher.h"
 #include "editing.h"
 #include "fs.h"
@@ -208,6 +209,14 @@ static void t_hardware_link() {
     hw.csrs[0].addr = 0x11;
     applyHardware(ws, "/p/board.achw", hw);
     check(ws.find("/p/board.gen.env.cfg")->text.find("addr = 0x011") != std::string::npos, "the generated environment follows the edit");
+    // the profile: created, edited without saving, used by the build and the debugger
+    check(createProfile(ws, "/p/target.profile", err) && ws.project().profile == "target.profile" && fs->exists("/p/target.profile"), "create a profile for the project", err);
+    std::string ptext, ppath;
+    check(loadProjectProfile(ws, ptext, ppath) && ppath == "/p/target.profile" && ptext.find("profile_id = target") != std::string::npos && ptext.find("PLANNING") != std::string::npos, "...with the default values and a header");
+    ws.setText("/p/target.profile", asmcore::profileUpdateKey(ptext, "main_image_base_word", "9999999"));
+    SnapshotPtr sp = buildNow(ws.snapshot(), *lang);
+    check(!sp->notes.empty() && sp->notes[0].find("target.profile") != std::string::npos || !sp->result.ok, "an unsaved profile edit is what the build uses (here: a window that does not fit the SRAM)", sp->result.diagnosticsText());
+    ws.setText("/p/target.profile", ptext);
     // adopt existing files: nothing in the project changes, the originals become generated files
     auto fs2 = std::make_shared<MemoryFileSystem>();
     fs2->write("/q/q.acproj", "name = q\nsource = defs.inc\nsource = main.asm\nenvironment = env.cfg\n");

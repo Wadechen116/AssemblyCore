@@ -46,6 +46,16 @@ board.achw ──asmhw gen / 設計器──►  board.gen.inc      （組譯器
 - 關閉頁籤時有未存檔變更會詢問；選「放棄」會把描述與兩個產生檔都還原成磁碟上的內容。
 - 產生檔第一行註明由哪份描述產生、請勿手改。**要改請改描述。**
 
+## 目標 profile（Target profile）
+
+設計器樹最下面的「Target profile」編輯專案 `profile =` 指定的檔案（沒有的話有按鈕可以建立）。重點：
+
+- 表單由「每個鍵的說明表」產生（`asmcore/profile_info.h`），每個群組一個頁籤：描述子表深度、PC 寬度、SRAM 配置、映像佈局與對齊、描述子位元組序、DeviceMap 排列、ALU 子運算碼、softret、重置狀態、事件、延遲數字。範圍由程式碼決定，不會填出載入器拒絕的值。
+- **只改那一行**：保留檔案的註解、順序與縮排；重複的鍵改最後一個（載入器採用的那個）；沒有的鍵附加在檔尾。修改立即成為工作區的未存檔緩衝區，下一次建置／除錯就用新值。
+- **缺口清單**：規格沒有給、也沒有人確認過的數值（ALU 編號、描述子位元組序、SRAM 配置、DeviceMap 排列、映像佈局、PC 寬度、事件、延遲、兩項選用硬體功能）是「規劃值」。工具照樣能用它們，但頁面頂端明講「結果只能當規劃參考」。硬體負責人確認某群組後，勾選該頁籤的確認框，profile 多一行 `confirmed = alu, placement`。
+- 命令列：`asmc --profile-gaps` 列出缺口、原因與涵蓋的鍵；`asmc --artifacts` 的 `manifest.json` 記錄 `unconfirmed`。
+- 可確認的群組：`pc_width`、`same_region`、`placement`、`layout`、`descriptor_endian`、`device_map`、`alu`、`events`、`latency`。
+
 ## `.achw` 檔案格式
 
 與環境檔同風格（`[區段 名稱]` 加 `key = value`，`;` 註解）。**設計器寫檔時不保留註解**；用 `description =` 欄位寫說明（會帶進產生檔的註解）。
@@ -116,5 +126,5 @@ asmhw import --inc defs.inc [--env env.cfg] -o board.achw     由既有檔案建
 
 - 描述只涵蓋「板子」的事實；程式裡用到的事件向量（`.vector`）屬於程式，不在描述裡。
 - 環境檔的 `[signal]`、`[condition]`、`[inject]` 等以原文區段保存，設計器用文字方塊編輯，沒有逐欄表單。
-- 目標 profile（SRAM 配置、對齊、ALU 碼…）還沒有表單（規劃中，H8）；目前仍直接編輯 `.profile` 文字檔。
+- profile 的說明與缺口文字目前只有英文（來自核心）；介面其餘部分有繁體中文。
 - 設計器不會改你的 `.asm`：接手既有專案時，產生檔寫回原檔名，原始碼完全不變。

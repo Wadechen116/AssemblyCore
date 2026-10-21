@@ -72,6 +72,26 @@ bool createHardware(Workspace& ws, const std::string& achwPath, std::string& err
     return attachHardware(ws, achwPath, hw, error);
 }
 
+bool createProfile(Workspace& ws, const std::string& absPath, std::string& error) {
+    if (!ws.hasProject()) { error = "open or create a project first"; return false; }
+    asmcore::Profile p;
+    p.profileId = stem(absPath);
+    ws.setText(absPath, "; Target profile (docs/ASM_SYNTAX.md). Values the spec does not give are PLANNING defaults until the hardware owner confirms them:\n"
+                        "; edit them in the Hardware Designer (Target profile) or here, and list what has been confirmed in `confirmed = ...`.\n" + p.dump());
+    if (!ws.save(absPath, error)) return false;
+    Project& pr = ws.project();
+    pr.profile = relativeToProject(pr, absPath);
+    ws.projectEdited();
+    return ws.saveProject(error);
+}
+
+bool loadProjectProfile(Workspace& ws, std::string& text, std::string& path) {
+    if (!ws.hasProject() || ws.project().profile.empty()) return false;
+    path = ws.project().absolute(ws.project().profile);
+    if (Document* d = ws.find(path)) { text = d->text; return true; }
+    return ws.fileSystem()->read(path, text);
+}
+
 bool adoptHardware(Workspace& ws, const std::string& achwPath, const std::string& incPath, const std::string& envPath, std::vector<std::string>& messages, std::string& error) {
     std::string inc, env;
     if (Document* d = ws.find(incPath)) inc = d->text; else if (!ws.fileSystem()->read(incPath, inc)) { error = "cannot read " + incPath; return false; }

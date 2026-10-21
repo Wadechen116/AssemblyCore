@@ -4,6 +4,7 @@
 // validated at once and the files generated from it (assembler definitions, simulator environment) are put into the workspace, so the
 // next build and debug session use them without saving anything.
 #include <functional>
+#include <map>
 
 #include <QPlainTextEdit>
 #include <QTimer>
@@ -38,7 +39,7 @@ public:
     const asmcore::Hardware& model() const { return hw_; }
     const std::vector<asmcore::HwProblem>& problems() const { return problems_; }
 
-    enum class Kind { None, General, Equ, Const, Csr, Device, Service, Env, Raw };
+    enum class Kind { None, General, Equ, Const, Csr, Device, Service, Env, Raw, Profile };
     // Show a component ("csr", "AE_CTRL"); true if it exists.
     bool select(const QString& kind, const QString& name);
     // Add a component of a kind ("csr", "device", "service", "const", "equ", "env") with a free name; returns the new name.
@@ -64,6 +65,11 @@ private:
     QWidget* buildEnv();
     QWidget* buildRaw();
     QWidget* buildGroup();
+    QWidget* buildProfile();
+    void reloadProfile();                            // profile file (workspace buffer) -> the form
+    void profileEdited(const QString& key, const QString& value);
+    void confirmGroup(const QString& group, bool on);
+    std::string profilePath() const;                 // absolute, "" if the project has none
     void fillTree(const Sel& keep);
     void load(const Sel& s);                         // model -> form
     void edited();                                   // form -> model was changed: schedule the refresh
@@ -122,6 +128,14 @@ private:
     QPlainTextEdit* vText_ = nullptr;
     // raw
     QPlainTextEdit* rText_ = nullptr;
+    // target profile
+    QLabel *profBanner_ = nullptr, *profSummary_ = nullptr;
+    QPushButton* profCreate_ = nullptr;
+    QTabWidget* profTabs_ = nullptr;
+    std::map<std::string, QWidget*> profEditors_;       // key -> its editor
+    std::map<std::string, QCheckBox*> profConfirm_;     // group -> "confirmed" checkbox
+    bool profLoading_ = false;
+    int pageProfile_ = 0;
     int pageGeneral_ = 0, pageEqu_ = 0, pageConst_ = 0, pageCsr_ = 0, pageDevice_ = 0, pageService_ = 0, pageEnv_ = 0, pageRaw_ = 0, pageGroup_ = 0;
 };
 

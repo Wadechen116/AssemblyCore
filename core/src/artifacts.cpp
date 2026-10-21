@@ -6,6 +6,8 @@
 #include <sstream>
 
 #include "asmcore/diagnostics.h"
+#include "asmcore/profile_info.h"
+#include "asmcore/profile_info.h"
 #include "asmcore/sram.h"
 #include "codec.h"
 #include "internal.h"
@@ -272,7 +274,12 @@ std::string Result::validationReportJson() const {
 // ---- build_manifest.json ---------------------------------------------------------------------------------------------------------------
 std::string Result::buildManifestJson(const std::vector<Source>& sources) const {
     std::ostringstream o;
-    o << "{\n \"spec\":\"" << kSpec << "\",\n \"tool\":\"asmcore\",\n \"hash\":\"fnv1a64 (an integrity check, not a security hash)\",\n \"profile\":{\"id\":" << q(profile.profileId) << ",\"hash\":\"" << fnv1a64(profile.dump()) << "\"},\n";
+    o << "{\n \"spec\":\"" << kSpec << "\",\n \"tool\":\"asmcore\",\n \"hash\":\"fnv1a64 (an integrity check, not a security hash)\",\n \"profile\":{\"id\":" << q(profile.profileId) << ",\"hash\":\"" << fnv1a64(profile.dump()) << "\",\"unconfirmed\":[";
+    {
+        const std::vector<ProfileGap> gaps = profileGaps(profile);
+        for (size_t i = 0; i < gaps.size(); i++) o << (i ? "," : "") << q(gaps[i].group);
+    }
+    o << "],\"note\":\"groups listed in unconfirmed are planning values nobody has confirmed against the hardware: images, timing and WCET are planning-only\"},\n";
     o << " \"call_model\":\"" << callModel << "\",\n \"sources\":[";
     for (size_t i = 0; i < sources.size(); i++) o << (i ? "," : "") << "\n  {\"name\":" << q(sources[i].name) << ",\"bytes\":" << sources[i].text.size() << ",\"hash\":\"" << fnv1a64(sources[i].text) << "\"}";
     o << "\n ],\n \"images\":[";

@@ -1,10 +1,12 @@
 // Hardware description (docs/HARDWARE.md): file format, generators, importer, validation, and that what is generated really works.
 #include <cstdio>
+#include <set>
 #include <fstream>
 #include <sstream>
 
 #include "asmcore/asmcore.h"
 #include "asmcore/hardware.h"
+#include "asmcore/profile_info.h"
 #include "asmcore/sim.h"
 
 using namespace asmcore;
@@ -297,6 +299,75 @@ static void t_paths() {
     check(parseHardware(text, back, e) && back.includeFile == "/abs/defs.inc" && back.envFile == "imu_env.cfg", "include_file / env_file survive the file", join(e));
 }
 
+static void t_profile_info() {
+    section("profile keys: descriptions, ranges, gaps, text editing");
+    // every key the loader writes has a description, and every described key is accepted by the loader
+    std::set<std::string> dumped;
+    {
+        std::istringstream in(Profile().dump());
+        std::string line;
+        while (std::getline(in, line)) { size_t eq = line.find('='); if (eq != std::string::npos) dumped.insert(line.substr(0, line.find(' '))); }
+    }
+    std::string missing, extra;
+    for (const std::string& k : dumped) if (!profileKey(k)) missing += k + " ";
+    for (const ProfileKeyInfo& k : profileKeys()) if (!dumped.count(k.name)) extra += k.name + " ";
+    check(missing.empty() && extra.empty(), "the key table and Profile::dump() list the same keys", "undescribed: " + missing + " | unknown to the loader: " + extra);
+    bool desc = true, grp = true;
+    std::set<std::string> groups;
+    for (const ProfileGroup& g : profileGroups()) groups.insert(g.name);
+    for (const ProfileKeyInfo& k : profileKeys()) { if (k.description.empty() || k.defaultText.empty()) desc = false; if (!groups.count(k.group)) grp = false; }
+    check(desc && grp, "every key has a description, a default value and a known group");
+    // the declared ranges are what the loader accepts
+    std::string bad;
+    for (const ProfileKeyInfo& k : profileKeys()) {
+        if (k.type != ProfileKeyInfo::Int || k.group == "alu") continue;
+        for (long long v : {k.lo, k.hi}) {
+            Profile p;
+            std::vector<std::string> errs;
+            if (!p.load(k.name + " = " + std::to_string(v) + "\n", errs)) bad += k.name + "=" + std::to_string(v) + " ";
+        }
+    }
+    check(bad.empty(), "the lowest and highest value of every numeric key load", bad);
+    Profile defaults;
+    std::vector<std::string> errs;
+    check(defaults.load(Profile().dump(), errs) && errs.empty(), "a default profile dumps and loads again");
+    // gaps
+    std::vector<ProfileGap> gaps = profileGaps(Profile());
+    std::set<std::string> gapNames;
+    for (auto& g : gaps) gapNames.insert(g.group);
+    check(gaps.size() == 9 && gapNames.count("alu") && gapNames.count("placement") && gapNames.count("descriptor_endian") && gapNames.count("latency"), "a default profile leaves 9 groups unconfirmed (ALU numbers, byte order, placement, latency ...)");
+    bool alu13 = false;
+    for (auto& g : gaps) if (g.group == "alu" && g.keys.size() == 13 && !g.why.empty()) alu13 = true;
+    check(alu13, "each gap says why it matters and which keys it covers");
+    Profile conf;
+    errs.clear();
+    check(conf.load("confirmed = alu, placement\n", errs) && conf.confirmed.size() == 2 && profileGaps(conf).size() == 7, "'confirmed = alu, placement' removes those two gaps", errs.empty() ? "" : errs[0]);
+    check(conf.dump().find("confirmed = alu, placement") != std::string::npos, "...and survives dump");
+    Profile unk;
+    errs.clear();
+    check(!unk.load("confirmed = alu, banana\n", errs) && errs.size() == 1 && errs[0].find("banana") != std::string::npos, "an unknown group is refused by name", errs.empty() ? "" : errs[0]);
+    // text editing keeps the rest of the file
+    const std::string file = "; my target\nprofile_id = rtl-a   ; the board\n\nbig_endian = false\n  event_count = 4  ; four\nbig_endian = true\n";
+    bool found = false;
+    std::string v = profileGetKey(file, "big_endian", found);
+    check(found && v == "true", "the last assignment of a key is its value", v);
+    std::string u = profileUpdateKey(file, "profile_id", "rtl-b");
+    check(u == "; my target\nprofile_id = rtl-b   ; the board\n\nbig_endian = false\n  event_count = 4  ; four\nbig_endian = true\n", "an existing line changes in place, its comment and spacing stay", u);
+    u = profileUpdateKey(file, "event_count", "8");
+    check(u.find("  event_count = 8  ; four\n") != std::string::npos, "indentation and comment of the edited line stay", u);
+    u = profileUpdateKey(file, "big_endian", "false");
+    check(u.find("big_endian = false\n  event_count = 4  ; four\nbig_endian = false\n") != std::string::npos, "with a repeated key the last one (the one that counts) is edited", u);
+    u = profileUpdateKey(file, "main_pc_width", "10");
+    check(u == file + "main_pc_width = 10\n", "a missing key is appended", u);
+    u = profileUpdateKey("a = 1", "b", "2");
+    check(u == "a = 1\nb = 2\n", "...also after a last line without a newline", u);
+    u = profileUpdateKey("a = 1\r\nb = 2\r\n", "a", "9");
+    check(u == "a = 9\r\nb = 2\r\n", "CRLF line ends are kept", u);
+    u = profileRemoveKey(file, "big_endian");
+    check(u == "; my target\nprofile_id = rtl-a   ; the board\n\n  event_count = 4  ; four\n", "removing a key removes every line of it and nothing else", u);
+    check(profileGetKey("PROFILE_ID = x\n", "profile_id", found) == "x" && found, "keys are case-insensitive, as in the loader");
+}
+
 static void t_raw() {
     section("things the designer does not model are kept");
     Hardware hw;
@@ -317,6 +388,7 @@ int main() {
     t_validate();
     t_devmap_only();
     t_paths();
+    t_profile_info();
     t_raw();
     std::printf("\n%s  %d passed, %d failed\n", g_fail ? "FAILED" : "OK    ", g_pass, g_fail);
     return g_fail ? 1 : 0;

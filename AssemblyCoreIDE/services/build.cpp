@@ -37,7 +37,9 @@ SnapshotPtr buildNow(const BuildInput& in, const asmcore::lang::Language& langua
     if (!in.profilePath.empty()) {
         std::string text;
         std::vector<std::string> errs;
-        if (!in.fs || !in.fs->read(in.profilePath, text)) snap->notes.push_back("cannot read the profile " + in.profilePath);
+        auto ov = in.overlay.find(in.profilePath);                   // an unsaved edit of the profile counts, also one that was never saved
+        if (ov != in.overlay.end()) text = ov->second;
+        if (ov == in.overlay.end() && (!in.fs || !in.fs->read(in.profilePath, text))) snap->notes.push_back("cannot read the profile " + in.profilePath);
         else if (!opt.profile.load(text, errs)) for (auto& e : errs) snap->notes.push_back(in.profilePath + ": " + e);
     }
     asmcore::IncludeResolver res = makeResolver(in);

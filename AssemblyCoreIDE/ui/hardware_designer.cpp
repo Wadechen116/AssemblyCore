@@ -21,6 +21,10 @@
 #include <QVBoxLayout>
 #include <algorithm>
 
+#include <QGroupBox>
+#include <QScrollArea>
+
+#include "asmcore/profile_info.h"
 #include "asmcore/sim.h"
 #include "hardware_link.h"
 
@@ -84,7 +88,10 @@ HardwareDesigner::HardwareDesigner(AppContext& ctx, const std::string& achwPath,
     timer_.setSingleShot(true);
     timer_.setInterval(150);
     connect(&timer_, &QTimer::timeout, this, &HardwareDesigner::refresh);
-    connection_ = ctx_.workspace.documentChanged.connect([this](const std::string& p) { if (p == path_ && !applying_) reloadFromWorkspace(); });
+    connection_ = ctx_.workspace.documentChanged.connect([this](const std::string& p) {
+        if (p == path_ && !applying_) reloadFromWorkspace();
+        else if (!profLoading_ && !profilePath().empty() && p == profilePath()) reloadProfile();
+    });
 }
 
 HardwareDesigner::~HardwareDesigner() { ctx_.workspace.documentChanged.disconnect(connection_); }
@@ -144,6 +151,7 @@ void HardwareDesigner::build() {
     pageService_ = pages_->addWidget(buildService());
     pageEnv_ = pages_->addWidget(buildEnv());
     pageRaw_ = pages_->addWidget(buildRaw());
+    pageProfile_ = pages_->addWidget(buildProfile());
     pageGroup_ = pages_->addWidget(buildGroup());
     top->addWidget(pages_);
     top->setStretchFactor(1, 1);
@@ -574,6 +582,196 @@ QWidget* HardwareDesigner::buildRaw() {
     return w;
 }
 
+// ---- the target profile --------------------------------------------------------------------------------------------------------------
+std::string HardwareDesigner::profilePath() const {
+    const Project& p = ctx_.workspace.project();
+    return ctx_.workspace.hasProject() && !p.profile.empty() ? p.absolute(p.profile) : std::string();
+}
+
+QWidget* HardwareDesigner::buildProfile() {
+    auto* w = new QWidget;
+    auto* v = new QVBoxLayout(w);
+    profBanner_ = new QLabel;
+    profBanner_->setObjectName("profBanner");
+    profBanner_->setWordWrap(true);
+    v->addWidget(profBanner_);
+    profCreate_ = new QPushButton(tr("Create a profile file for this project"));
+    profCreate_->setObjectName("profCreate");
+    v->addWidget(profCreate_);
+    connect(profCreate_, &QPushButton::clicked, this, [this] {
+        if (!ctx_.workspace.hasProject()) return;
+        Project& p = ctx_.workspace.project();
+        const std::string path = p.baseDir() + "/" + p.name + ".profile";
+        std::string err;
+        if (ctx_.workspace.fileSystem()->exists(path)) {                    // an existing file is adopted as it is
+            p.profile = path.substr(p.baseDir().size() + 1);
+            ctx_.workspace.projectEdited();
+            ctx_.workspace.saveProject(err);
+        } else if (!createProfile(ctx_.workspace, path, err)) {
+            profBanner_->setText(tr("Cannot create the profile: %1").arg(q(err)));
+            return;
+        }
+        reloadProfile();
+    });
+    profSummary_ = new QLabel;
+    profSummary_->setObjectName("profSummary");
+    profSummary_->setWordWrap(true);
+    v->addWidget(profSummary_);
+    profTabs_ = new QTabWidget;
+    profTabs_->setObjectName("profTabs");
+    v->addWidget(profTabs_, 1);
+    // one tab per group, generated from the key table
+    for (const asmcore::ProfileGroup& g : asmcore::profileGroups()) {
+        std::vector<const asmcore::ProfileKeyInfo*> keys;
+        for (const asmcore::ProfileKeyInfo& k : asmcore::profileKeys()) if (k.group == g.name) keys.push_back(&k);
+        if (keys.empty()) continue;
+        auto* page = new QWidget;
+        auto* pl = new QVBoxLayout(page);
+        if (g.confirmable) {
+            auto* why = new QLabel(q(g.why));
+            why->setWordWrap(true);
+            why->setStyleSheet("color:#664d03;background:#fff8e1;padding:4px;");
+            pl->addWidget(why);
+            auto* cb = new QCheckBox(tr("These values are confirmed against the hardware"));
+            cb->setObjectName(q("profConfirm_" + g.name));
+            profConfirm_[g.name] = cb;
+            pl->addWidget(cb);
+            connect(cb, &QCheckBox::toggled, this, [this, name = q(g.name)](bool on) { if (!profLoading_) confirmGroup(name, on); });
+        }
+        auto* scroll = new QScrollArea;
+        scroll->setWidgetResizable(true);
+        auto* inner = new QWidget;
+        auto* f = new QFormLayout(inner);
+        for (const asmcore::ProfileKeyInfo* k : keys) {
+            QWidget* editor = nullptr;
+            const QString key = q(k->name);
+            if (k->type == asmcore::ProfileKeyInfo::Bool) {
+                auto* cb = new QCheckBox;
+                connect(cb, &QCheckBox::toggled, this, [this, key](bool on) { if (!profLoading_) profileEdited(key, on ? "true" : "false"); });
+                editor = cb;
+            } else if (k->type == asmcore::ProfileKeyInfo::Text) {
+                auto* le = new QLineEdit;
+                connect(le, &QLineEdit::textEdited, this, [this, key](const QString& t) { if (!profLoading_) profileEdited(key, t.trimmed()); });
+                editor = le;
+            } else {
+                auto* sb = new QSpinBox;
+                sb->setRange((int)std::max<long long>(k->lo, -1000000000LL), (int)std::min<long long>(k->hi, 2000000000LL));
+                if (k->lo == -1) sb->setSpecialValueText(tr("-1  (width of one entry)"));
+                connect(sb, QOverload<int>::of(&QSpinBox::valueChanged), this, [this, key](int x) { if (!profLoading_) profileEdited(key, QString::number(x)); });
+                editor = sb;
+            }
+            editor->setObjectName(q("prof_" + k->name));
+            editor->setToolTip(q(k->description) + "  [" + tr("default") + " " + q(k->defaultText) + "]");
+            profEditors_[k->name] = editor;
+            auto* cell = new QWidget;
+            auto* cl = new QVBoxLayout(cell);
+            cl->setContentsMargins(0, 0, 0, 4);
+            cl->addWidget(editor);
+            auto* d = new QLabel(q(k->description));
+            d->setWordWrap(true);
+            d->setStyleSheet("color:#666;");
+            cl->addWidget(d);
+            f->addRow(q(k->name), cell);
+        }
+        scroll->setWidget(inner);
+        pl->addWidget(scroll, 1);
+        profTabs_->addTab(page, q(g.title));
+    }
+    return w;
+}
+
+void HardwareDesigner::reloadProfile() {
+    std::string text, path;
+    const bool have = loadProjectProfile(ctx_.workspace, text, path);
+    profCreate_->setVisible(!have);
+    profTabs_->setEnabled(have);
+    profLoading_ = true;
+    asmcore::Profile p;
+    std::vector<std::string> errs;
+    if (!have) {
+        profBanner_->setText(tr("This project has no profile file: the built-in planning defaults are used for everything. Create one to change a value or to record what has been confirmed."));
+        profBanner_->setStyleSheet("background:#fff3cd;color:#664d03;padding:6px;");
+        profBanner_->show();
+    } else if (!p.load(text, errs)) {
+        QString m = tr("The profile has errors; the form shows the values it can read:") + "\n";
+        for (auto& e : errs) m += q(e) + "\n";
+        profBanner_->setText(m);
+        profBanner_->setStyleSheet("background:#fdecea;color:#611a15;padding:6px;");
+        profBanner_->show();
+    } else {
+        profBanner_->setText(tr("Editing %1. Changes apply at once (unsaved until Save All) and keep the comments of the file.").arg(q(path)));
+        profBanner_->setStyleSheet("");
+        profBanner_->show();
+    }
+    for (const asmcore::ProfileKeyInfo& k : asmcore::profileKeys()) {
+        QWidget* e = profEditors_[k.name];
+        if (!e) continue;
+        bool found = false;
+        std::string raw = have ? asmcore::profileGetKey(text, k.name, found) : std::string();
+        if (!found) raw = k.defaultText;
+        if (auto* cb = qobject_cast<QCheckBox*>(e)) { const QString r = q(raw).toLower(); cb->setChecked(r == "true" || r == "yes" || r == "on" || r == "1"); }
+        else if (auto* le = qobject_cast<QLineEdit*>(e)) le->setText(q(raw));
+        else if (auto* sb = qobject_cast<QSpinBox*>(e)) { long long vv = 0; parseNumber(q(raw), vv); sb->setValue((int)vv); }
+    }
+    for (auto& kv : profConfirm_) kv.second->setChecked(p.confirmed.count(kv.first) != 0);
+    const auto gaps = asmcore::profileGaps(p);
+    profSummary_->setText(gaps.empty() ? tr("Every group that needs the hardware owner's confirmation is confirmed.")
+                                       : tr("%1 group(s) are still planning values nobody has confirmed against the hardware: %2. Results (images, timing, WCET) are planning-only until then.")
+                                             .arg(gaps.size()).arg([&] { QStringList l; for (auto& g : gaps) l << q(g.title); return l.join(", "); }()));
+    for (int i = 0; i < profTabs_->count(); i++) {
+        // mark the tabs of unconfirmed groups
+        const auto& groups = asmcore::profileGroups();
+        int shown = 0;
+        for (const asmcore::ProfileGroup& g : groups) {
+            bool any = false;
+            for (const asmcore::ProfileKeyInfo& k : asmcore::profileKeys()) if (k.group == g.name) any = true;
+            if (!any) continue;
+            if (shown++ != i) continue;
+            const bool gap = g.confirmable && !p.confirmed.count(g.name);
+            profTabs_->setTabText(i, q(g.title) + (gap ? QString::fromUtf8("  \xE2\x9A\xA0") : QString()));
+        }
+    }
+    profLoading_ = false;
+}
+
+void HardwareDesigner::profileEdited(const QString& key, const QString& value) {
+    std::string text, path;
+    if (!loadProjectProfile(ctx_.workspace, text, path)) return;
+    profLoading_ = true;                                                    // our own edit must not reload the form under the cursor
+    ctx_.workspace.setText(path, asmcore::profileUpdateKey(text, key.toStdString(), value.toStdString()));
+    profLoading_ = false;
+    std::string t2;
+    std::string p2;
+    loadProjectProfile(ctx_.workspace, t2, p2);
+    asmcore::Profile chk;
+    std::vector<std::string> errs;
+    if (!chk.load(t2, errs)) {
+        QString m = tr("The profile has errors:") + "\n";
+        for (auto& e : errs) m += q(e) + "\n";
+        profBanner_->setText(m);
+        profBanner_->setStyleSheet("background:#fdecea;color:#611a15;padding:6px;");
+    } else {
+        profBanner_->setText(tr("Editing %1. Changes apply at once (unsaved until Save All) and keep the comments of the file.").arg(q(path)));
+        profBanner_->setStyleSheet("");
+    }
+}
+
+void HardwareDesigner::confirmGroup(const QString& group, bool on) {
+    std::string text, path;
+    if (!loadProjectProfile(ctx_.workspace, text, path)) return;
+    asmcore::Profile p;
+    std::vector<std::string> ignore;
+    p.load(text, ignore);
+    std::set<std::string> c = p.confirmed;
+    if (on) c.insert(group.toStdString()); else c.erase(group.toStdString());
+    std::string value;
+    for (const std::string& g : c) value += (value.empty() ? "" : ", ") + g;
+    profLoading_ = true;
+    ctx_.workspace.setText(path, value.empty() ? asmcore::profileRemoveKey(text, "confirmed") : asmcore::profileUpdateKey(text, "confirmed", value));
+    profLoading_ = false;
+    reloadProfile();
+}
+
 // ---- the tree --------------------------------------------------------------------------------------------------------------------
 namespace {
 constexpr int kKindRole = Qt::UserRole, kIndexRole = Qt::UserRole + 1;
@@ -632,6 +830,11 @@ void HardwareDesigner::fillTree(const Sel& keep) {
     for (size_t i = 0; i < hw_.services.size(); i++) leaf(gs, Kind::Service, (int)i);
     QTreeWidgetItem* ge = group(tr("Simulator environment"));
     for (size_t i = 0; i < hw_.env.size(); i++) leaf(ge, Kind::Env, (int)i);
+    auto* prof = new QTreeWidgetItem(tree_, QStringList(tr("Target profile")));
+    prof->setData(0, kKindRole, (int)Kind::Profile);
+    QFont pf = prof->font(0);
+    pf.setBold(true);
+    prof->setFont(0, pf);
     auto* raw = new QTreeWidgetItem(tree_, QStringList(tr("Assembler lines") + QString(" (%1)").arg(hw_.rawInc.size())));
     raw->setData(0, kKindRole, (int)Kind::Raw);
     loading_ = was;
@@ -659,7 +862,7 @@ HardwareDesigner::Sel HardwareDesigner::current() const {
 
 void HardwareDesigner::onSelectionChanged() {
     Sel c = current();
-    removeBtn_->setEnabled(c.kind != Kind::None && c.kind != Kind::General && c.kind != Kind::Raw);
+    removeBtn_->setEnabled(c.kind != Kind::None && c.kind != Kind::General && c.kind != Kind::Raw && c.kind != Kind::Profile);
     load(c);
 }
 
@@ -779,6 +982,7 @@ void HardwareDesigner::load(const Sel& c) {
             pages_->setCurrentIndex(pageRaw_);
             break;
         }
+        case Kind::Profile: reloadProfile(); pages_->setCurrentIndex(pageProfile_); break;
         default: pages_->setCurrentIndex(pageGroup_); break;
     }
     loading_ = false;

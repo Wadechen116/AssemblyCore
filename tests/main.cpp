@@ -520,6 +520,7 @@ static void t_v31_artifacts() {
     std::vector<Source> srcs{Source{"t.asm", std::string(kToyMain) + kToyPeri}};
     std::string mf = r.buildManifestJson(srcs);
     check(mf.find("MicroISA-v31") != std::string::npos && mf.find("planning-default") != std::string::npos && mf.find("\"hash\"") != std::string::npos, "the manifest names the spec, the profile and carries hashes");
+    check(mf.find("\"unconfirmed\":[\"pc_width\",\"same_region\",\"placement\",\"layout\",\"descriptor_endian\",\"device_map\",\"alu\",\"events\",\"latency\"]") != std::string::npos, "the manifest lists the profile groups nobody has confirmed (planning-only results)", mf);
     check(r.buildManifestJson(srcs) == mf && Result(r).buildManifestJson(srcs) == mf, "the manifest is deterministic");
     Result bad = buildP(".main\nl: JMP nowhere\n", toy);
     check(bad.validationReportJson().find("\"ok\":false") != std::string::npos && bad.validationReportJson().find("E301") != std::string::npos, "validation.json carries the diagnostics");

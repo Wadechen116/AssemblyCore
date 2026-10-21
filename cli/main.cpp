@@ -9,6 +9,7 @@
 
 #include "asmcore/asmcore.h"
 #include "asmcore/diagnostics.h"
+#include "asmcore/profile_info.h"
 
 namespace fs = std::filesystem;
 
@@ -48,6 +49,7 @@ void usage() {
         "  --dataflow M         off | warn (default) | error   the data-flow check (docs/ASM_SYNTAX.md, W5xx)\n"
         "  --no-warn CODE       drop a warning code, e.g. W502 (repeatable)\n"
         "  --print-profile      print the effective profile and exit\n"
+        "  --profile-gaps       list what the effective profile still leaves unconfirmed (planning values) and exit\n"
         "  --explain CODE       what a diagnostic code means and how to fix it (e.g. E202, W514), with its spec v31 name\n"
         "  --list-codes         every diagnostic code with its spec v31 name\n"
         "  -h, --help           this text\n"
@@ -65,6 +67,7 @@ int main(int argc, char** argv) {
     asmcore::Options opt;
     std::vector<std::string> inputs, incDirs;
     std::string prefix, profilePath;
+    bool profileGaps = false;
     bool list = false, map = false, dbg = false, hex = false, printProfile = false, artifacts = false;
     for (int i = 1; i < argc; i++) {
         std::string a = argv[i];
@@ -99,6 +102,7 @@ int main(int argc, char** argv) {
         }
         else if (a == "--no-warn") opt.suppress.push_back(need("--no-warn"));
         else if (a == "--print-profile") printProfile = true;
+        else if (a == "--profile-gaps") profileGaps = true;
         else if (a == "--explain") {
             std::string code = need("--explain");
             for (auto& ch : code) ch = (char)std::toupper((unsigned char)ch);
@@ -119,6 +123,18 @@ int main(int argc, char** argv) {
         if (!readFile(profilePath, text)) { std::fprintf(stderr, "asmc: cannot read profile %s\n", profilePath.c_str()); return 2; }
         std::vector<std::string> errs;
         if (!opt.profile.load(text, errs)) { for (auto& e : errs) std::fprintf(stderr, "%s: %s\n", profilePath.c_str(), e.c_str()); return 2; }
+    }
+    if (profileGaps) {
+        const std::vector<asmcore::ProfileGap> gaps = asmcore::profileGaps(opt.profile);
+        if (gaps.empty()) { std::printf("profile %s: every group that needs confirmation is confirmed\n", opt.profile.profileId.c_str()); return 0; }
+        std::printf("profile %s: %zu group(s) are planning values nobody has confirmed against the hardware (images, timing and WCET are planning-only):\n\n", opt.profile.profileId.c_str(), gaps.size());
+        for (const asmcore::ProfileGap& g : gaps) {
+            std::printf("  %s (%s)\n    %s\n    keys:", g.title.c_str(), g.group.c_str(), g.why.c_str());
+            for (const std::string& k : g.keys) std::printf(" %s", k.c_str());
+            std::printf("\n\n");
+        }
+        std::printf("Confirm a group once the hardware owner has checked it: add  confirmed = <group>, ...  to the profile.\n");
+        return 0;
     }
     if (printProfile) { std::fputs(opt.profile.dump().c_str(), stdout); return 0; }
     if (inputs.empty()) { usage(); return 2; }
@@ -169,6 +185,10 @@ int main(int argc, char** argv) {
         io &= writeText(prefix + ".events.json", r.eventVectorsJson());
         io &= writeText(prefix + ".validation.json", r.validationReportJson());
         io &= writeText(prefix + ".manifest.json", r.buildManifestJson(sources));
+    }
+    if (artifacts) {
+        const std::vector<asmcore::ProfileGap> gaps = asmcore::profileGaps(opt.profile);
+        if (!gaps.empty()) std::printf("note: %zu profile group(s) are unconfirmed planning values, so the images and timing are planning-only (asmc --profile-gaps)\n", gaps.size());
     }
     if (list) io &= writeText(prefix + ".lst", r.listing());
     if (map) io &= writeText(prefix + ".map", r.map());

@@ -51,7 +51,7 @@ CMake 與 QMake 都能建置、低耦合高彈性、**不做**寫入板子（F4�
 
 ## 硬體設計器（P6 的 H 階段）
 
-說明見 `docs/HARDWARE.md`。H1–H7 ✅（模型與 `.achw` 格式、驗證、產生器、匯入、`asmhw`、IDE 設計器與 File → Hardware、範例 `11_hardware_designer`）；H8 profile 表單 ⬜。
+說明見 `docs/HARDWARE.md`。H1–H7 ✅（模型與 `.achw` 格式、驗證、產生器、匯入、`asmhw`、IDE 設計器與 File → Hardware、範例 `11_hardware_designer`）；H8 目標 profile 表單與缺口清單 ✅。
 
 ## 介面語言（P5 的 A6）
 

@@ -3,6 +3,7 @@ name = 11_hardware_designer
 source = board.gen.inc
 source = imu.asm
 hardware = board.achw
+profile = board.profile
 environment = board.gen.env.cfg
 scenario = imu.scn
 call_model = inline

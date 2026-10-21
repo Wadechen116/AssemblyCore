@@ -952,6 +952,54 @@ sim：tie_order、unmapped_csr、fault_stops    timing：frame_cycles、vblank_s
         <source>Problems (%1)</source>
         <translation>問題（%1）</translation>
     </message>
+    <message>
+        <source>Create a profile file for this project</source>
+        <translation>為這個專案建立 profile 檔</translation>
+    </message>
+    <message>
+        <source>Cannot create the profile: %1</source>
+        <translation>無法建立 profile：%1</translation>
+    </message>
+    <message>
+        <source>These values are confirmed against the hardware</source>
+        <translation>這些數值已對照硬體確認過</translation>
+    </message>
+    <message>
+        <source>-1  (width of one entry)</source>
+        <translation>-1（一個項目的寬度）</translation>
+    </message>
+    <message>
+        <source>default</source>
+        <translation>預設</translation>
+    </message>
+    <message>
+        <source>This project has no profile file: the built-in planning defaults are used for everything. Create one to change a value or to record what has been confirmed.</source>
+        <translation>這個專案沒有 profile 檔：一切使用內建的規劃預設值。建立一個才能修改數值或記錄哪些已確認。</translation>
+    </message>
+    <message>
+        <source>The profile has errors; the form shows the values it can read:</source>
+        <translation>profile 有錯誤；表單顯示能讀到的值：</translation>
+    </message>
+    <message>
+        <source>Editing %1. Changes apply at once (unsaved until Save All) and keep the comments of the file.</source>
+        <translation>正在編輯 %1。修改立即生效（全部存檔前不會寫入磁碟），並保留檔案中的註解。</translation>
+    </message>
+    <message>
+        <source>Every group that needs the hardware owner&apos;s confirmation is confirmed.</source>
+        <translation>所有需要硬體負責人確認的群組都已確認。</translation>
+    </message>
+    <message>
+        <source>%1 group(s) are still planning values nobody has confirmed against the hardware: %2. Results (images, timing, WCET) are planning-only until then.</source>
+        <translation>還有 %1 組數值只是規劃值、沒有人對照硬體確認過：%2。在那之前，結果（映像、時序、WCET）只能當規劃參考。</translation>
+    </message>
+    <message>
+        <source>The profile has errors:</source>
+        <translation>profile 有錯誤：</translation>
+    </message>
+    <message>
+        <source>Target profile</source>
+        <translation>目標 profile</translation>
+    </message>
 </context>
 <context>
     <name>acide::MainWindow</name>

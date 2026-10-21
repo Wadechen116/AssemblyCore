@@ -29,6 +29,11 @@ bool attachHardware(Workspace& ws, const std::string& achwPath, const asmcore::H
 
 // A new description with a sensible start (name from the file) written to disk and attached; or one imported from existing files.
 bool createHardware(Workspace& ws, const std::string& achwPath, std::string& error);
+// A profile file with the default values (and a header saying what it is), set as the project's profile and written to disk.
+bool createProfile(Workspace& ws, const std::string& absPath, std::string& error);
+// The profile of the project as the workspace sees it (an open or unsaved buffer first). False if the project has none or it cannot be read.
+bool loadProjectProfile(Workspace& ws, std::string& text, std::string& path);
+
 bool adoptHardware(Workspace& ws, const std::string& achwPath, const std::string& incPath, const std::string& envPath, std::vector<std::string>& messages, std::string& error);
 
 }  // namespace acide

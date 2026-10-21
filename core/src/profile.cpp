@@ -126,6 +126,21 @@ bool Profile::load(const std::string& text, std::vector<std::string>& errors) {
         if (eq == std::string::npos) { errors.push_back("profile line " + std::to_string(n) + ": 'key = value' expected"); ok = false; continue; }
         std::string k = lower(trim(line.substr(0, eq))), v = trim(line.substr(eq + 1));
         if (k == "profile_id") { profileId = v; continue; }
+        if (k == "confirmed") {
+            confirmed.clear();
+            std::string cur;
+            for (size_t i = 0; i <= v.size(); i++) {
+                if (i < v.size() && v[i] != ',' && v[i] != ' ' && v[i] != '\t') { cur += (char)std::tolower((unsigned char)v[i]); continue; }
+                if (cur.empty()) continue;
+                static const char* const known[] = {"pc_width", "same_region", "placement", "layout", "descriptor_endian", "device_map", "alu", "events", "latency"};
+                bool okName = false;
+                for (const char* g : known) if (cur == g) okName = true;
+                if (!okName) { errors.push_back("profile line " + std::to_string(n) + ": '" + cur + "' is not a group that can be confirmed (pc_width, same_region, placement, layout, descriptor_endian, device_map, alu, events, latency)"); ok = false; }
+                else confirmed.insert(cur);
+                cur.clear();
+            }
+            continue;
+        }
         char* end = nullptr;
         long val = std::strtol(v.c_str(), &end, 0);
         if (v == "true" || v == "yes" || v == "on") val = 1, end = (char*)v.c_str() + v.size();
@@ -163,6 +178,12 @@ bool Profile::load(const std::string& text, std::vector<std::string>& errors) {
 std::string Profile::dump() const {
     std::ostringstream o;
     o << "profile_id = " << profileId << "\n";
+    if (!confirmed.empty()) {
+        o << "confirmed = ";
+        bool first = true;
+        for (const std::string& g : confirmed) { o << (first ? "" : ", ") << g; first = false; }
+        o << "\n";
+    }
     for (const Key& kk : kKeys) {
         o << kk.name << " = ";
         if (kk.ip) o << this->*kk.ip;

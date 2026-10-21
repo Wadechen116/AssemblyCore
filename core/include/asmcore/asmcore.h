@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <functional>
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -54,6 +55,9 @@ enum ProfileSection { PS_MAIN_MOVE = 0, PS_MAIN_BRANCH, PS_MAIN_CSR1, PS_MAIN_CS
 // and must match the compiler/assembler target profile").
 struct Profile {
     std::string profileId = "planning-default";   // names the target this profile describes (appears in every artifact)
+    // Groups of values (profile_info.h) that someone has checked against the hardware: `confirmed = alu, placement`. Everything else is a
+    // planning value and is listed as a gap (profileGaps) -- never an error: the tools work with planning values, they just say so.
+    std::set<std::string> confirmed;
     // descriptor table depths (entries); defaults are the full arg-addressable depth
     int mainMoveDepth = 64, mainBranchDepth = 64, mainCsr1Depth = 32, mainCsrMDepth = 32, mainAluDepth = 64;
     int periXfer1Depth = 32, periXferMDepth = 32, periPubDepth = 64, periBranchDepth = 64, periCsr1Depth = 32;

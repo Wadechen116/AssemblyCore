@@ -440,6 +440,76 @@ private slots:
         QVERIFY(f.fs->read("/w/board.gen.inc", disk));
         QVERIFY(disk.find("NEW_CSR") == std::string::npos);
     }
+    void profileFormEditsTheFileInPlace() {
+        Fixture f;
+        f.fs->write("/w/p.acproj", "name = p\nsource = main.asm\nprofile = t.profile\n");
+        f.fs->write("/w/t.profile", "; my target\nprofile_id = rtl-a   ; the board\nevent_count = 4\n");
+        PanelRegistry panels;
+        registerBuiltinPanels(panels);
+        MainWindow w(f.ctx, panels);
+        w.setQuiet(true);
+        QVERIFY(w.openProject("/w/p.acproj"));
+        QVERIFY(w.newHardware("/w/board.achw"));
+        HardwareDesigner* d = w.currentDesigner();
+        QVERIFY(d);
+        QTreeWidgetItem* item = nullptr;
+        for (QTreeWidgetItemIterator it(d->tree()); *it; ++it) if ((*it)->text(0) == "Target profile") item = *it;
+        QVERIFY(item);
+        d->tree()->setCurrentItem(item);
+        auto* spin = d->findChild<QSpinBox*>("prof_event_count");
+        QVERIFY(spin);
+        QCOMPARE(spin->value(), 4);                                          // the value from the file, not the default 8
+        QVERIFY(d->findChild<QSpinBox*>("prof_main_pc_width")->value() == 8);   // not in the file: the default
+        spin->setValue(6);
+        std::string text = f.ws.find("/w/t.profile")->text;
+        QCOMPARE(QString::fromStdString(text), QString("; my target\nprofile_id = rtl-a   ; the board\nevent_count = 6\n"));
+        // a key that is not in the file yet is appended
+        auto* big = d->findChild<QCheckBox*>("prof_big_endian");
+        QVERIFY(big && !big->isChecked());
+        big->setChecked(true);
+        text = f.ws.find("/w/t.profile")->text;
+        QVERIFY(text.find("event_count = 6\n") != std::string::npos && text.rfind("big_endian = true\n") == text.size() - 18);
+        // confirming a group
+        auto* sum = d->findChild<QLabel*>("profSummary");
+        QVERIFY(sum && sum->text().startsWith("9 group(s)"));
+        auto* confirm = d->findChild<QCheckBox*>("profConfirm_alu");
+        QVERIFY(confirm && !confirm->isChecked());
+        confirm->setChecked(true);
+        QVERIFY(f.ws.find("/w/t.profile")->text.find("confirmed = alu\n") != std::string::npos);
+        QVERIFY2(sum->text().startsWith("8 group(s)"), qPrintable(sum->text()));
+        confirm->setChecked(false);
+        QVERIFY(f.ws.find("/w/t.profile")->text.find("confirmed") == std::string::npos);
+        // the unsaved profile is what the next build uses
+        QVERIFY(f.buildAndWait());
+        QVERIFY(f.ctx.snapshot->notes.empty());
+        std::string err;
+        QVERIFY(f.ws.saveAll(err));
+        std::string disk;
+        QVERIFY(f.fs->read("/w/t.profile", disk) && disk.find("event_count = 6") != std::string::npos && disk.find("; my target") == 0);
+    }
+    void aProjectWithoutAProfileCanCreateOne() {
+        Fixture f;
+        PanelRegistry panels;
+        registerBuiltinPanels(panels);
+        MainWindow w(f.ctx, panels);
+        w.setQuiet(true);
+        QVERIFY(w.openProject("/w/p.acproj"));
+        QVERIFY(w.newHardware("/w/board.achw"));
+        HardwareDesigner* d = w.currentDesigner();
+        QTreeWidgetItem* item = nullptr;
+        for (QTreeWidgetItemIterator it(d->tree()); *it; ++it) if ((*it)->text(0) == "Target profile") item = *it;
+        d->tree()->setCurrentItem(item);
+        auto* create = d->findChild<QPushButton*>("profCreate");
+        QVERIFY(create && !create->isHidden());
+        QVERIFY(d->findChild<QLabel*>("profBanner")->text().contains("no profile file"));
+        create->click();
+        QCOMPARE(QString::fromStdString(f.ws.project().profile), QString("p.profile"));
+        QVERIFY(f.fs->exists("/w/p.profile"));
+        QVERIFY(create->isHidden());
+        QVERIFY(d->findChild<QSpinBox*>("prof_event_count")->value() == 8);
+        std::string pj;
+        QVERIFY(f.fs->read("/w/p.acproj", pj) && pj.find("profile = p.profile") != std::string::npos);
+    }
     void projectTreeListsTheDescription() {
         Fixture f;
         PanelRegistry panels;

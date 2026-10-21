@@ -26,6 +26,7 @@ add_library(asmcore STATIC
   core/src/events.cpp
   core/src/diag_names.cpp
   core/src/hardware.cpp
+  core/src/profile_info.cpp
   core/src/report.cpp
   core/src/image_view.cpp
   core/src/disasm.cpp

@@ -34,7 +34,9 @@ bool Debugger::start(std::string& why) {
     if (!p.profile.empty()) {
         std::string text;
         std::vector<std::string> errs;
-        if (!ws_.fileSystem()->read(p.absolute(p.profile), text)) { why = "cannot read the profile " + p.profile; return false; }
+        Document* d = ws_.find(p.absolute(p.profile));                // an unsaved edit of it counts
+        if (d) text = d->text;
+        else if (!ws_.fileSystem()->read(p.absolute(p.profile), text)) { why = "cannot read the profile " + p.profile; return false; }
         if (!pf.load(text, errs)) { why = "profile: " + (errs.empty() ? std::string("error") : errs[0]); return false; }
     }
     session_.load(prog, env, pf);

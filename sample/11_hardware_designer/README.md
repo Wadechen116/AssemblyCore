@@ -18,6 +18,14 @@
 7. 存檔（Ctrl+Shift+S）後 `board.achw`、`board.gen.inc`、`board.gen.env.cfg` 三個檔案一起寫入；專案樹的圓點消失。
 8. 除錯（F5）：模擬器用的是產生的環境檔；在設計器改了 `[device imu]` 的暫存器值，重新開始除錯就會用新值。
 
+## 目標 profile（設計器最下方的 Target profile）
+專案的 `board.profile` 用表單編輯，**只改你動的那一行、保留檔案裡的註解與順序**：
+- 每個群組一個頁籤（Placement、ALU numbers、Latency…）；每個鍵都有說明，滑鼠移上去看預設值。
+- 頁面最上面的黃字：**還有幾組數值只是規劃值、沒有人對照硬體確認過**（這個範例只確認了 pc_width，所以顯示 8 組）。分頁名稱後面有 ⚠ 的就是沒確認的。
+- 硬體負責人檢查過某一組，就勾選該頁籤上的「These values are confirmed against the hardware」→ 檔案多一行 `confirmed = …`，缺口數減一。
+- 改 `main_image_base_word` 讓 Main 視窗和 Peri 視窗重疊 → 重新建置出現 **E311**（修改不需存檔就生效）。
+- 命令列：`asmc --profile board.profile --profile-gaps` 列出缺口與原因；`asmc … --artifacts` 的 `manifest.json` 會記錄 `unconfirmed` 清單。
+
 ## 接手既有專案
 複製 `02_imu_gyro`，在新專案選 **File → Hardware → Adopt Existing Definitions…**，依序選 `defs.inc`、`imu_env.cfg`、輸出的 `.achw`：
 專案的 sources、環境檔與 `.include` 都不用改；`defs.inc` 與 `imu_env.cfg` 變成「產生的檔案」（存檔時被取代，內容等價）。
