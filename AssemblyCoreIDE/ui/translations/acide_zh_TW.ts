@@ -1070,5 +1070,13 @@ An IDE for the Sensor Micro-Sequencer ISA, built on the AssemblyCore assembler.<
         <source>Environment (*.env *.ini);;All files (*)</source>
         <translation>環境檔 (*.env *.ini);;所有檔案 (*)</translation>
     </message>
+    <message>
+        <source>Close &amp;Project</source>
+        <translation>關閉專案(&amp;P)</translation>
+    </message>
+    <message>
+        <source>Closed project %1</source>
+        <translation>已關閉專案 %1</translation>
+    </message>
 </context>
 </TS>

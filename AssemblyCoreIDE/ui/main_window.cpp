@@ -118,6 +118,8 @@ void MainWindow::createActions() {
         if (!f.isEmpty()) openProject(f);
     });
     recentMenu_ = file->addMenu(tr("Recent Projects"));
+    closeProjectAct_ = act(file, tr("Close &Project"), QKeySequence("Ctrl+Shift+W"), [this] { endProject(); });
+    closeProjectAct_->setEnabled(ctx_.workspace.hasProject());
     file->addSeparator();
     act(file, tr("&Open File..."), QKeySequence::Open, [this] {
         QString f = QFileDialog::getOpenFileName(this, tr("Open file"), QString(), tr("Assembly (*.asm *.inc *.s);;All files (*)"));
@@ -367,6 +369,17 @@ bool MainWindow::closeProject() {
     return true;
 }
 
+void MainWindow::endProject() {
+    if (!ctx_.workspace.hasProject()) return;
+    const QString name = fromStd(ctx_.workspace.project().name);
+    saveSession();                                  // so that opening the project again brings the same files back
+    if (!closeProject()) return;                    // asks about unsaved changes; Cancel keeps everything as it was
+    ctx_.workspace.closeProject();
+    ctx_.snapshot.reset();
+    ctx_.log.fire(tr("Closed project %1").arg(name));
+    updateTitle();
+}
+
 bool MainWindow::openProject(const QString& file) {
     if (!closeProject()) return false;
     std::vector<std::string> errs;
@@ -447,6 +460,7 @@ QMessageBox::StandardButton MainWindow::ask(const QString& title, const QString&
 void MainWindow::updateTitle() {
     QString t = "AssemblyCoreIDE";
     if (ctx_.workspace.hasProject()) t = fromStd(ctx_.workspace.project().name) + " - " + t;
+    if (closeProjectAct_) closeProjectAct_->setEnabled(ctx_.workspace.hasProject());
     if (ctx_.workspace.anyDirty()) t += " *";
     setWindowTitle(t);
     for (int i = 0; i < tabs_->count(); i++) {

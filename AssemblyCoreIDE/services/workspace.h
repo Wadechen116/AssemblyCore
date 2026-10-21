@@ -41,6 +41,7 @@ public:
     bool openProject(const std::string& file, std::vector<std::string>& errors);
     void newProject(const std::string& file, const std::string& name);
     bool saveProject(std::string& error);
+    void closeProject();                                     // forget the project and its documents (the caller has dealt with unsaved ones)
     Project& project() { return project_; }
     const Project& project() const { return project_; }
     void projectEdited();                                    // call after changing project() so listeners learn of it

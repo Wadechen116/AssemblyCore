@@ -137,6 +137,35 @@ private slots:
         QVERIFY(w.buildStatusText().contains("warning"));
         w.grab().save(QDir::tempPath() + "/acide_window1.png");
     }
+    void closeProjectFromTheFileMenu() {
+        Fixture f;
+        f.ctx.snapshot.reset();
+        PanelRegistry panels;
+        registerBuiltinPanels(panels);
+        MainWindow w(f.ctx, panels);
+        w.setQuiet(true);
+        w.show();
+        QAction* closeAct = nullptr;
+        for (QAction* a : w.menuBar()->actions().first()->menu()->actions())
+            if (a->text().remove('&') == "Close Project") closeAct = a;
+        QVERIFY2(closeAct, "File -> Close Project exists");
+        QVERIFY(w.openProject("/w/p.acproj"));
+        QVERIFY(closeAct->isEnabled());
+        QCOMPARE(w.tabs()->count(), 1);
+        QVERIFY(w.windowTitle().startsWith("p - "));
+        closeAct->trigger();
+        QVERIFY(!f.ws.hasProject());
+        QCOMPARE(w.tabs()->count(), 0);
+        QCOMPARE(w.windowTitle(), QString("AssemblyCoreIDE"));
+        QVERIFY(!closeAct->isEnabled());
+        QVERIFY(f.ws.openPaths().empty());
+        QVERIFY(!f.settings.getList("recent.projects").empty() && f.settings.getList("recent.projects")[0] == "/w/p.acproj");        // it stays in the recent list
+        closeAct->trigger();                                                                         // closing nothing is harmless
+        // opening it again works, and brings the same file back
+        QVERIFY(w.openProject("/w/p.acproj"));
+        QCOMPARE(w.tabs()->count(), 1);
+        QVERIFY(closeAct->isEnabled());
+    }
     void editingFixesTheProblems() {
         Fixture f;
         PanelRegistry panels;

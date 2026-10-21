@@ -29,7 +29,8 @@ public:
     bool newProject(const QString& file);
     CodeEditor* openFile(const std::string& path);
     CodeEditor* currentEditor() const;
-    bool closeProject();                                  // false if the user cancelled
+    bool closeProject();                  // closes the editors and stops debugging (the workspace keeps its project)
+    void endProject();                    // File -> Close Project: save the session, close everything, leave no project open                                  // false if the user cancelled
     // Everything that must be saved before the window is replaced by another one (a language change): the session, the project, the layout.
     // False if the user cancelled.
     bool prepareForRebuild();
@@ -86,6 +87,7 @@ private:
     QLabel *buildLabel_, *caretLabel_;
     QMap<QString, QDockWidget*> docks_;
     QMenu* recentMenu_ = nullptr;
+    QAction* closeProjectAct_ = nullptr;
     std::map<std::string, CodeEditor*> editors_;
     QAction *actStart_ = nullptr, *actPause_ = nullptr, *actStop_ = nullptr, *actRestart_ = nullptr, *actInto_ = nullptr, *actOver_ = nullptr,
             *actOut_ = nullptr, *actToCursor_ = nullptr, *actToggleBp_ = nullptr;

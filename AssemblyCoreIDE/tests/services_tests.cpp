@@ -112,6 +112,19 @@ static void t_workspace() {
     ws.close("/w/new.asm");
     check(!ws.find("/w/new.asm"), "close");
     check(!ws.openProject("/w/none.acproj", errs), "a missing project fails");
+    {   // closing a project forgets it and its documents
+        Workspace w2(fs);
+        std::vector<std::string> e2;
+        w2.openProject("/w/imu.acproj", e2);
+        w2.open("/w/main.asm");
+        int notified = 0;
+        auto c = w2.projectChanged.connect([&] { notified++; });
+        (void)c;
+        w2.closeProject();
+        check(!w2.hasProject() && w2.openPaths().empty() && w2.project().sources.empty() && notified == 1, "closeProject: no project, no documents, listeners told once", std::to_string(notified));
+        check(w2.snapshot().sources.empty(), "...and a build of it would be empty");
+        check(fs->exists("/w/imu.acproj"), "...the project file is untouched");
+    }
 }
 
 // The sample projects (sample/) opened and built exactly the way the IDE does it: a Workspace over the real file system, buildNow().

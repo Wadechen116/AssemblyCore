@@ -34,6 +34,13 @@ void Workspace::newProject(const std::string& file, const std::string& name) {
     projectChanged.fire();
 }
 
+void Workspace::closeProject() {
+    project_ = Project();
+    docs_.clear();
+    revision_++;
+    projectChanged.fire();
+}
+
 bool Workspace::saveProject(std::string& error) {
     if (project_.file.empty()) { error = "the project has no file name"; return false; }
     if (!fs_->write(project_.file, project_.serialize())) { error = "cannot write " + project_.file; return false; }
