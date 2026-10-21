@@ -9,6 +9,7 @@ set(ACIDE_SERVICE_SOURCES
   ${CMAKE_CURRENT_LIST_DIR}/services/artifacts.cpp
   ${CMAKE_CURRENT_LIST_DIR}/services/sim_session.cpp
   ${CMAKE_CURRENT_LIST_DIR}/services/debugger.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/services/hardware_link.cpp
 )
 
 set(ACIDE_UI_SOURCES
@@ -23,4 +24,5 @@ set(ACIDE_UI_SOURCES
   ${CMAKE_CURRENT_LIST_DIR}/ui/main_window.cpp
   ${CMAKE_CURRENT_LIST_DIR}/ui/i18n.cpp
   ${CMAKE_CURRENT_LIST_DIR}/ui/app_shell.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/ui/hardware_designer.cpp
 )

@@ -282,6 +282,21 @@ static void t_devmap_only() {
     check(parseHardware(serializeHardware(hw), again, e2) && !again.devices[0].simulated, "'simulated = false' survives the .achw round trip", join(e2));
 }
 
+static void t_paths() {
+    section("where the generated files go");
+    Hardware hw;
+    check(hardwareIncludePath("/p/hw/board.achw", hw) == "/p/hw/board.gen.inc" && hardwareEnvPath("/p/hw/board.achw", hw) == "/p/hw/board.gen.env.cfg", "default: next to the description");
+    hw.includeFile = "../common/defs.inc";
+    hw.envFile = "imu_env.cfg";
+    check(hardwareIncludePath("/p/hw/board.achw", hw) == "/p/hw/../common/defs.inc" && hardwareEnvPath("C:\\p\\board.achw", hw) == "C:\\p\\imu_env.cfg", "relative to the description (either kind of separator)");
+    hw.includeFile = "/abs/defs.inc";
+    check(hardwareIncludePath("/p/board.achw", hw) == "/abs/defs.inc", "absolute names are kept");
+    std::string text = serializeHardware(hw);
+    Hardware back;
+    std::vector<std::string> e;
+    check(parseHardware(text, back, e) && back.includeFile == "/abs/defs.inc" && back.envFile == "imu_env.cfg", "include_file / env_file survive the file", join(e));
+}
+
 static void t_raw() {
     section("things the designer does not model are kept");
     Hardware hw;
@@ -301,6 +316,7 @@ int main() {
     t_import();
     t_validate();
     t_devmap_only();
+    t_paths();
     t_raw();
     std::printf("\n%s  %d passed, %d failed\n", g_fail ? "FAILED" : "OK    ", g_pass, g_fail);
     return g_fail ? 1 : 0;

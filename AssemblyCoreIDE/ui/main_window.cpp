@@ -15,6 +15,8 @@
 #include <QVBoxLayout>
 
 #include "artifacts.h"
+#include "hardware_designer.h"
+#include "hardware_link.h"
 #include "i18n.h"
 #include "templates.h"
 #include "text_util.h"
@@ -120,6 +122,29 @@ void MainWindow::createActions() {
     recentMenu_ = file->addMenu(tr("Recent Projects"));
     closeProjectAct_ = act(file, tr("Close &Project"), QKeySequence("Ctrl+Shift+W"), [this] { endProject(); });
     closeProjectAct_->setEnabled(ctx_.workspace.hasProject());
+    QMenu* hw = file->addMenu(tr("&Hardware"));
+    act(hw, tr("&New Hardware Description..."), QKeySequence(), [this] {
+        if (!ctx_.workspace.hasProject()) { warn(tr("Hardware"), tr("Open or create a project first.")); return; }
+        QString f = QFileDialog::getSaveFileName(this, tr("New hardware description"), fromStd(ctx_.workspace.project().baseDir()), tr("Hardware description (*.achw)"));
+        if (f.isEmpty()) return;
+        if (!f.endsWith(".achw")) f += ".achw";
+        newHardware(f);
+    });
+    openHardwareAct_ = act(hw, tr("&Open Hardware Designer"), QKeySequence(), [this] {
+        if (ctx_.workspace.hasProject() && !ctx_.workspace.project().hardware.empty()) openHardware(ctx_.workspace.project().absolute(ctx_.workspace.project().hardware));
+    });
+    openHardwareAct_->setEnabled(ctx_.workspace.hasProject() && !ctx_.workspace.project().hardware.empty());
+    act(hw, tr("&Adopt Existing Definitions..."), QKeySequence(), [this] {
+        if (!ctx_.workspace.hasProject()) { warn(tr("Hardware"), tr("Open or create a project first.")); return; }
+        const QString dir = fromStd(ctx_.workspace.project().baseDir());
+        QString inc = QFileDialog::getOpenFileName(this, tr("Assembler definitions to adopt (.inc)"), dir, tr("Assembler include (*.inc *.asm);;All files (*)"));
+        if (inc.isEmpty()) return;
+        QString env = QFileDialog::getOpenFileName(this, tr("Simulator environment to adopt (Cancel for none)"), dir, tr("Environment (*.cfg *.env *.ini);;All files (*)"));
+        QString achw = QFileDialog::getSaveFileName(this, tr("Save the hardware description as"), dir + "/" + QFileInfo(inc).completeBaseName() + ".achw", tr("Hardware description (*.achw)"));
+        if (achw.isEmpty()) return;
+        if (!achw.endsWith(".achw")) achw += ".achw";
+        adoptHardware(inc, env, achw);
+    });
     file->addSeparator();
     act(file, tr("&Open File..."), QKeySequence::Open, [this] {
         QString f = QFileDialog::getOpenFileName(this, tr("Open file"), QString(), tr("Assembly (*.asm *.inc *.s);;All files (*)"));
@@ -303,7 +328,47 @@ void MainWindow::createPanels(PanelRegistry& panels) {
 // ---- files and projects ------------------------------------------------------------------------------------------------------------
 CodeEditor* MainWindow::currentEditor() const { return qobject_cast<CodeEditor*>(tabs_->currentWidget()); }
 
+HardwareDesigner* MainWindow::currentDesigner() const { return qobject_cast<HardwareDesigner*>(tabs_->currentWidget()); }
+
+HardwareDesigner* MainWindow::openHardware(const std::string& path) {
+    auto it = designers_.find(path);
+    if (it != designers_.end()) { tabs_->setCurrentWidget(it->second); return it->second; }
+    if (!ctx_.workspace.open(path)) {
+        warn(tr("Open"), tr("Cannot read %1").arg(fromStd(path)));
+        return nullptr;
+    }
+    auto* d = new HardwareDesigner(ctx_, path);
+    designers_[path] = d;
+    int idx = tabs_->addTab(d, tr("Hardware: %1").arg(QFileInfo(fromStd(path)).fileName()));
+    tabs_->setTabToolTip(idx, fromStd(path));
+    tabs_->setCurrentIndex(idx);
+    return d;
+}
+
+bool MainWindow::newHardware(const QString& file) {
+    std::string err;
+    const std::string path = norm(file);
+    if (!createHardware(ctx_.workspace, path, err)) { warn(tr("Hardware"), fromStd(err)); return false; }
+    ctx_.log.fire(tr("Created hardware description %1").arg(fromStd(path)));
+    updateTitle();
+    openHardware(path);
+    return true;
+}
+
+bool MainWindow::adoptHardware(const QString& incFile, const QString& envFile, const QString& achwFile) {
+    std::string err;
+    std::vector<std::string> msgs;
+    const std::string path = norm(achwFile);
+    if (!acide::adoptHardware(ctx_.workspace, path, norm(incFile), envFile.isEmpty() ? std::string() : norm(envFile), msgs, err)) { warn(tr("Hardware"), fromStd(err)); return false; }
+    for (auto& m : msgs) ctx_.log.fire(tr("Adopt: %1").arg(fromStd(m)));
+    ctx_.log.fire(tr("Adopted %1: the definitions and the environment are now generated from the description; save to replace the originals.").arg(QFileInfo(incFile).fileName()));
+    updateTitle();
+    openHardware(path);
+    return true;
+}
+
 CodeEditor* MainWindow::openFile(const std::string& path) {
+    if (path.size() > 5 && path.compare(path.size() - 5, 5, ".achw") == 0) { openHardware(path); return nullptr; }
     auto it = editors_.find(path);
     if (it != editors_.end()) { tabs_->setCurrentWidget(it->second); return it->second; }
     if (!ctx_.workspace.open(path)) {
@@ -324,7 +389,39 @@ CodeEditor* MainWindow::openFile(const std::string& path) {
     return e;
 }
 
+bool MainWindow::closeDesigner(int index) {
+    auto* d = qobject_cast<HardwareDesigner*>(tabs_->widget(index));
+    if (!d) return true;
+    d->flush();
+    const std::string path = d->path();
+    asmcore::Hardware hw = d->model();
+    const HardwareFiles files = hardwareFiles(path, hw);
+    const std::string paths[3] = {files.achw, files.include, files.env};
+    bool dirty = false;
+    for (const std::string& p : paths) if (Document* doc = ctx_.workspace.find(p)) dirty |= doc->dirty;
+    if (dirty) {
+        auto r = ask(tr("Unsaved changes"), tr("Save changes to the hardware description %1?").arg(QFileInfo(fromStd(path)).fileName()),
+                     QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel, QMessageBox::Discard);
+        if (r == QMessageBox::Cancel) return false;
+        std::string err;
+        if (r == QMessageBox::Save) {
+            for (const std::string& p : paths) if (ctx_.workspace.find(p) && !ctx_.workspace.save(p, err)) { warn(tr("Save"), fromStd(err)); return false; }
+        } else {
+            for (const std::string& p : paths) {                  // throw the edits away: the files on disk are the truth again
+                if (!ctx_.workspace.find(p)) continue;
+                if (ctx_.workspace.fileSystem()->exists(p)) ctx_.workspace.reload(p); else ctx_.workspace.close(p);
+            }
+        }
+    }
+    tabs_->removeTab(index);
+    designers_.erase(path);
+    delete d;
+    ctx_.workspace.close(path);
+    return true;
+}
+
 bool MainWindow::closeEditor(int index) {
+    if (qobject_cast<HardwareDesigner*>(tabs_->widget(index))) return closeDesigner(index);
     auto* e = qobject_cast<CodeEditor*>(tabs_->widget(index));
     if (!e) return true;
     Document* d = ctx_.workspace.find(e->path());
@@ -359,6 +456,14 @@ bool MainWindow::closeProject() {
     ctx_.debugger.saveBreakpoints();
     ctx_.debugger.stop();
     while (tabs_->count()) {
+        if (auto* hd = qobject_cast<HardwareDesigner*>(tabs_->widget(0))) {
+            const std::string hpath = hd->path();
+            tabs_->removeTab(0);
+            designers_.erase(hpath);
+            delete hd;
+            ctx_.workspace.close(hpath);
+            continue;
+        }
         auto* e = qobject_cast<CodeEditor*>(tabs_->widget(0));
         std::string path = e->path();
         tabs_->removeTab(0);
@@ -442,7 +547,10 @@ void MainWindow::restoreSession() {
 void MainWindow::saveSession() {
     if (!ctx_.workspace.hasProject()) return;
     std::vector<std::string> open;
-    for (int i = 0; i < tabs_->count(); i++) if (auto* e = qobject_cast<CodeEditor*>(tabs_->widget(i))) open.push_back(e->path());
+    for (int i = 0; i < tabs_->count(); i++) {
+        if (auto* e = qobject_cast<CodeEditor*>(tabs_->widget(i))) open.push_back(e->path());
+        else if (auto* d = qobject_cast<HardwareDesigner*>(tabs_->widget(i))) open.push_back(d->path());
+    }
     ctx_.settings.setList("session." + ctx_.workspace.project().file, open);
 }
 
@@ -461,9 +569,19 @@ void MainWindow::updateTitle() {
     QString t = "AssemblyCoreIDE";
     if (ctx_.workspace.hasProject()) t = fromStd(ctx_.workspace.project().name) + " - " + t;
     if (closeProjectAct_) closeProjectAct_->setEnabled(ctx_.workspace.hasProject());
+    if (openHardwareAct_) openHardwareAct_->setEnabled(ctx_.workspace.hasProject() && !ctx_.workspace.project().hardware.empty());
     if (ctx_.workspace.anyDirty()) t += " *";
     setWindowTitle(t);
     for (int i = 0; i < tabs_->count(); i++) {
+        if (auto* hd = qobject_cast<HardwareDesigner*>(tabs_->widget(i))) {
+            const asmcore::Hardware& model = hd->model();
+            const HardwareFiles files = hardwareFiles(hd->path(), model);
+            bool dirty = false;
+            for (const std::string& p : {files.achw, files.include, files.env}) if (Document* doc = ctx_.workspace.find(p)) dirty |= doc->dirty;
+            const QString name = tr("Hardware: %1").arg(QFileInfo(fromStd(hd->path())).fileName());
+            tabs_->setTabText(i, dirty ? name + " *" : name);
+            continue;
+        }
         auto* e = qobject_cast<CodeEditor*>(tabs_->widget(i));
         if (!e) continue;
         Document* d = ctx_.workspace.find(e->path());

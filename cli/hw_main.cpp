@@ -29,8 +29,9 @@ bool writeFile(const std::string& p, const std::string& text) {
 void usage() {
     std::puts(
         "usage:\n"
-        "  asmhw gen    board.achw [-o PREFIX]          write PREFIX.inc (assembler definitions) and PREFIX.env.cfg (simulator environment)\n"
-        "                                               default PREFIX: board.gen   (existing files are overwritten)\n"
+        "  asmhw gen    board.achw [-o PREFIX]          write the assembler definitions and the simulator environment; they go to the files named\n"
+        "                                               by include_file / env_file in the description, else board.gen.inc / board.gen.env.cfg\n"
+        "                                               (-o PREFIX writes PREFIX.inc / PREFIX.env.cfg instead; existing files are overwritten)\n"
         "  asmhw check  board.achw                      validate; also runs the real assembler and simulator on the generated files\n"
         "  asmhw import --inc defs.inc [--env env.cfg] -o board.achw    build a description from existing files (nothing is lost)\n"
         "A hardware description is the single source of truth for CSRs (address, bit meanings), I2C devices, services and constants:\n"
@@ -84,11 +85,13 @@ int main(int argc, char** argv) {
         if (!errors) errors = report(asmcore::checkHardwareWithTools(hw), input);        // only when the model is sane: the tools then add what it cannot know
         if (errors) { std::fprintf(stderr, "asmhw: %d error(s); nothing written\n", errors); return 1; }
         if (cmd == "check") { std::printf("%s: ok\n", input.c_str()); return 0; }
-        std::string prefix = out.empty() ? fs::path(input).replace_extension("").string() + ".gen" : out;
+        std::string incOut, envOut;
+        if (!out.empty()) { incOut = out + ".inc"; envOut = out + ".env.cfg"; }
+        else { incOut = asmcore::hardwareIncludePath(input, hw); envOut = asmcore::hardwareEnvPath(input, hw); }
         const std::string src = fs::path(input).filename().string();
-        bool ok = writeFile(prefix + ".inc", asmcore::generateInc(hw, src)) & writeFile(prefix + ".env.cfg", asmcore::generateEnv(hw, src));
-        if (!ok) { std::fprintf(stderr, "asmhw: cannot write %s.inc / %s.env.cfg\n", prefix.c_str(), prefix.c_str()); return 2; }
-        std::printf("wrote %s.inc and %s.env.cfg\n", prefix.c_str(), prefix.c_str());
+        bool ok = writeFile(incOut, asmcore::generateInc(hw, src)) & writeFile(envOut, asmcore::generateEnv(hw, src));
+        if (!ok) { std::fprintf(stderr, "asmhw: cannot write %s / %s\n", incOut.c_str(), envOut.c_str()); return 2; }
+        std::printf("wrote %s and %s\n", incOut.c_str(), envOut.c_str());
         return 0;
     }
     if (cmd == "import") {
@@ -101,6 +104,12 @@ int main(int argc, char** argv) {
         bool ok = asmcore::importHardware(inc, env, hw, errs);
         for (auto& e : errs) std::fprintf(stderr, "asmhw: %s\n", e.c_str());
         if (hw.name.empty()) hw.name = fs::path(out).stem().string();
+        {   // generating over the files that were imported keeps every project working unchanged
+            std::error_code ec;
+            const fs::path base = fs::absolute(fs::path(out), ec).parent_path();
+            hw.includeFile = fs::relative(fs::absolute(fs::path(incPath), ec), base, ec).generic_string();
+            if (!envPath.empty()) hw.envFile = fs::relative(fs::absolute(fs::path(envPath), ec), base, ec).generic_string();
+        }
         if (!writeFile(out, asmcore::serializeHardware(hw))) { std::fprintf(stderr, "asmhw: cannot write %s\n", out.c_str()); return 2; }
         std::printf("wrote %s: %zu CSR(s), %zu device(s), %zu service(s), %zu constant(s)%s\n", out.c_str(), hw.csrs.size(), hw.devices.size(), hw.services.size(), hw.consts.size(), ok ? "" : " (with warnings above)");
         return ok ? 0 : 1;

@@ -26,9 +26,9 @@ bool Debugger::start(std::string& why) {
     const Project& p = ws_.project();
     std::string env;
     if (!p.environment.empty()) {
-        if (!ws_.fileSystem()->read(p.absolute(p.environment), env)) { why = "cannot read the environment file " + p.environment; return false; }
-        Document* d = ws_.find(p.absolute(p.environment));          // an unsaved edit of it counts
+        Document* d = ws_.find(p.absolute(p.environment));          // an unsaved edit of it counts (also a generated file not written yet)
         if (d) env = d->text;
+        else if (!ws_.fileSystem()->read(p.absolute(p.environment), env)) { why = "cannot read the environment file " + p.environment; return false; }
     }
     Profile pf;
     if (!p.profile.empty()) {

@@ -68,6 +68,9 @@ struct HwSection {
 struct Hardware {
     std::string name;
     std::string description;
+    // Where the generated files go, relative to the .achw (empty: PREFIX.gen.inc / PREFIX.gen.env.cfg next to it). Pointing them at the
+    // files a project already uses (defs.inc, imu_env.cfg) lets a project adopt the designer without touching a single source line.
+    std::string includeFile, envFile;
     std::vector<HwEqu> equs;
     std::vector<HwConst> consts;
     std::vector<HwCsr> csrs;
@@ -87,6 +90,10 @@ struct Hardware {
 // plus the environment sections above. Errors carry the line number.
 bool parseHardware(const std::string& text, Hardware& out, std::vector<std::string>& errors);
 std::string serializeHardware(const Hardware& hw);
+
+// Full paths of the generated files for a description stored at `achwPath` ('/' or '\\' separated; absolute entries are kept).
+std::string hardwareIncludePath(const std::string& achwPath, const Hardware& hw);
+std::string hardwareEnvPath(const std::string& achwPath, const Hardware& hw);
 
 // ---- generated files (deterministic; the first line says where they come from and that they are generated) --------------------------
 std::string generateInc(const Hardware& hw, const std::string& sourceName = "");

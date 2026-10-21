@@ -47,6 +47,7 @@ bool Project::parse(const std::string& text, Project& p, std::vector<std::string
         else if (k == "include_dir") p.includeDirs.push_back(v);
         else if (k == "profile") p.profile = v;
         else if (k == "environment") p.environment = v;
+        else if (k == "hardware") p.hardware = v;
         else if (k == "scenario") p.scenarios.push_back(v);
         else if (k == "call_model") {
             if (v == "inline") p.callModel = asmcore::CallModel::Inline;
@@ -76,6 +77,7 @@ std::string Project::serialize() const {
     for (auto& s : includeDirs) o << "include_dir = " << s << "\n";
     if (!profile.empty()) o << "profile = " << profile << "\n";
     if (!environment.empty()) o << "environment = " << environment << "\n";
+    if (!hardware.empty()) o << "hardware = " << hardware << "\n";
     for (auto& s : scenarios) o << "scenario = " << s << "\n";
     o << "call_model = " << (callModel == asmcore::CallModel::SoftRet ? "softret" : "inline") << "\n";
     o << "dataflow = " << (dataflow == asmcore::DataflowMode::Off ? "off" : dataflow == asmcore::DataflowMode::Error ? "error" : "warn") << "\n";

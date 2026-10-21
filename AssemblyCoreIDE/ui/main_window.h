@@ -19,6 +19,8 @@
 
 namespace acide {
 
+class HardwareDesigner;
+
 class MainWindow : public QMainWindow {
     Q_OBJECT
 public:
@@ -29,8 +31,12 @@ public:
     bool newProject(const QString& file);
     CodeEditor* openFile(const std::string& path);
     CodeEditor* currentEditor() const;
+    HardwareDesigner* openHardware(const std::string& achwPath);       // the Hardware Designer tab of a description (created if needed)
+    HardwareDesigner* currentDesigner() const;
+    bool newHardware(const QString& achwPath);                         // File -> Hardware -> New: create, attach to the project, open
+    bool adoptHardware(const QString& incPath, const QString& envPath, const QString& achwPath);
     bool closeProject();                  // closes the editors and stops debugging (the workspace keeps its project)
-    void endProject();                    // File -> Close Project: save the session, close everything, leave no project open                                  // false if the user cancelled
+    void endProject();                    // File -> Close Project: save the session, close everything, leave no project open
     // Everything that must be saved before the window is replaced by another one (a language change): the session, the project, the layout.
     // False if the user cancelled.
     bool prepareForRebuild();
@@ -89,6 +95,9 @@ private:
     QMenu* recentMenu_ = nullptr;
     QAction* closeProjectAct_ = nullptr;
     std::map<std::string, CodeEditor*> editors_;
+    std::map<std::string, HardwareDesigner*> designers_;
+    bool closeDesigner(int index);
+    QAction* openHardwareAct_ = nullptr;
     QAction *actStart_ = nullptr, *actPause_ = nullptr, *actStop_ = nullptr, *actRestart_ = nullptr, *actInto_ = nullptr, *actOver_ = nullptr,
             *actOut_ = nullptr, *actToCursor_ = nullptr, *actToggleBp_ = nullptr;
     QLabel* debugLabel_ = nullptr;

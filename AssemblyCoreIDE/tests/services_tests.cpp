@@ -10,6 +10,7 @@
 #include "artifacts.h"
 #include "build.h"
 #include "debugger.h"
+#include "hardware_link.h"
 #include "dispatcher.h"
 #include "editing.h"
 #include "fs.h"
@@ -170,6 +171,61 @@ static void t_samples() {
     }
     check(n >= 10, "found the sample projects", std::to_string(n));
 #endif
+}
+
+// The Hardware Designer's bridge: description, generated files and the project are kept in step, and the build uses them unsaved.
+static void t_hardware_link() {
+    std::printf("\nHardware description\n");
+    auto fs = std::make_shared<MemoryFileSystem>();
+    fs->write("/p/prog.acproj", "name = prog\nsource = main.asm\n");
+    fs->write("/p/main.asm", ".main\nstart: EXEC_CSR WRITE8 AE, 1\nh: JMP h\n");
+    Workspace ws(fs);
+    std::vector<std::string> errs;
+    ws.openProject("/p/prog.acproj", errs);
+    std::string err;
+    check(createHardware(ws, "/p/board.achw", err), "create a description", err);
+    std::string t;
+    check(fs->read("/p/board.achw", t) && t.find("name = board") != std::string::npos && fs->exists("/p/board.gen.inc") && fs->exists("/p/board.gen.env.cfg"), "the description and both generated files are written");
+    check(ws.project().hardware == "board.achw" && ws.project().sources.size() == 2 && ws.project().sources[0] == "board.gen.inc" && ws.project().environment == "board.gen.env.cfg", "the project uses them: hardware key, generated include FIRST, environment");
+    check(fs->read("/p/prog.acproj", t) && t.find("hardware = board.achw") != std::string::npos, "...and the project file was saved");
+    // an edit shows up in the build without saving anything
+    asmcore::Hardware hw;
+    check(loadHardware(ws, "/p/board.achw", hw, errs), "load");
+    asmcore::HwCsr c;
+    c.name = "AE";
+    c.addr = 0x10;
+    hw.csrs.push_back(c);
+    applyHardware(ws, "/p/board.achw", hw);
+    check(ws.find("/p/board.gen.inc") && ws.find("/p/board.gen.inc")->dirty && ws.find("/p/board.gen.inc")->text.find(".csr AE = 0x010") != std::string::npos, "an edit puts the new definitions into the workspace as an unsaved buffer");
+    auto lang = std::make_shared<const asmcore::lang::Language>(asmcore::lang::Language::defaults());
+    SnapshotPtr s = buildNow(ws.snapshot(), *lang);
+    check(s->result.ok, "the program that uses the new CSR builds although nothing was saved", s->result.diagnosticsText());
+    fs->read("/p/board.gen.inc", t);
+    check(t.find("AE") == std::string::npos, "(the file on disk is still the old one)");
+    std::string werr;
+    check(ws.saveAll(werr) && fs->read("/p/board.gen.inc", t) && t.find(".csr AE = 0x010") != std::string::npos && fs->read("/p/board.achw", t) && t.find("[csr AE]") != std::string::npos, "Save All writes the description and the generated files", werr);
+    // the environment of a debug session is the generated one, also before it exists on disk
+    hw.csrs[0].addr = 0x11;
+    applyHardware(ws, "/p/board.achw", hw);
+    check(ws.find("/p/board.gen.env.cfg")->text.find("addr = 0x011") != std::string::npos, "the generated environment follows the edit");
+    // adopt existing files: nothing in the project changes, the originals become generated files
+    auto fs2 = std::make_shared<MemoryFileSystem>();
+    fs2->write("/q/q.acproj", "name = q\nsource = defs.inc\nsource = main.asm\nenvironment = env.cfg\n");
+    fs2->write("/q/defs.inc", ".csr AE = 0x010\n.service S = 1, len=2, big\n");
+    fs2->write("/q/env.cfg", "[csr AE]\nkind = ram\nreset = 5\n");
+    fs2->write("/q/main.asm", ".main\nstart: EXEC_CSR WRITE8 AE, 1\nh: JMP h\n");
+    Workspace w2(fs2);
+    w2.openProject("/q/q.acproj", errs);
+    std::vector<std::string> msgs;
+    check(adoptHardware(w2, "/q/q.achw", "/q/defs.inc", "/q/env.cfg", msgs, err), "adopt existing definitions", err);
+    asmcore::Hardware h2;
+    check(loadHardware(w2, "/q/q.achw", h2, errs) && h2.includeFile == "defs.inc" && h2.envFile == "env.cfg" && h2.csrs.size() == 1 && h2.csrs[0].reset == 5 && h2.services.size() == 1, "the imported description points at the same files", err);
+    check(w2.project().sources.size() == 2 && w2.project().sources[0] == "defs.inc" && w2.project().environment == "env.cfg" && w2.project().hardware == "q.achw", "the project's sources and environment are unchanged");
+    SnapshotPtr s2 = buildNow(w2.snapshot(), *lang);
+    check(s2->result.ok, "and it still builds with the regenerated include in place of the original", s2->result.diagnosticsText());
+    std::string orig;
+    fs2->read("/q/defs.inc", orig);
+    check(orig.find("Generated") == std::string::npos, "(the original file is only replaced when the designer saves)");
 }
 
 static void t_build() {
@@ -712,6 +768,7 @@ int main() {
     t_project();
     t_workspace();
     t_build();
+    t_hardware_link();
     t_samples();
     t_service();
     t_destroy();

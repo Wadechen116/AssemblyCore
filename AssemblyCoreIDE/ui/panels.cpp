@@ -359,6 +359,7 @@ private:
         };
         group(tr("Sources"), p.sources);
         group(tr("Scenarios"), p.scenarios);
+        if (!p.hardware.empty()) group(tr("Hardware"), {p.hardware});
         std::vector<std::string> misc;
         if (!p.profile.empty()) misc.push_back(p.profile);
         if (!p.environment.empty()) misc.push_back(p.environment);

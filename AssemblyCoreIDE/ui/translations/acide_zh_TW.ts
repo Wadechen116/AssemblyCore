@@ -294,6 +294,10 @@
         <source>Profile / environment</source>
         <translation>設定檔／環境</translation>
     </message>
+    <message>
+        <source>Hardware</source>
+        <translation>硬體</translation>
+    </message>
 </context>
 <context>
     <name>QObject</name>
@@ -590,6 +594,363 @@
     <message>
         <source>%1 replaced</source>
         <translation>已取代 %1 處</translation>
+    </message>
+</context>
+<context>
+    <name>acide::HardwareDesigner</name>
+    <message>
+        <source>This hardware description cannot be read:</source>
+        <translation>無法讀取這份硬體描述：</translation>
+    </message>
+    <message>
+        <source>Add</source>
+        <translation>新增</translation>
+    </message>
+    <message>
+        <source>CSR register</source>
+        <translation>CSR 暫存器</translation>
+    </message>
+    <message>
+        <source>I2C device</source>
+        <translation>I2C 裝置</translation>
+    </message>
+    <message>
+        <source>Service</source>
+        <translation>服務</translation>
+    </message>
+    <message>
+        <source>Constant</source>
+        <translation>常數</translation>
+    </message>
+    <message>
+        <source>Named value (.equ)</source>
+        <translation>具名數值（.equ）</translation>
+    </message>
+    <message>
+        <source>Environment section</source>
+        <translation>環境區段</translation>
+    </message>
+    <message>
+        <source>Remove</source>
+        <translation>移除</translation>
+    </message>
+    <message>
+        <source>Kind</source>
+        <translation>種類</translation>
+    </message>
+    <message>
+        <source>Where</source>
+        <translation>位置</translation>
+    </message>
+    <message>
+        <source>Problem</source>
+        <translation>問題</translation>
+    </message>
+    <message>
+        <source>Problems</source>
+        <translation>問題</translation>
+    </message>
+    <message>
+        <source>Generated definitions (.inc)</source>
+        <translation>產生的定義檔（.inc）</translation>
+    </message>
+    <message>
+        <source>Generated environment</source>
+        <translation>產生的環境檔</translation>
+    </message>
+    <message>
+        <source>Select a component on the left, or use Add.
+
+The hardware description is the single place where the board is defined: CSR registers and what their bits do, I2C devices, service payload contracts and constants. The assembler definitions and the simulator environment are generated from it, so they can never disagree.</source>
+        <translation>請在左邊選一個元件，或按「新增」。
+
+硬體描述是定義這塊板子的唯一地方：CSR 暫存器與各位元的作用、I2C 裝置、服務的資料內容約定與常數。組譯器的定義檔和模擬器的環境檔都由它產生，所以兩者不會不一致。</translation>
+    </message>
+    <message>
+        <source>(default: next to the description, NAME.gen.inc)</source>
+        <translation>（預設：放在描述檔旁邊，檔名 NAME.gen.inc）</translation>
+    </message>
+    <message>
+        <source>(default: next to the description, NAME.gen.env.cfg)</source>
+        <translation>（預設：放在描述檔旁邊，檔名 NAME.gen.env.cfg）</translation>
+    </message>
+    <message>
+        <source>Name</source>
+        <translation>名稱</translation>
+    </message>
+    <message>
+        <source>Description</source>
+        <translation>說明</translation>
+    </message>
+    <message>
+        <source>Definitions file</source>
+        <translation>定義檔</translation>
+    </message>
+    <message>
+        <source>Environment file</source>
+        <translation>環境檔</translation>
+    </message>
+    <message>
+        <source>The generated files are written to these names (relative to this description). Pointing them at the files a project already uses lets the project adopt the designer without changing any source.</source>
+        <translation>產生的檔案會寫到這些檔名（相對於這份描述檔）。指向專案原本就在用的檔案，專案不必修改任何原始碼就能改用設計器。</translation>
+    </message>
+    <message>
+        <source>Value (expression)</source>
+        <translation>數值（運算式）</translation>
+    </message>
+    <message>
+        <source>1 byte (db)</source>
+        <translation>1 位元組（db）</translation>
+    </message>
+    <message>
+        <source>2 bytes (dw)</source>
+        <translation>2 位元組（dw）</translation>
+    </message>
+    <message>
+        <source>comma separated, e.g. 300, 25</source>
+        <translation>以逗號分隔，例如 300, 25</translation>
+    </message>
+    <message>
+        <source>Width</source>
+        <translation>寬度</translation>
+    </message>
+    <message>
+        <source>Values</source>
+        <translation>數值</translation>
+    </message>
+    <message>
+        <source>Constants live in MAIN_CONST_POOL (256 bytes). A program refers to one with MAIN_CONST_POOL[@NAME].</source>
+        <translation>常數放在 MAIN_CONST_POOL（256 位元組）。程式用 MAIN_CONST_POOL[@名稱] 引用。</translation>
+    </message>
+    <message>
+        <source>ram - a plain 8-bit register</source>
+        <translation>ram - 一般的 8 位元暫存器</translation>
+    </message>
+    <message>
+        <source>value - reads / writes a simulator signal</source>
+        <translation>value - 讀寫模擬器的某個訊號</translation>
+    </message>
+    <message>
+        <source>action - writing 1 to a bit does something</source>
+        <translation>action - 對位元寫 1 會觸發動作</translation>
+    </message>
+    <message>
+        <source>status - read-only bits from expressions</source>
+        <translation>status - 唯讀，位元來自運算式</translation>
+    </message>
+    <message>
+        <source>const - read-only constant</source>
+        <translation>const - 唯讀常數</translation>
+    </message>
+    <message>
+        <source>The simulator has this register (untick for a name only the assembler uses, e.g. the second byte of a 2-byte value)</source>
+        <translation>模擬器有這個暫存器（若只是組譯器用的名稱，例如 2 位元組數值的第二個位元組，請取消勾選）</translation>
+    </message>
+    <message>
+        <source>Address</source>
+        <translation>位址</translation>
+    </message>
+    <message>
+        <source>Reset value</source>
+        <translation>重置值</translation>
+    </message>
+    <message>
+        <source>Signal (bind)</source>
+        <translation>訊號（bind）</translation>
+    </message>
+    <message>
+        <source>Bytes of the signal</source>
+        <translation>訊號的位元組數</translation>
+    </message>
+    <message>
+        <source>Bit</source>
+        <translation>位元</translation>
+    </message>
+    <message>
+        <source>Simulator: action / expression</source>
+        <translation>模擬器：動作／運算式</translation>
+    </message>
+    <message>
+        <source>Assembler role (.csrbit)</source>
+        <translation>組譯器角色（.csrbit）</translation>
+    </message>
+    <message>
+        <source>(none)</source>
+        <translation>（無）</translation>
+    </message>
+    <message>
+        <source>(default DEV_&lt;NAME&gt;)</source>
+        <translation>（預設 DEV_&lt;名稱&gt;）</translation>
+    </message>
+    <message>
+        <source>(not in the DeviceMap)</source>
+        <translation>（不在 DeviceMap）</translation>
+    </message>
+    <message>
+        <source>DeviceMap entry %1</source>
+        <translation>DeviceMap 項目 %1</translation>
+    </message>
+    <message>
+        <source>Simulate this device (untick: the DeviceMap entry exists for the assembler, the simulator answers NACK)</source>
+        <translation>模擬這個裝置（取消勾選：DeviceMap 項目只給組譯器用，模擬器回應 NACK）</translation>
+    </message>
+    <message>
+        <source>DeviceMap name (EXEC_XFER dev=...)</source>
+        <translation>DeviceMap 名稱（EXEC_XFER dev=...）</translation>
+    </message>
+    <message>
+        <source>I2C address (7 bit)</source>
+        <translation>I2C 位址（7 位元）</translation>
+    </message>
+    <message>
+        <source>DeviceMap</source>
+        <translation>DeviceMap</translation>
+    </message>
+    <message>
+        <source>What the device returns (the simulator&apos;s scripted device):
+reg  A = v1, v2, ...  reads of register A return these in turn, then stay on the last
+regseq A = ...  the same, but cycling
+block A = b0 b1 b2 ...  consecutive registers from A
+default, nack, write_nack, extra_cycles: whole-device behaviour</source>
+        <translation>裝置回傳的內容（模擬器的腳本裝置）：
+reg  A = v1, v2, ...  依序讀到這些值，之後停在最後一個
+regseq A = ...  同上，但循環
+block A = b0 b1 b2 ...  從 A 開始的連續暫存器
+default、nack、write_nack、extra_cycles：整個裝置的行為</translation>
+    </message>
+    <message>
+        <source>Type</source>
+        <translation>類型</translation>
+    </message>
+    <message>
+        <source>Register</source>
+        <translation>暫存器</translation>
+    </message>
+    <message>
+        <source>Add row</source>
+        <translation>新增一列</translation>
+    </message>
+    <message>
+        <source>Remove row</source>
+        <translation>移除一列</translation>
+    </message>
+    <message>
+        <source>not declared</source>
+        <translation>未宣告</translation>
+    </message>
+    <message>
+        <source>big - high byte first (as the sensor sends it)</source>
+        <translation>big - 高位元組先（感測器送出的順序）</translation>
+    </message>
+    <message>
+        <source>little - low byte first</source>
+        <translation>little - 低位元組先</translation>
+    </message>
+    <message>
+        <source>Service id (1..15)</source>
+        <translation>服務 id（1..15）</translation>
+    </message>
+    <message>
+        <source>Payload bytes</source>
+        <translation>資料位元組數</translation>
+    </message>
+    <message>
+        <source>Byte order on the wire</source>
+        <translation>線上位元組序</translation>
+    </message>
+    <message>
+        <source>The contract between Peri and Main for one result: which id identifies it, how many bytes it carries and in which order a multi-byte value arrives. With it the assembler checks the publish and consume lengths and warns when a high-byte-first value goes into the ALU unswapped.</source>
+        <translation>Peri 與 Main 之間關於一種結果的約定：用哪個 id 辨識、帶幾個位元組、多位元組數值以什麼順序送來。有了它，組譯器會檢查發佈與消耗的長度，並在高位元組先的數值未經交換就進 ALU 時警告。</translation>
+    </message>
+    <message>
+        <source>(e.g. a signal name, or &apos;main 0xE&apos; for a condition)</source>
+        <translation>（例如訊號名稱，條件則寫 &apos;main 0xE&apos;）</translation>
+    </message>
+    <message>
+        <source>Section</source>
+        <translation>區段</translation>
+    </message>
+    <message>
+        <source>Simulator environment settings (docs/SIM.md): one &apos;key = value&apos; per line.
+sim: tie_order, unmapped_csr, fault_stops    timing: frame_cycles, vblank_start, vblank_len ...    inject: &apos;at 5000 = nack dev=0 count=1&apos;</source>
+        <translation>模擬器環境設定（docs/SIM.md）：每行一個「key = value」。
+sim：tie_order、unmapped_csr、fault_stops    timing：frame_cycles、vblank_start、vblank_len …    inject：&apos;at 5000 = nack dev=0 count=1&apos;</translation>
+    </message>
+    <message>
+        <source>Assembler lines the designer does not model (for example .include). They are written to the generated definitions file as they are, one per line.</source>
+        <translation>設計器不處理的組譯器行（例如 .include）。它們會原封不動寫進產生的定義檔，每行一條。</translation>
+    </message>
+    <message>
+        <source>  - DeviceMap %1</source>
+        <translation>  - DeviceMap %1</translation>
+    </message>
+    <message>
+        <source>  id %1</source>
+        <translation>  id %1</translation>
+    </message>
+    <message>
+        <source>Board</source>
+        <translation>板子</translation>
+    </message>
+    <message>
+        <source>Constants</source>
+        <translation>常數</translation>
+    </message>
+    <message>
+        <source>CSR registers</source>
+        <translation>CSR 暫存器</translation>
+    </message>
+    <message>
+        <source>I2C devices</source>
+        <translation>I2C 裝置</translation>
+    </message>
+    <message>
+        <source>Services</source>
+        <translation>服務</translation>
+    </message>
+    <message>
+        <source>Simulator environment</source>
+        <translation>模擬器環境</translation>
+    </message>
+    <message>
+        <source>Assembler lines</source>
+        <translation>組譯器行</translation>
+    </message>
+    <message>
+        <source>Bits: the action the simulator performs when software writes 1 to the bit (e.g. timer_start, poll_arm, done_set; set:SIGNAL / clr:SIGNAL for any signal). The assembler role makes the flow checks (W515, W516) know what the bit means.</source>
+        <translation>位元：軟體對該位元寫 1 時模擬器執行的動作（例如 timer_start、poll_arm、done_set；任何訊號可用 set:訊號／clr:訊號）。組譯器角色讓流程檢查（W515、W516）知道這個位元的意義。</translation>
+    </message>
+    <message>
+        <source>Bits: an expression; the bit reads as 1 when it is true (e.g. poll.ready). The assembler role is not used for read-only bits.</source>
+        <translation>位元：一個運算式，為真時該位元讀到 1（例如 poll.ready）。唯讀位元不使用組譯器角色。</translation>
+    </message>
+    <message>
+        <source>Bits: only action and status registers give bits a meaning in the simulator. The assembler role (timer_start, timer_clear, poll_arm, poll_clear) still tells the flow checks what a bit means.</source>
+        <translation>位元：只有 action 與 status 暫存器的位元在模擬器中有意義。組譯器角色（timer_start、timer_clear、poll_arm、poll_clear）仍會告訴流程檢查這個位元的意義。</translation>
+    </message>
+    <message>
+        <source>Error</source>
+        <translation>錯誤</translation>
+    </message>
+    <message>
+        <source>Warning</source>
+        <translation>警告</translation>
+    </message>
+    <message>
+        <source>%1 error(s), %2 warning(s): the generated files may not work until the errors are fixed</source>
+        <translation>%1 個錯誤、%2 個警告：錯誤修正前，產生的檔案可能無法使用</translation>
+    </message>
+    <message>
+        <source>No errors, %1 warning(s)</source>
+        <translation>沒有錯誤，%1 個警告</translation>
+    </message>
+    <message>
+        <source>No problems</source>
+        <translation>沒有問題</translation>
+    </message>
+    <message>
+        <source>Problems (%1)</source>
+        <translation>問題（%1）</translation>
     </message>
 </context>
 <context>
@@ -1077,6 +1438,78 @@ An IDE for the Sensor Micro-Sequencer ISA, built on the AssemblyCore assembler.<
     <message>
         <source>Closed project %1</source>
         <translation>已關閉專案 %1</translation>
+    </message>
+    <message>
+        <source>&amp;Hardware</source>
+        <translation>硬體(&amp;H)</translation>
+    </message>
+    <message>
+        <source>&amp;New Hardware Description...</source>
+        <translation>新增硬體描述(&amp;N)...</translation>
+    </message>
+    <message>
+        <source>Hardware</source>
+        <translation>硬體</translation>
+    </message>
+    <message>
+        <source>Open or create a project first.</source>
+        <translation>請先開啟或建立專案。</translation>
+    </message>
+    <message>
+        <source>New hardware description</source>
+        <translation>新增硬體描述</translation>
+    </message>
+    <message>
+        <source>Hardware description (*.achw)</source>
+        <translation>硬體描述 (*.achw)</translation>
+    </message>
+    <message>
+        <source>&amp;Open Hardware Designer</source>
+        <translation>開啟硬體設計器(&amp;O)</translation>
+    </message>
+    <message>
+        <source>&amp;Adopt Existing Definitions...</source>
+        <translation>接手既有的定義(&amp;A)...</translation>
+    </message>
+    <message>
+        <source>Assembler definitions to adopt (.inc)</source>
+        <translation>要接手的組譯器定義檔（.inc）</translation>
+    </message>
+    <message>
+        <source>Assembler include (*.inc *.asm);;All files (*)</source>
+        <translation>組譯器 include (*.inc *.asm);;所有檔案 (*)</translation>
+    </message>
+    <message>
+        <source>Simulator environment to adopt (Cancel for none)</source>
+        <translation>要接手的模擬器環境檔（取消＝沒有）</translation>
+    </message>
+    <message>
+        <source>Environment (*.cfg *.env *.ini);;All files (*)</source>
+        <translation>環境檔 (*.cfg *.env *.ini);;所有檔案 (*)</translation>
+    </message>
+    <message>
+        <source>Save the hardware description as</source>
+        <translation>硬體描述另存為</translation>
+    </message>
+    <message>
+        <source>Hardware: %1</source>
+        <translation>硬體：%1</translation>
+    </message>
+    <message>
+        <source>Created hardware description %1</source>
+        <translation>已建立硬體描述 %1</translation>
+    </message>
+    <message>
+        <source>Adopt: %1</source>
+        <translation>接手：%1</translation>
+    </message>
+    <message>
+        <source>Adopted %1: the definitions and the environment are now generated from the description; save to replace the originals.</source>
+        <translation>已接手 %1：定義檔與環境檔現在由描述產生；存檔後會取代原本的檔案。</translation>
+    </message>
+    <message>
+        <source>Save changes to the hardware description %1?</source>
+        <translation>要儲存對硬體描述 %1 的變更嗎？</translation>
     </message>
 </context>
 </TS>

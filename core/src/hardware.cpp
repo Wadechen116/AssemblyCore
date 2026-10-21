@@ -95,6 +95,8 @@ bool parseHardware(const std::string& text, Hardware& out, std::vector<std::stri
             for (auto& kv : s.kv) {
                 if (kv.first == "name") out.name = kv.second;
                 else if (kv.first == "description") out.description = kv.second;
+                else if (kv.first == "include_file") out.includeFile = kv.second;
+                else if (kv.first == "env_file") out.envFile = kv.second;
                 else err(s, "unknown key '" + kv.first + "'");
             }
         } else if (s.kind == "equ") {
@@ -219,6 +221,8 @@ std::string serializeHardware(const Hardware& hw) {
     std::vector<std::pair<std::string, std::string>> head;
     if (!hw.name.empty()) head.push_back({"name", hw.name});
     if (!hw.description.empty()) head.push_back({"description", hw.description});
+    if (!hw.includeFile.empty()) head.push_back({"include_file", hw.includeFile});
+    if (!hw.envFile.empty()) head.push_back({"env_file", hw.envFile});
     writeSection(o, "hardware", head);
     for (const HwEqu& e : hw.equs) {
         std::vector<std::pair<std::string, std::string>> kv{{"value", e.value}};
@@ -260,6 +264,25 @@ std::string serializeHardware(const Hardware& hw) {
     }
     return o.str();
 }
+
+namespace {
+std::string pathStem(const std::string& path) {              // directory part (with the separator) and file name without extension
+    size_t slash = path.find_last_of("/\\");
+    std::string file = slash == std::string::npos ? path : path.substr(slash + 1);
+    size_t dot = file.rfind('.');
+    return (slash == std::string::npos ? "" : path.substr(0, slash + 1)) + (dot == std::string::npos ? file : file.substr(0, dot));
+}
+std::string joinRel(const std::string& achwPath, const std::string& rel) {
+    if (rel.empty()) return rel;
+    const bool absolute = rel[0] == '/' || rel[0] == '\\' || (rel.size() > 1 && rel[1] == ':');
+    if (absolute) return rel;
+    size_t slash = achwPath.find_last_of("/\\");
+    return (slash == std::string::npos ? "" : achwPath.substr(0, slash + 1)) + rel;
+}
+}  // namespace
+
+std::string hardwareIncludePath(const std::string& achwPath, const Hardware& hw) { return hw.includeFile.empty() ? pathStem(achwPath) + ".gen.inc" : joinRel(achwPath, hw.includeFile); }
+std::string hardwareEnvPath(const std::string& achwPath, const Hardware& hw) { return hw.envFile.empty() ? pathStem(achwPath) + ".gen.env.cfg" : joinRel(achwPath, hw.envFile); }
 
 // ---- generators ----------------------------------------------------------------------------------------------------------------------
 std::string generateInc(const Hardware& hw, const std::string& sourceName) {

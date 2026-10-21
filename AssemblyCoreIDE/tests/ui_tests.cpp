@@ -10,13 +10,19 @@
 #include <QTreeWidget>
 #include <QDockWidget>
 
+#include <QLineEdit>
 #include <QMenuBar>
+#include <QSpinBox>
+#include <QCheckBox>
+#include <QPlainTextEdit>
 #include <QXmlStreamReader>
 
 #include "app_shell.h"
 #include "code_editor.h"
 #include "i18n.h"
 #include "editing.h"
+#include "hardware_designer.h"
+#include "hardware_link.h"
 #include "main_window.h"
 #include "qt_dispatcher.h"
 #include "templates.h"
@@ -304,6 +310,151 @@ int runClass(int argc, char** argv) {
     if (!dir.isEmpty()) args << "-o" << QString("%1/%2.txt,txt").arg(QString::fromLocal8Bit(dir), t.metaObject()->className());
     return QTest::qExec(&t, args);
 }
+
+class HardwareTests : public QObject {
+    Q_OBJECT
+    static void type(QLineEdit* e, const QString& text) {
+        e->selectAll();
+        e->setFocus();
+        QTest::keyClicks(e, text);
+    }
+private slots:
+    void createAddEditAndGenerate() {
+        Fixture f;
+        PanelRegistry panels;
+        registerBuiltinPanels(panels);
+        MainWindow w(f.ctx, panels);
+        w.setQuiet(true);
+        w.show();
+        QVERIFY(w.openProject("/w/p.acproj"));
+        QVERIFY(w.newHardware("/w/board.achw"));
+        HardwareDesigner* d = w.currentDesigner();
+        QVERIFY(d && d->loaded());
+        QCOMPARE(w.tabs()->tabText(w.tabs()->currentIndex()), QString("Hardware: board.achw"));
+        QVERIFY(f.ws.project().hardware == "board.achw");
+        // a CSR, edited through the form
+        QCOMPARE(d->addComponent("csr"), QString("NEW_CSR"));
+        auto* name = d->findChild<QLineEdit*>("hwCName");
+        auto* addr = d->findChild<QLineEdit*>("hwCAddr");
+        QVERIFY(name && addr);
+        type(name, "AE_CTRL");
+        type(addr, "0x10");
+        d->flush();
+        QCOMPARE(QString::fromStdString(d->model().csrs[0].name), QString("AE_CTRL"));
+        QCOMPARE(d->model().csrs[0].addr, 0x10);
+        QVERIFY(f.ws.find("/w/board.gen.inc")->text.find(".csr AE_CTRL = 0x010") != std::string::npos);
+        QVERIFY(d->tree()->currentItem()->text(0).startsWith("AE_CTRL  0x010"));
+        // the new name is usable by the program at once, without saving anything
+        f.ws.setText("/w/main.asm", ".main\nstart: EXEC_CSR WRITE8 AE_CTRL, 1\nh: JMP h\n");
+        QVERIFY(f.buildAndWait());
+        QVERIFY2(f.ctx.snapshot->result.ok, qPrintable(QString::fromStdString(f.ctx.snapshot->result.diagnosticsText())));
+        // a wrong value is reported at once, in words
+        type(addr, "0x1000");
+        d->flush();
+        auto* table = d->findChild<QTableWidget*>("hwProblems");
+        QVERIFY(table && table->rowCount() >= 1);
+        QVERIFY(table->item(0, 2)->text().contains("0x000..0xFFF"));
+        QVERIFY(d->findChild<QLabel*>("hwSummary")->text().contains("1 error"));
+        type(addr, "0x10");
+        d->flush();
+        QVERIFY(d->findChild<QLabel*>("hwSummary")->text().startsWith("No "));
+        // a device and a service
+        d->addComponent("device");
+        d->addComponent("service");
+        QCOMPARE((int)d->model().devices.size(), 1);
+        QCOMPARE((int)d->model().services.size(), 1);
+        auto* len = d->findChild<QSpinBox*>("hwSId");
+        QVERIFY(len);
+        len->setValue(15);
+        d->flush();
+        QCOMPARE(d->model().services[0].id, 15);
+        QVERIFY(d->findChild<QPlainTextEdit*>("hwInc")->toPlainText().contains(".service NEW_SERVICE = 15"));
+        QVERIFY(d->findChild<QPlainTextEdit*>("hwEnv")->toPlainText().contains("[csr AE_CTRL]"));
+        // unsaved work shows in the title, Save All writes the description and the generated files
+        QVERIFY(w.tabs()->tabText(w.tabs()->currentIndex()).endsWith("*") || f.ws.anyDirty());
+        std::string err;
+        QVERIFY(f.ws.saveAll(err));
+        std::string text;
+        QVERIFY(f.fs->read("/w/board.achw", text) && text.find("[csr AE_CTRL]") != std::string::npos);
+        QVERIFY(f.fs->read("/w/board.gen.inc", text) && text.find(".service NEW_SERVICE = 15") != std::string::npos);
+        // remove the device
+        QVERIFY(d->select("device", "new_device"));
+        d->removeCurrent();
+        QCOMPARE((int)d->model().devices.size(), 0);
+    }
+    void problemRowSelectsTheComponent() {
+        Fixture f;
+        PanelRegistry panels;
+        registerBuiltinPanels(panels);
+        MainWindow w(f.ctx, panels);
+        w.setQuiet(true);
+        QVERIFY(w.openProject("/w/p.acproj"));
+        QVERIFY(w.newHardware("/w/board.achw"));
+        HardwareDesigner* d = w.currentDesigner();
+        d->addComponent("csr");
+        d->addComponent("csr");
+        d->select("csr", "NEW_CSR");
+        auto* name = d->findChild<QLineEdit*>("hwCName");
+        type(name, "SHARED");
+        d->select("csr", "NEW_CSR_2");
+        type(name, "SHARED");
+        d->flush();
+        QVERIFY(!d->problems().empty());
+        QVERIFY(d->problems()[0].message.find("already used") != std::string::npos || d->problems()[0].message.find("already taken") != std::string::npos);
+    }
+    void closingTheProjectClosesTheDesignerAndTheSessionBringsItBack() {
+        Fixture f;
+        PanelRegistry panels;
+        registerBuiltinPanels(panels);
+        MainWindow w(f.ctx, panels);
+        w.setQuiet(true);
+        QVERIFY(w.openProject("/w/p.acproj"));
+        QVERIFY(w.newHardware("/w/board.achw"));
+        std::string err;
+        QVERIFY(f.ws.saveAll(err));
+        QVERIFY(w.currentDesigner());
+        w.endProject();
+        QVERIFY(!f.ws.hasProject());
+        QCOMPARE(w.tabs()->count(), 0);
+        QVERIFY(w.openProject("/w/p.acproj"));
+        bool designer = false;
+        for (int i = 0; i < w.tabs()->count(); i++) if (qobject_cast<HardwareDesigner*>(w.tabs()->widget(i))) designer = true;
+        QVERIFY2(designer, "the Hardware tab comes back with the session");
+    }
+    void discardingTheDesignerThrowsTheEditsAway() {
+        Fixture f;
+        PanelRegistry panels;
+        registerBuiltinPanels(panels);
+        MainWindow w(f.ctx, panels);
+        w.setQuiet(true);
+        QVERIFY(w.openProject("/w/p.acproj"));
+        QVERIFY(w.newHardware("/w/board.achw"));
+        HardwareDesigner* d = w.currentDesigner();
+        d->addComponent("csr");
+        d->flush();
+        QVERIFY(f.ws.find("/w/board.gen.inc")->text.find(".csr NEW_CSR") != std::string::npos);
+        Q_EMIT w.tabs()->tabCloseRequested(w.tabs()->currentIndex());               // like the close button; the quiet answer is Discard
+        QVERIFY(f.ws.find("/w/board.gen.inc") && !f.ws.find("/w/board.gen.inc")->dirty);                 // reloaded from disk (it is a project source)
+        QVERIFY(f.ws.find("/w/board.gen.inc")->text.find("NEW_CSR") == std::string::npos);
+        std::string disk;
+        QVERIFY(f.fs->read("/w/board.gen.inc", disk));
+        QVERIFY(disk.find("NEW_CSR") == std::string::npos);
+    }
+    void projectTreeListsTheDescription() {
+        Fixture f;
+        PanelRegistry panels;
+        registerBuiltinPanels(panels);
+        MainWindow w(f.ctx, panels);
+        w.setQuiet(true);
+        QVERIFY(w.openProject("/w/p.acproj"));
+        QVERIFY(w.newHardware("/w/board.achw"));
+        auto* tree = w.dock("project")->widget()->findChild<QTreeWidget*>("projectTree");
+        QVERIFY(tree);
+        bool found = false;
+        for (QTreeWidgetItemIterator it(tree); *it; ++it) if ((*it)->text(0).startsWith("board.achw")) found = true;
+        QVERIFY2(found, "the project tree has a Hardware group with the description");
+    }
+};
 
 class DebugTests : public QObject {
     Q_OBJECT
@@ -655,6 +806,7 @@ int runAll(int argc, char** argv) {
     int rc = 0;
     rc |= runClass<UiTests>(argc, argv);
     rc |= runClass<WindowTests>(argc, argv);
+    rc |= runClass<HardwareTests>(argc, argv);
     rc |= runClass<DebugTests>(argc, argv);
     rc |= runClass<LanguageTests>(argc, argv);
     return rc;
