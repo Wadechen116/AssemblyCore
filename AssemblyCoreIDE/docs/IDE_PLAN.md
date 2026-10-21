@@ -49,6 +49,10 @@ CMake 與 QMake 都能建置、低耦合高彈性、**不做**寫入板子（F4�
 
 仿 App Inventor 2 的拼圖式撰寫與元件屬性設定；分析與建議做法見 `BLOCKS_DESIGN.md`（階段 B0–B6）。狀態：⬜ 等待路線決定。
 
+## 硬體設計器（P6 的 H 階段）
+
+說明見 `docs/HARDWARE.md`。H1–H7 ✅（模型與 `.achw` 格式、驗證、產生器、匯入、`asmhw`、IDE 設計器與 File → Hardware、範例 `11_hardware_designer`）；H8 profile 表單 ⬜。
+
 ## 介面語言（P5 的 A6）
 
 | 項目 | 狀態 | 備註 |

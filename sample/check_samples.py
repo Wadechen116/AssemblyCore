@@ -64,6 +64,18 @@ for proj in projects:
         common += ["--profile", p["profile"]]
     for w in p["wcet"]:
         common += ["--wcet", w]
+    if p.get("hardware"):
+        # the description must be valid, and the generated files in the project must be exactly what it generates now
+        rc0, out0 = run([exe("asmhw"), "check", p["hardware"]], d)
+        report(rc0 == 0, "hardware description %s is valid" % p["hardware"], out0)
+        gen_prefix = os.path.join(tmp, name + "_hw")
+        rc1, out1 = run([exe("asmhw"), "gen", p["hardware"], "-o", arg(gen_prefix, d)], d)
+        if rc1 == 0:
+            for have, made in ((p["source"][0], gen_prefix + ".inc"), (p.get("environment", ""), gen_prefix + ".env.cfg")):
+                same = os.path.exists(os.path.join(d, have)) and open(os.path.join(d, have), encoding="utf-8").read() == open(made, encoding="utf-8").read()
+                report(same, "%s is what %s generates (run asmhw gen board.achw)" % (have, p["hardware"]))
+        else:
+            report(False, "asmhw gen", out1)
     expect = p.get("sample_expect", "ok")
     for model in models:
         prefix = os.path.join(tmp, name + "_" + model)

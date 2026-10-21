@@ -1,0 +1,92 @@
+; AssemblyCore hardware description. Edited with the Hardware Designer (or by hand); `asmhw` generates the .inc and the environment file from it.
+
+[hardware]
+name = imu_import
+
+[equ POLL_CLEAR_W1P]
+value = 0x01
+
+[equ POLL_ARM_W1P]
+value = 0x02
+
+[equ PERI_DONE]
+value = 0x01
+
+[equ PERI_ERROR_SET]
+value = 0x02
+
+[equ PERI_TIMER_START]
+value = 0x08
+
+[equ PERI_RESET]
+value = 0x04
+description = clear poll / error / done latches at the start of a service (spec 13.2)
+
+[csr AE_CTRL]
+addr = 0x010
+kind = ram
+
+[csr GYRO_X_CORR_L]
+addr = 0x120
+kind = ram
+
+[csr POLL_MASK]
+addr = 0x300
+kind = value
+bind = poll_mask
+
+[csr POLL_CTRL]
+addr = 0x301
+kind = action
+bit0 = poll_clear
+bit1 = poll_arm
+role0 = poll_clear
+role1 = poll_arm
+
+[csr PERI_CTRL]
+addr = 0x302
+kind = action
+bit0 = done_set
+bit1 = error_set
+bit2 = service_reset
+bit3 = timer_start
+role3 = timer_start
+
+[csr PERI_TPER]
+description = timer period, 2 bytes (low, high)
+addr = 0x310
+kind = value
+bind = timer_period
+bytes = 2
+
+[csr PERI_TPER_H]
+addr = 0x311
+simulated = false
+kind = ram
+
+[device imu]
+addr = 0x68
+index = 0
+symbol = DEV_IMU
+reg 0x3a = 0x00, 0x00, 0x01
+block 0x43 = 0x00 0x0A 0x00 0x14 0x00 0x1E
+
+[service SID_IMU_GYRO_RAW]
+id = 1
+len = 6
+wire = big
+description = X_hi X_lo Y_hi Y_lo Z_hi Z_lo: the sensor sends the high byte first
+
+[service SID_TEMP_RAW]
+id = 2
+len = 2
+wire = little
+description = a 16-bit temperature, low byte first
+
+[sim]
+tie_order = main peri
+
+[timing]
+frame_cycles = 450000
+vblank_start = 435638
+vblank_len = 14362

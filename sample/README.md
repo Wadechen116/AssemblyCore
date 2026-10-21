@@ -23,6 +23,7 @@ ctest -R sample_projects                         # 在 CMake 建置目錄中（�
 | `07a…07d_errors_*` | **故意寫錯**（共 4 個專案，依錯誤出現的階段分開）：測試波浪線、問題面板、錯誤說明 | 失敗，並列出預期的錯誤碼 |
 | `08_runtime_faults` | 建置成功但**執行時 fault**：fault 顯示、`Clear fault`、`csr_buf_valid` | 成功（有 2 個警告），執行時 fault |
 | `09_profile_artifacts` | 非預設 **目標 profile**（SRAM 配置、對齊、DeviceMap 排列、ALU 碼重映射）與產物 | 成功（兩種模型） |
+| `11_hardware_designer` | **硬體設計器**：CSR／裝置／服務／常數都由 `board.achw` 以表單定義，程式裡沒有任何定義；即時驗證；接手既有專案 | 成功，零警告 |
 | `10_multi_file` | 專案含多個來源檔（`shared.inc` + Main 檔 + Peri 檔）：專案樹、跨檔重新命名／找參照／跳轉 | 成功，零警告 |
 
 `common/defs.inc` 是共用的定義檔（CSR 位址是**範例值**，規格只給名稱，不給編號），各專案用 `include_dir = ../common` 引入。
@@ -55,6 +56,7 @@ ctest -R sample_projects                         # 在 CMake 建置目錄中（�
 | 環境檔編輯（Debug → Edit Environment File…） | `02`、`08` | 改 `[device]` 的暫存器值、NACK 注入 |
 | fault 顯示與清除 | `08` | 見該專案 README |
 | 失控保護（週期／牆上時間上限） | `01` | 把 `done: JMP done` 改成真的無窮迴圈（例如 `JMP start` 且不碰 halt） |
+| 硬體設計器（元件樹、屬性表單、問題清單、產生檔預覽、Adopt） | `11` | 見該專案 README |
 | 中英文介面切換（View → Language） | 任一 | 切換後專案與中斷點保留 |
 | 事件（Peri／Main handler）的單步與 `main.in_handler` 訊號 | `05` | 在 `on_frame` 設中斷點，Debug 時注入事件 |
 

@@ -1,0 +1,11 @@
+# AssemblyCoreIDE project
+name = 11_hardware_designer
+source = board.gen.inc
+source = imu.asm
+hardware = board.achw
+environment = board.gen.env.cfg
+scenario = imu.scn
+call_model = inline
+dataflow = warn
+output_dir = out
+sample_expect = ok
