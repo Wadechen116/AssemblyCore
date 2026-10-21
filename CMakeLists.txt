@@ -29,6 +29,7 @@ add_library(asmcore STATIC
   core/src/profile_info.cpp
   core/src/blocks.cpp
   core/src/blocks_import.cpp
+  core/src/blocks_edit.cpp
   core/src/report.cpp
   core/src/image_view.cpp
   core/src/disasm.cpp
@@ -91,6 +92,10 @@ add_executable(asmcore_blocks_tests tests/blocks_tests.cpp)
 target_link_libraries(asmcore_blocks_tests PRIVATE asmcore)
 target_compile_definitions(asmcore_blocks_tests PRIVATE ASMCORE_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
 add_test(NAME asmcore_blocks_tests COMMAND asmcore_blocks_tests)
+
+add_executable(asmcore_blocks_edit_tests tests/blocks_edit_tests.cpp)
+target_link_libraries(asmcore_blocks_edit_tests PRIVATE asmcore)
+add_test(NAME asmcore_blocks_edit_tests COMMAND asmcore_blocks_edit_tests)
 
 # The sample projects (sample/) double as an integration test: build, run the scenarios, disassemble and compare, with the tools just built
 find_package(Python3 QUIET COMPONENTS Interpreter)

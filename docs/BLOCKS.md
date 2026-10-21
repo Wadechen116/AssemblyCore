@@ -1,4 +1,4 @@
-# 積木程式（Block programs）— 階段 B0
+# 積木程式（Block programs）— 階段 B0 與 B1-M1
 
 把一支程式表示成「積木樹」而不是文字行。這是積木式編輯器的**基礎**（模型、定義、檔案格式、文字⇄積木轉換）；圖形畫布在 B1。設計與路線見 `AssemblyCoreIDE/docs/BLOCKS_DESIGN.md`。
 標準 C++17、無 Qt（`core/include/asmcore/blocks.h`）；命令列工具 `asmblk`。
@@ -76,3 +76,64 @@ asmblk blocks                              列出所有積木與欄位
 ## 擴充（給之後的階段）
 
 新增一種積木＝在 `Registry::defaults()` 加一個 `BlockDef`（欄位、範本、domain），測試會要求詞彙表裡每個指令都有積木。範本語法：`{欄位}` 代入、`{?旗標:文字}` 旗標成立時才輸出、`[ … ]` 內含的欄位有空的就整段省略。需要多行或有邏輯的積木（`proc`、之後的 if／while）在 `generate()` 有自己的程式碼，高階積木會降階成 Level 1 文字。
+
+
+---
+
+# 自由擺放與編輯（階段 B1-M1，`asmcore/blocks_edit.h`）
+
+圖形畫布（B1 後續里程碑）呼叫的都是這一層；它沒有 UI，所有規則與操作都在核心測試。
+
+## 堆疊在畫布上的位置
+
+`Section` 多了 `x`、`y` 與一種新的 domain `"floating"`：
+
+| domain | 是什麼 | 產生程式？ |
+|---|---|---|
+| `"main"` / `"peri"` | 以 `.main` / `.peri` 帽子開頭的區段 | 是 |
+| `""` | 檔頭的定義區 | 是（最先） |
+| `"floating"` | 懸浮在畫布上、不接任何帽子的堆疊 | **否** |
+
+**產生順序**：定義區在前，其餘帶帽子的區段依畫布位置由上到下、同高時由左到右（`programOrder()`）。匯入文字時，每個堆疊的 `y` 依檔案順序嚴格遞增，所以順序等於原檔；舊的 `.acblk`（沒有座標）也保持原順序。
+
+## 連接規則（`checkSequence`、`checkSocket`、`Editor`）
+
+任何會把積木放到某處的操作，都先在副本上套用，檢查「新出現」的違規（原本就有的不算），**硬規則違反就整個拒絕、文件完全不動**，軟規則則接受並回報警告。`dryRun` 只回答「能不能」與原因（畫布用它畫斜紋底色與提示）。
+
+| 規則 | 等級 | 內容 |
+|---|---|---|
+| H1 | 硬 | 同一堆疊不能同時有 Main 專用與 Peri 專用積木（帶帽子的堆疊以帽子為準；漂浮堆疊以第一個專用積木為準） |
+| H2 | 硬 | `.main`／`.peri`／定義區的開頭不能放到別的積木下面（`joinSection`） |
+| H3 | 硬 | 程序不能放進程序 |
+| H4 | 硬 | `ret` 不能在程式流程中（要在程序內；漂浮堆疊上先允許） |
+| H5 | 硬 | 事件向量 `vector` 不能放進程序 |
+| H6 | 硬 | 定義區只放 `directive`、註解、空行與 `raw` |
+| H7 | 硬 | 值積木只能插進型別相符的值插槽；不能單獨站在程式堆疊裡（漂浮堆疊上單獨一個可以） |
+| S1 | 軟（嚴格模式為硬） | 無條件跳躍／`ret`／`br_eret`／`BR.COND ALWAYS` 之後接的不是標籤（執行不到；註解、空行、停用的積木、`proc`、定義類不算） |
+
+每個違規有 `rule`、哪個積木、白話 `reason` 與 `args`（積木標題等，讓介面能翻成中文）。`Raw` 積木不受檢查（內容未知）。
+
+## 編輯操作（`Editor`）
+
+位置用 `Where{section, container, slot, before}` 表示：在某個清單（區段頂層或容器的槽）裡、某個積木**之前**（`before` 空＝接在最後）；`connectionPoints(doc)` 列出所有位置。
+
+`insertBlocks`、`removeBlocks`、`moveBlocks`（`takeBelow`＝連同後面的兄弟）、`splitAt`（從某積木起切成新的漂浮堆疊）、`joinSection`（把漂浮堆疊併進某處）、`newFloating`、`moveSection`、`attachToHat`／`detachFromHat`、`duplicate`、`setField`、`setComment`、`setDisabled`、`setCollapsed`、`plugValue`／`unplugValue`（值插槽；插進已佔用的插槽時舊的積木會漂在旁邊，不會消失）、`setSectionComment`、`removeSection`。
+
+- 被拒絕或 dry-run 時不使用 id 計數器；成功時插入的積木 id 若與現有的衝突會自動換新。
+- 把漂浮堆疊的積木全部搬走，空堆疊自動消失。
+
+## 復原／重做（`EditHistory`）
+
+快照式：成功的操作在 `Editor` 帶著 `EditHistory*` 時自動記一步；同一個欄位連續編輯（相同 mergeKey）合併成一步；上限可設；新操作丟棄「可重做」的尾巴；被拒絕的操作不記步；id 計數器不倒退（復原的積木 id 不會被重用）。`undoLabel()`／`redoLabel()` 給選單用。
+
+## 剪貼簿與輸入
+
+`copyBlocks`（JSON，格式名 `acblk-clip`；選到子孫又選到祖先只複製一次）、`pasteBlocks`（貼 JSON 會換新 id；貼組譯器文字會匯入；多個區段的標頭被丟掉）、`blocksToText`（純文字版）、`blocksFromText`（Typeblock 打一行：`start: MOV …` 得到標籤與指令兩個積木；看不懂的行回 Raw 並標記）、`checkFieldValue`（欄位即時提示：位移量 1 到 8、長度 1 到 32、未知區域名稱等；名稱與運算式不做範圍檢查）。
+
+## 值插槽（為 B4 預留）
+
+`BlockDef.inputs`／`valueType`、`Block.values`、範本中的 `{插槽名}`、型別檢查（H7）、`.acblk` 的 `"values"`。目前沒有 Level 1 積木使用，測試用自訂定義驗證（巢狀運算式產生、拒絕錯誤型別、插入已佔用插槽）。
+
+## 產生器檔頭與輸出檔名
+
+`generate(doc, reg, GenerateOptions{header})`：檔頭註解行會放在最上面，來源對照把它們算進行號（對應「無積木」）。`Document.output` 是產生的檔案名稱（`.acblk` 的 `"output"`）。

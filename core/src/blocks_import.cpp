@@ -1,7 +1,10 @@
 // Text -> blocks. A line that cannot be understood becomes a Raw block that keeps the text, so importing never fails and never loses anything.
+#include <algorithm>
+#include <functional>
 #include <sstream>
 
 #include "asmcore/blocks.h"
+#include "blocks_internal.h"
 #include "util.h"
 
 namespace asmcore {
@@ -328,9 +331,36 @@ Document importAsm(const std::string& text, const std::string& name, ImportStats
         if (last) { while (!s.blocks.empty() && s.blocks.back().type == "blank") s.blocks.pop_back(); }
         else if (!s.blocks.empty() && s.blocks.back().type == "blank") s.blocks.pop_back();
     }
+    // Where the stacks lie on the canvas at first: definitions and Main in the left column, Peri in the right one, top to bottom in file order. y
+    // strictly increases in file order, so the order the program is generated in (canvas order) is the order of the file. The height is an
+    // estimate; the editor's "tidy up" measures the real blocks.
+    {
+        double colY[2] = {0, 0}, lastY = -1;
+        for (Section& s : im.doc.sections) {
+            const int col = s.domain == "peri" ? 1 : 0;
+            size_t n = 0;
+            std::function<void(const std::vector<Block>&)> count = [&](const std::vector<Block>& v) { for (const Block& b : v) { n++; for (auto& st : b.stacks) count(st.second); } };
+            count(s.blocks);
+            const double h = 48 + 30.0 * (double)n;
+            const double y = std::max(colY[col], lastY + 1);
+            s.x = col ? 560 : 0;
+            s.y = y;
+            colY[col] = y + h + 40;
+            lastY = y;
+        }
+    }
     if (stats) stats->blocks = (int)im.doc.blockCount();
     return im.doc;
 }
+
+namespace detail {
+std::vector<Block> importFlat(Document& target, const std::string& text, ImportStats* stats) {
+    Document d = importAsm(text, "", stats);
+    std::vector<Block> out;
+    for (Section& s : d.sections) for (Block& b : s.blocks) { reid(b, target); out.push_back(std::move(b)); }
+    return out;
+}
+}  // namespace detail
 
 }  // namespace blocks
 }  // namespace asmcore

@@ -19,7 +19,7 @@
 namespace asmcore {
 namespace blocks {
 
-enum class FieldKind { Text, Int, Choice, Flag };
+enum class FieldKind { Text, Int, Choice, Flag, Operand };      // Operand: a region with an optional byte range ("MAIN_SCRATCHPAD[0..1]"), edited as region + numbers
 
 struct FieldDef {
     std::string name;
@@ -30,6 +30,14 @@ struct FieldDef {
     bool optional = false;                   // may be empty
     std::string def;                         // value of a new block
     std::string help;
+    long long lo = 0, hi = 0;                // Int: the range that makes sense (checked only for plain number literals; names and expressions are fine); lo == hi == 0: no range
+};
+
+// A value socket: another block plugs into it (an expression). `accepts` are the value types the socket takes.
+struct InputDef {
+    std::string name, label;
+    std::vector<std::string> accepts;
+    bool optional = false;
 };
 
 constexpr int kMain = 1, kPeri = 2, kBoth = 3;       // same bits as lang::DomMask
@@ -41,6 +49,8 @@ struct BlockDef {
     int domains = kBoth;
     std::vector<FieldDef> fields;
     std::vector<std::string> stacks;         // names of statement slots (".proc" has "BODY")
+    std::vector<InputDef> inputs;            // value sockets
+    std::string valueType;                   // non-empty: this block is a VALUE (it plugs into a socket and generates an expression, not a line)
     // Text this block generates. {field} is replaced by the field; {?flag:text} is text only when the Flag field is set;
     // [ ... ] is dropped unless every {field} inside it is non-empty.
     std::string tmpl;
@@ -63,6 +73,7 @@ struct Block {
     std::string type;
     std::vector<std::pair<std::string, std::string>> fields;
     std::vector<std::pair<std::string, std::vector<Block>>> stacks;
+    std::vector<std::pair<std::string, std::vector<Block>>> values;     // value sockets: name -> zero or one block
     std::string comment;                     // end-of-line comment
     bool disabled = false;                   // generated as a comment
     bool collapsed = false;                  // editor state
@@ -72,18 +83,25 @@ struct Block {
     void set(const std::string& name, const std::string& value);
     std::vector<Block>* stack(const std::string& name, bool create = false);
     const std::vector<Block>* stack(const std::string& name) const;
+    const Block* value(const std::string& socket) const;                 // the block plugged into a socket, or nullptr
+    void setValue(const std::string& socket, const Block& b);
+    void clearValue(const std::string& socket);
 };
 
 struct Section {
-    std::string domain;                      // "main", "peri", or "" for lines before the first .main / .peri
+    // "main" / "peri": a program section (starts with .main / .peri); "": the definitions at the top of a file (before the first .main / .peri);
+    // "floating": a stack lying on the canvas that is NOT part of the program (nothing is generated for it).
+    std::string domain;
     std::vector<Block> blocks;
     std::string comment;                     // comment after the .main / .peri directive
+    double x = 0, y = 0;                     // where the stack lies on the canvas
 };
 
 struct Document {
     int version = 1;
     std::string name;
     std::string hardware;                    // the .achw this program uses (relative path), "" = none
+    std::string output;                      // the generated assembler file (relative path), "" = NAME.generated.asm
     std::vector<Section> sections;
     unsigned nextId = 1;
 
@@ -113,7 +131,14 @@ struct Generated {
     const GenLine* atLine(int line) const;                      // which block produced a line
     std::vector<int> linesOf(const std::string& blockId) const;
 };
-Generated generate(const Document& doc, const Registry& reg = Registry::defaults());
+struct GenerateOptions {
+    std::string header;                      // comment lines at the top of the file (without the "; "), e.g. "Generated from X.acblk - edit the blocks, not this file"
+};
+// Program sections are written in canvas order: the definitions first, then the .main / .peri sections from top to bottom (left to right at the
+// same height). Floating stacks are not written.
+Generated generate(const Document& doc, const Registry& reg = Registry::defaults(), const GenerateOptions& opt = GenerateOptions());
+// The sections that generate() writes, in the order it writes them (indexes into doc.sections).
+std::vector<size_t> programOrder(const Document& doc);
 
 // ---- checking ------------------------------------------------------------------------------------------------------------------------
 struct BlockProblem {

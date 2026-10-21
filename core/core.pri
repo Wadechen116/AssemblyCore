@@ -19,6 +19,7 @@ CORE_SOURCES = \
     $$ASMCORE_DIR/src/profile_info.cpp \
     $$ASMCORE_DIR/src/blocks.cpp \
     $$ASMCORE_DIR/src/blocks_import.cpp \
+    $$ASMCORE_DIR/src/blocks_edit.cpp \
     $$ASMCORE_DIR/src/report.cpp \
     $$ASMCORE_DIR/src/image_view.cpp \
     $$ASMCORE_DIR/src/disasm.cpp \

@@ -3,8 +3,10 @@
 
 #include <algorithm>
 #include <set>
+#include <sstream>
 
 #include "asmcore/lang.h"
+#include "blocks_internal.h"
 #include "json_lite.h"
 #include "util.h"
 
@@ -35,6 +37,18 @@ const std::vector<Block>* Block::stack(const std::string& name) const {
     return nullptr;
 }
 
+const Block* Block::value(const std::string& socket) const {
+    for (const auto& kv : values) if (kv.first == socket) return kv.second.empty() ? nullptr : &kv.second[0];
+    return nullptr;
+}
+void Block::setValue(const std::string& socket, const Block& b) {
+    for (auto& kv : values) if (kv.first == socket) { kv.second.assign(1, b); return; }
+    values.emplace_back(socket, std::vector<Block>(1, b));
+}
+void Block::clearValue(const std::string& socket) {
+    for (auto& kv : values) if (kv.first == socket) kv.second.clear();
+}
+
 // ---- Document ------------------------------------------------------------------------------------------------------------------------
 Block Document::make(const std::string& type) {
     Block b;
@@ -52,18 +66,20 @@ Block* findIn(std::vector<Block>& v, const std::string& id) {
     for (Block& b : v) {
         if (b.id == id) return &b;
         for (auto& st : b.stacks) if (Block* r = findIn(st.second, id)) return r;
+        for (auto& vl : b.values) if (Block* r = findIn(vl.second, id)) return r;
     }
     return nullptr;
 }
 size_t countIn(const std::vector<Block>& v) {
     size_t n = 0;
-    for (const Block& b : v) { n++; for (const auto& st : b.stacks) n += countIn(st.second); }
+    for (const Block& b : v) { n++; for (const auto& st : b.stacks) n += countIn(st.second); for (const auto& vl : b.values) n += countIn(vl.second); }
     return n;
 }
 void assignIn(std::vector<Block>& v, Document& d) {
     for (Block& b : v) {
         if (b.id.empty()) b.id = d.newId();
         for (auto& st : b.stacks) assignIn(st.second, d);
+        for (auto& vl : b.values) assignIn(vl.second, d);
     }
 }
 }  // namespace
@@ -98,9 +114,9 @@ const Registry& Registry::defaults() {
             for (const lang::Entry* e : L.all(kind, dom)) if (group.empty() || e->group == group) v.push_back(e->name);
             return v;
         };
-        auto F = [](const char* name, const char* label, FieldKind kind = FieldKind::Text) {
+        auto F = [](const char* name, const char* label, FieldKind kind = FieldKind::Text, long long lo = 0, long long hi = 0) {
             FieldDef f;
-            f.name = name; f.label = label; f.kind = kind;
+            f.name = name; f.label = label; f.kind = kind; f.lo = lo; f.hi = hi;
             return f;
         };
         auto def = [&](const char* type, const char* title, const char* cat, int dom, std::vector<FieldDef> fields, const char* tmpl, const char* spec = "", const char* help = "") {
@@ -113,12 +129,12 @@ const Registry& Registry::defaults() {
         flagSafe.help = "event_safe: a pending event may be dispatched when this branch retires (spec v31 16.3)";
 
         // ---- data and math (Main)
-        def("mov", "move", "Data", kMain, {F("src", "from"), F("dst", "to")}, "MOV {src} -> {dst}", "5", "Copy bytes between regions (or load a constant with CONST(value, bytes)).");
+        def("mov", "move", "Data", kMain, {F("src", "from", FieldKind::Operand), F("dst", "to", FieldKind::Operand)}, "MOV {src} -> {dst}", "5", "Copy bytes between regions (or load a constant with CONST(value, bytes)).");
         {
             FieldDef op = F("op", "operation", FieldKind::Choice);
             for (const std::string& n : names(lang::Tok::SubOp, lang::Dom::None, "alu")) op.options.push_back(n);
             op.open = true;
-            FieldDef amount = F("amount", "by", FieldKind::Int);
+            FieldDef amount = F("amount", "by", FieldKind::Int, 1, 8);
             amount.optional = true;
             FieldDef mode = F("mode", "as", FieldKind::Choice);
             mode.options = {"", "unsigned", "signed"};
@@ -130,10 +146,10 @@ const Registry& Registry::defaults() {
         def("csr_write8", "write CSR", "CSR", kBoth, {F("csr", "register"), F("imm", "value")}, "EXEC_CSR WRITE8 {csr}, {imm}", "4");
         def("csr_set8", "set CSR bits", "CSR", kBoth, {F("csr", "register"), F("imm", "mask")}, "EXEC_CSR SET8 {csr}, {imm}", "4");
         def("csr_clr8", "clear CSR bits", "CSR", kBoth, {F("csr", "register"), F("imm", "mask")}, "EXEC_CSR CLR8 {csr}, {imm}", "4");
-        def("csr_read8", "read CSR byte", "CSR", kMain, {F("csr", "register"), F("dst", "into")}, "EXEC_CSR READ8 {csr} -> {dst}", "4", "Read one CSR byte into MAIN_CSR_DATA_BUF.");
-        def("csr_write_sp", "write CSR from scratchpad", "CSR", kMain, {F("csr", "register"), F("len", "bytes", FieldKind::Int), F("ptr", "scratchpad byte", FieldKind::Int)},
+        def("csr_read8", "read CSR byte", "CSR", kMain, {F("csr", "register"), F("dst", "into", FieldKind::Operand)}, "EXEC_CSR READ8 {csr} -> {dst}", "4", "Read one CSR byte into MAIN_CSR_DATA_BUF.");
+        def("csr_write_sp", "write CSR from scratchpad", "CSR", kMain, {F("csr", "register"), F("len", "bytes", FieldKind::Int, 1, 32), F("ptr", "scratchpad byte", FieldKind::Int, 0, 31)},
             "EXEC_CSR WRITE_SP {csr}, len={len}, ptr={ptr}", "4.3", "Write bytes of MAIN_SCRATCHPAD to consecutive CSRs.");
-        def("csr_read_buf", "read CSR bytes", "CSR", kMain, {F("csr", "register"), F("len", "bytes", FieldKind::Int), F("ptr", "buffer byte", FieldKind::Int)},
+        def("csr_read_buf", "read CSR bytes", "CSR", kMain, {F("csr", "register"), F("len", "bytes", FieldKind::Int, 1, 32), F("ptr", "buffer byte", FieldKind::Int, 0, 31)},
             "EXEC_CSR READ_BUF {csr}, len={len}, ptr={ptr}", "4.3", "Read consecutive CSRs into MAIN_CSR_DATA_BUF.");
         // ---- control
         {
@@ -161,7 +177,7 @@ const Registry& Registry::defaults() {
             rw.options = {"READ", "WRITE"};
             rw.open = true;
             def("xfer", "I2C transfer", "Peripheral", kPeri, {rw, F("args", "details")}, "EXEC_XFER {rw} {args}", "8", "dev=..., addr=..., addrlen=..., ptr=... / data=...");
-            def("pub", "publish result", "Peripheral", kPeri, {F("service", "service"), F("src", "from RX byte"), F("len", "bytes")}, "EXEC_PUB service={service}, src={src}, len={len}", "10");
+            def("pub", "publish result", "Peripheral", kPeri, {F("service", "service"), F("src", "from RX byte", FieldKind::Int, 0, 31), F("len", "bytes", FieldKind::Int, 1, 32)}, "EXEC_PUB service={service}, src={src}, len={len}", "10");
         }
         // ---- structure and text
         {
@@ -195,7 +211,15 @@ const Registry& Registry::defaults() {
 namespace {
 
 // the text of a template for one block
-std::string render(const std::string& tmpl, const Block& b) {
+std::string render(const std::string& tmpl, const Block& b, const Registry& reg);
+
+// the expression a value block stands for
+std::string expression(const Block& v, const Registry& reg) {
+    const BlockDef* d = reg.find(v.type);
+    return d ? render(d->tmpl, v, reg) : std::string("?");
+}
+
+std::string render(const std::string& tmpl, const Block& b, const Registry& reg) {
     std::string out;
     for (size_t i = 0; i < tmpl.size(); i++) {
         char c = tmpl[i];
@@ -207,7 +231,8 @@ std::string render(const std::string& tmpl, const Block& b) {
                 size_t colon = name.find(':');
                 std::string flag = name.substr(1, colon == std::string::npos ? std::string::npos : colon - 1);
                 if (colon != std::string::npos && b.get(flag) == "1") out += name.substr(colon + 1);
-            } else out += b.get(name);
+            } else if (b.field(name)) out += b.get(name);
+            else if (const Block* in = b.value(name)) out += expression(*in, reg);
             i = e;
         } else if (c == '[') {
             size_t e = tmpl.find(']', i);
@@ -218,10 +243,11 @@ std::string render(const std::string& tmpl, const Block& b) {
                 if (inner[k] == '{') {
                     size_t ke = inner.find('}', k);
                     if (ke == std::string::npos) break;
-                    if (b.get(inner.substr(k + 1, ke - k - 1)).empty()) all = false;
+                    const std::string key = inner.substr(k + 1, ke - k - 1);
+                    if (b.get(key).empty() && !b.value(key)) all = false;
                     k = ke;
                 }
-            if (all) out += render(inner, b);
+            if (all) out += render(inner, b, reg);
             i = e;
         } else out += c;
     }
@@ -254,7 +280,7 @@ struct Gen {
             stmt = "; unknown block '" + b.type + "'";
             indent = 0;
         } else {
-            stmt = render(d->tmpl, b);
+            stmt = render(d->tmpl, b, reg);
             if (b.type == "label" || b.type == "directive" || b.type == "vector" || b.type == "wcet" || b.type == "assume") indent = 0;
         }
         if (b.disabled) { emit("; " + stmt, b.id); return; }
@@ -265,9 +291,32 @@ struct Gen {
 
 }  // namespace
 
-Generated generate(const Document& doc, const Registry& reg) {
+std::vector<size_t> programOrder(const Document& doc) {
+    std::vector<size_t> defs, code;
+    for (size_t i = 0; i < doc.sections.size(); i++) {
+        const std::string& d = doc.sections[i].domain;
+        if (d.empty()) defs.push_back(i);
+        else if (d == "main" || d == "peri") code.push_back(i);                      // "floating" stacks are not part of the program
+    }
+    auto before = [&](size_t a, size_t b) {
+        const Section &x = doc.sections[a], &y = doc.sections[b];
+        if (x.y != y.y) return x.y < y.y;
+        return x.x < y.x;
+    };
+    std::stable_sort(defs.begin(), defs.end(), before);
+    std::stable_sort(code.begin(), code.end(), before);
+    defs.insert(defs.end(), code.begin(), code.end());
+    return defs;
+}
+
+Generated generate(const Document& doc, const Registry& reg, const GenerateOptions& opt) {
     Gen g{reg, {}, 0};
-    for (const Section& s : doc.sections) {
+    if (!opt.header.empty()) {
+        std::istringstream hs(opt.header);
+        for (std::string l; std::getline(hs, l);) g.emit("; " + l, "");
+    }
+    for (size_t si : programOrder(doc)) {
+        const Section& s = doc.sections[si];
         if (!s.domain.empty()) {
             if (g.line > 0) g.emit("", "");                                  // one blank line between sections
             g.emit("." + s.domain + (s.comment.empty() ? "" : "    ; " + s.comment), "");
@@ -289,34 +338,60 @@ std::vector<int> Generated::linesOf(const std::string& blockId) const {
 
 // ---- checking ------------------------------------------------------------------------------------------------------------------------
 namespace {
-void check(const std::vector<Block>& v, const std::string& domain, bool inProc, const Registry& reg, std::vector<BlockProblem>& out, std::set<std::string>& ids) {
-    for (const Block& b : v) {
-        auto err = [&](const std::string& m, bool error = true) { out.push_back({error, b.id, m}); };
-        if (b.id.empty()) err("the block has no id");
-        else if (!ids.insert(b.id).second) err("the id " + b.id + " is used by another block");
-        const BlockDef* d = reg.find(b.type);
-        if (!d) { err("unknown block type '" + b.type + "'"); continue; }
+
+void checkBlock(const Block& b, const std::string& domain, bool inProc, bool asValue, const Registry& reg, std::vector<BlockProblem>& out, std::set<std::string>& ids);
+
+void checkList(const std::vector<Block>& v, const std::string& domain, bool inProc, const Registry& reg, std::vector<BlockProblem>& out, std::set<std::string>& ids) {
+    for (const Block& b : v) checkBlock(b, domain, inProc, false, reg, out, ids);
+}
+
+void checkBlock(const Block& b, const std::string& domain, bool inProc, bool asValue, const Registry& reg, std::vector<BlockProblem>& out, std::set<std::string>& ids) {
+    auto err = [&](const std::string& m, bool error = true) { out.push_back({error, b.id, m}); };
+    if (b.id.empty()) err("the block has no id");
+    else if (!ids.insert(b.id).second) err("the id " + b.id + " is used by another block");
+    const BlockDef* d = reg.find(b.type);
+    if (!d) { err("unknown block type '" + b.type + "'"); return; }
+    if (asValue && d->valueType.empty()) err("'" + d->title + "' is a statement; it cannot be plugged into a value socket");
+    if (!asValue && !d->valueType.empty()) err("'" + d->title + "' is a value; it must be plugged into a socket, not stand in a stack");
+    const bool floating = domain == "floating";
+    if (!floating && !asValue) {
         if (domain.empty() && (d->category == "Data" || d->category == "Math" || d->category == "CSR" || d->category == "Control" || d->category == "Peripheral"))
             err("'" + d->title + "' needs a .main or .peri section before it");
         else if (domain == "main" && !(d->domains & kMain)) err("'" + d->title + "' is a Peri block; it cannot be in the Main section");
         else if (domain == "peri" && !(d->domains & kPeri)) err("'" + d->title + "' is a Main block; it cannot be in the Peri section");
-        for (const FieldDef& f : d->fields) {
-            const std::string* val = b.field(f.name);
-            const std::string v2 = val ? *val : std::string();
-            if (f.kind == FieldKind::Flag) continue;
-            if (v2.empty() && !f.optional && b.type != "raw") err("'" + f.label + "' is empty");
-            if (f.kind == FieldKind::Choice && !f.open && !v2.empty() && std::find(f.options.begin(), f.options.end(), v2) == f.options.end()) err("'" + v2 + "' is not one of the choices for '" + f.label + "'");
+    }
+    for (const FieldDef& f : d->fields) {
+        const std::string* val = b.field(f.name);
+        const std::string v2 = val ? *val : std::string();
+        if (f.kind == FieldKind::Flag) continue;
+        if (v2.empty() && !f.optional && b.type != "raw") err("'" + f.label + "' is empty");
+        if (f.kind == FieldKind::Choice && !f.open && !v2.empty() && std::find(f.options.begin(), f.options.end(), v2) == f.options.end()) err("'" + v2 + "' is not one of the choices for '" + f.label + "'");
+    }
+    for (const auto& kv : b.fields) {
+        bool known = false;
+        for (const FieldDef& f : d->fields) if (f.name == kv.first) known = true;
+        if (!known) err("the field '" + kv.first + "' does not belong to this block", false);
+    }
+    for (const auto& st : b.stacks) {
+        if (std::find(d->stacks.begin(), d->stacks.end(), st.first) == d->stacks.end()) { err("'" + b.type + "' has no slot '" + st.first + "'"); continue; }
+        if (b.type == "proc" && inProc) err("procedures do not nest");
+        checkList(st.second, domain, inProc || b.type == "proc", reg, out, ids);
+    }
+    for (const InputDef& in : d->inputs) {
+        const Block* c = b.value(in.name);
+        if (!c) { if (!in.optional) err("'" + in.label + "' needs a block plugged in"); continue; }
+        const BlockDef* cd = reg.find(c->type);
+        if (cd && !cd->valueType.empty() && !in.accepts.empty() && std::find(in.accepts.begin(), in.accepts.end(), cd->valueType) == in.accepts.end()) {
+            std::string acc;
+            for (const std::string& a2 : in.accepts) acc += (acc.empty() ? "" : ", ") + a2;
+            out.push_back({true, c->id, "'" + cd->title + "' (" + cd->valueType + ") does not fit into '" + in.label + "', which takes " + acc});
         }
-        for (const auto& kv : b.fields) {
-            bool known = false;
-            for (const FieldDef& f : d->fields) if (f.name == kv.first) known = true;
-            if (!known) err("the field '" + kv.first + "' does not belong to this block", false);
-        }
-        for (const auto& st : b.stacks) {
-            if (std::find(d->stacks.begin(), d->stacks.end(), st.first) == d->stacks.end()) { err("'" + b.type + "' has no slot '" + st.first + "'"); continue; }
-            if (b.type == "proc" && inProc) err("procedures do not nest");
-            check(st.second, domain, inProc || b.type == "proc", reg, out, ids);
-        }
+        checkBlock(*c, domain, inProc, true, reg, out, ids);
+    }
+    for (const auto& kv : b.values) {
+        bool known = false;
+        for (const InputDef& in : d->inputs) if (in.name == kv.first) known = true;
+        if (!known && !kv.second.empty()) err("'" + b.type + "' has no value socket '" + kv.first + "'");
     }
 }
 }  // namespace
@@ -325,8 +400,8 @@ std::vector<BlockProblem> validate(const Document& doc, const Registry& reg) {
     std::vector<BlockProblem> out;
     std::set<std::string> ids;
     for (const Section& s : doc.sections) {
-        if (s.domain != "" && s.domain != "main" && s.domain != "peri") out.push_back({true, "", "unknown section '" + s.domain + "' (main or peri)"});
-        check(s.blocks, s.domain, false, reg, out, ids);
+        if (s.domain != "" && s.domain != "main" && s.domain != "peri" && s.domain != "floating") out.push_back({true, "", "unknown section '" + s.domain + "' (main, peri or floating)"});
+        checkList(s.blocks, s.domain, false, reg, out, ids);
     }
     return out;
 }
@@ -346,6 +421,13 @@ json::Value toJson(const Block& b) {
     if (!b.comment.empty()) v.set("comment", json::Value::makeString(b.comment));
     if (b.disabled) v.set("disabled", json::Value::makeBool(true));
     if (b.collapsed) v.set("collapsed", json::Value::makeBool(true));
+    bool anyValue = false;
+    for (const auto& vl : b.values) if (!vl.second.empty()) anyValue = true;
+    if (anyValue) {
+        json::Value vs = json::Value::makeObject();
+        for (const auto& vl : b.values) if (!vl.second.empty()) vs.set(vl.first, toJson(vl.second[0]));
+        v.set("values", vs);
+    }
     bool anyStack = false;
     for (const auto& st : b.stacks) if (!st.second.empty() || b.type == "proc") anyStack = true;
     if (anyStack) {
@@ -385,6 +467,14 @@ bool fromJson(const json::Value& v, Block& b, const std::string& where, std::str
             b.fields.emplace_back(kv.first, val);
         }
     }
+    if (const json::Value* vs = v.get("values")) {
+        if (vs->kind != json::Value::Object) { err = where + ": \"values\" must be an object"; return false; }
+        for (const auto& kv : vs->obj) {
+            Block c;
+            if (!fromJson(kv.second, c, where + ".values." + kv.first, err)) return false;
+            b.values.emplace_back(kv.first, std::vector<Block>(1, std::move(c)));
+        }
+    }
     if (const json::Value* s = v.get("stacks")) {
         if (s->kind != json::Value::Object) { err = where + ": \"stacks\" must be an object"; return false; }
         for (const auto& kv : s->obj) {
@@ -406,6 +496,7 @@ unsigned maxNumericId(const std::vector<Block>& v) {
     for (const Block& b : v) {
         if (b.id.size() > 1 && b.id[0] == 'b') m = std::max<unsigned>(m, (unsigned)std::strtoul(b.id.c_str() + 1, nullptr, 10));
         for (const auto& st : b.stacks) m = std::max(m, maxNumericId(st.second));
+        for (const auto& vl : b.values) m = std::max(m, maxNumericId(vl.second));
     }
     return m;
 }
@@ -418,12 +509,15 @@ std::string serializeDocument(const Document& doc) {
     root.set("version", json::Value::makeNumber(doc.version));
     if (!doc.name.empty()) root.set("name", json::Value::makeString(doc.name));
     if (!doc.hardware.empty()) root.set("hardware", json::Value::makeString(doc.hardware));
+    if (!doc.output.empty()) root.set("output", json::Value::makeString(doc.output));
     root.set("next_id", json::Value::makeNumber(doc.nextId));
     json::Value secs = json::Value::makeArray();
     for (const Section& s : doc.sections) {
         json::Value sv = json::Value::makeObject();
         sv.set("domain", json::Value::makeString(s.domain));
         if (!s.comment.empty()) sv.set("comment", json::Value::makeString(s.comment));
+        sv.set("x", json::Value::makeNumber(s.x));
+        sv.set("y", json::Value::makeNumber(s.y));
         json::Value arr = json::Value::makeArray();
         for (const Block& b : s.blocks) arr.push(toJson(b));
         sv.set("blocks", arr);
@@ -449,6 +543,7 @@ bool parseDocument(const std::string& text, Document& out, std::string& error) {
     }
     if (const json::Value* n = root.get("name")) if (n->kind == json::Value::String) out.name = n->str;
     if (const json::Value* h = root.get("hardware")) if (h->kind == json::Value::String) out.hardware = h->str;
+    if (const json::Value* o = root.get("output")) if (o->kind == json::Value::String) out.output = o->str;
     const json::Value* secs = root.get("sections");
     if (!secs || secs->kind != json::Value::Array) { error = "\"sections\" (an array) is missing"; return false; }
     for (size_t i = 0; i < secs->arr.size(); i++) {
@@ -458,6 +553,8 @@ bool parseDocument(const std::string& text, Document& out, std::string& error) {
         Section s;
         if (const json::Value* d = sv.get("domain")) if (d->kind == json::Value::String) s.domain = d->str;
         if (const json::Value* c = sv.get("comment")) if (c->kind == json::Value::String) s.comment = c->str;
+        if (const json::Value* px = sv.get("x")) if (px->kind == json::Value::Number) s.x = px->num;
+        if (const json::Value* py = sv.get("y")) if (py->kind == json::Value::Number) s.y = py->num;
         const json::Value* blocks = sv.get("blocks");
         if (!blocks || blocks->kind != json::Value::Array) { error = where + ": \"blocks\" (an array) is missing"; return false; }
         for (size_t k = 0; k < blocks->arr.size(); k++) {
@@ -473,6 +570,16 @@ bool parseDocument(const std::string& text, Document& out, std::string& error) {
     out.assignMissingIds();
     return true;
 }
+
+namespace detail {
+json::Value blockToJson(const Block& b) { return asmcore::blocks::toJson(b); }
+bool blockFromJson(const json::Value& v, Block& b, const std::string& where, std::string& err) { return asmcore::blocks::fromJson(v, b, where, err); }
+void reid(Block& b, Document& doc) {
+    b.id = doc.newId();
+    for (auto& st : b.stacks) for (Block& c : st.second) reid(c, doc);
+    for (auto& vl : b.values) for (Block& c : vl.second) reid(c, doc);
+}
+}  // namespace detail
 
 // ---- operands ------------------------------------------------------------------------------------------------------------------------
 bool parseOperand(const std::string& text, Operand& out) {
