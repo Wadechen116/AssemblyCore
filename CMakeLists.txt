@@ -25,6 +25,7 @@ add_library(asmcore STATIC
   core/src/artifacts.cpp
   core/src/events.cpp
   core/src/diag_names.cpp
+  core/src/hardware.cpp
   core/src/report.cpp
   core/src/image_view.cpp
   core/src/disasm.cpp
@@ -52,6 +53,10 @@ target_link_libraries(asmdis PRIVATE asmcore)
 add_executable(asmsim cli/sim_main.cpp)
 target_link_libraries(asmsim PRIVATE asmcore)
 
+# Hardware Designer on the command line.
+add_executable(asmhw cli/hw_main.cpp)
+target_link_libraries(asmhw PRIVATE asmcore)
+
 # Tests (no framework: plain assertions, like the AutoDetectDevice test program).
 enable_testing()
 add_executable(asmcore_tests tests/main.cpp)
@@ -69,6 +74,11 @@ add_executable(asmcore_disasm_tests tests/disasm_tests.cpp)
 target_link_libraries(asmcore_disasm_tests PRIVATE asmcore)
 target_compile_definitions(asmcore_disasm_tests PRIVATE ASMCORE_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
 add_test(NAME asmcore_disasm_tests COMMAND asmcore_disasm_tests)
+
+add_executable(asmcore_hardware_tests tests/hardware_tests.cpp)
+target_link_libraries(asmcore_hardware_tests PRIVATE asmcore)
+target_compile_definitions(asmcore_hardware_tests PRIVATE ASMCORE_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+add_test(NAME asmcore_hardware_tests COMMAND asmcore_hardware_tests)
 
 # The sample projects (sample/) double as an integration test: build, run the scenarios, disassemble and compare, with the tools just built
 find_package(Python3 QUIET COMPONENTS Interpreter)
