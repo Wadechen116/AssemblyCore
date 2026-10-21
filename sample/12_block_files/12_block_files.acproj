@@ -1,0 +1,10 @@
+# AssemblyCoreIDE project
+name = 12_block_files
+source = hello.generated.asm
+include_dir = ../common
+scenario = hello.scn
+blocks = hello.acblk
+call_model = inline
+dataflow = warn
+output_dir = out
+sample_expect = ok

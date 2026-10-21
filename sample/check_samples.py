@@ -76,6 +76,17 @@ for proj in projects:
                 report(same, "%s is what %s generates (run asmhw gen board.achw)" % (have, p["hardware"]))
         else:
             report(False, "asmhw gen", out1)
+    if p.get("blocks"):
+        # the block file must be sound, and the generated text in the project must be what it generates now
+        rc0, out0 = run([exe("asmblk"), "check", p["blocks"]], d)
+        report(rc0 == 0, "block file %s is sound" % p["blocks"], out0)
+        gen = os.path.join(tmp, name + "_blocks.asm")
+        rc1, out1 = run([exe("asmblk"), "gen", p["blocks"], "-o", arg(gen, d)], d)
+        if rc1 == 0:
+            same = open(os.path.join(d, p["source"][0]), encoding="utf-8").read() == open(gen, encoding="utf-8").read()
+            report(same, "%s is what %s generates (run asmblk gen)" % (p["source"][0], p["blocks"]))
+        else:
+            report(False, "asmblk gen", out1)
     expect = p.get("sample_expect", "ok")
     for model in models:
         prefix = os.path.join(tmp, name + "_" + model)

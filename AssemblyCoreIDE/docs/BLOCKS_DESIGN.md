@@ -54,6 +54,8 @@ AI2 有兩個畫面：**Designer**（元件面板、檢視區、元件樹、屬�
 
 ---
 
+> **B0 實作備註（2026-10-21）**：模型、定義、產生器、匯入器、`.acblk` 放在 **core**（`core/include/asmcore/blocks.h`）而不是 `services/blocks/`，與 `hardware.h` 相同的理由：命令列工具 `asmblk` 與測試也要用，且仍是標準 C++17、無 Qt。IDE 的 `services` 層只做工作區整合。細節見 `docs/BLOCKS.md`。
+
 ## 4. 架構
 
 ```
