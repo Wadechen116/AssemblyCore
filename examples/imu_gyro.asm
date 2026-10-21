@@ -37,6 +37,9 @@ unknown_service:                            ; baseline: the unknown-id path must
 service_start:
     EXEC_CSR SET8 PERI_CTRL, PERI_RESET                ; clear the latches of the previous service
     EXEC_CSR WRITE8 POLL_MASK, 0x01                    ; ready bit is status bit 0
+    EXEC_CSR WRITE8 PERI_TPER, 0xFF                    ; timeout timer: 0x7FFF cycles, started ONCE, outside the poll loop
+    EXEC_CSR WRITE8 PERI_TPER_H, 0x7F
+    EXEC_CSR SET8 PERI_CTRL, PERI_TIMER_START
 poll_loop:
     EXEC_CSR SET8 POLL_CTRL, POLL_CLEAR_W1P            ; clear old poll latches
     EXEC_CSR SET8 POLL_CTRL, POLL_ARM_W1P              ; arm the next READ into PERI_RX_BUF[0]

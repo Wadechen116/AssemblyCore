@@ -49,8 +49,10 @@ void Simulator::Impl::opMainCsr(OpCtx& oc) {
             const uint32_t addr = c1.addr;
             if (cop == 3) {
                 if (imm & 0xE0) { fail("fault_desc_reserved", "READ8 destination pointer has bits 7:5 set"); return; }
+                m.bufOk &= ~(1u << imm);                                  // the old content is gone from the moment the read starts
                 m.buf[imm] = csrRead8(addr, Domain::Main);
                 noteWrite("csrbuf", imm, 1);
+                if (!m.faulted) m.bufOk |= 1u << imm;
             } else {
                 csrWrite(addr, imm, cop, Domain::Main);
             }
@@ -63,11 +65,13 @@ void Simulator::Impl::opMainCsr(OpCtx& oc) {
             if (cop == 1 || cop == 2) { fail("fault_desc_reserved", "CsrMultiByte buffer RMW is reserved in the baseline (spec 4.3)"); return; }
             if (ptr + len > 32) { fail("fault_range", std::string("CSR buffer range ptr + len exceeds ") + (cop == 0 ? "MAIN_SCRATCHPAD" : "MAIN_CSR_DATA_BUF")); return; }
             const uint32_t addr = (page << 8) | imm;
+            const uint32_t rangeBits = len >= 32 ? 0xFFFFFFFFu : (((1u << len) - 1) << ptr);
+            if (cop == 3) m.bufOk &= ~rangeBits;
             for (int i = 0; i < len && !m.faulted; i++) {
                 if (cop == 0) csrWrite(addr + (uint32_t)i, m.scr[ptr + i], 0, Domain::Main);       // WRITE_SP (v31 4.3): the source is the scratchpad
                 else m.buf[ptr + i] = csrRead8(addr + (uint32_t)i, Domain::Main);                   // READ_BUF
             }
-            if (cop == 3) noteWrite("csrbuf", ptr, len);
+            if (cop == 3) { noteWrite("csrbuf", ptr, len); if (!m.faulted) m.bufOk |= rangeBits; }
             latency = lat.csrMulti(len);
         }
 }
@@ -166,6 +170,10 @@ void Simulator::Impl::opMainMov(OpCtx& oc) {
         const int dstSize = dr == 3 || dr == 4 ? 2 : 32;
         if (so + len > srcSize) { fail("fault_mov_range", std::string(regName(sr)) + " source range exceeds the region"); return; }
         if (dof + len > dstSize) { fail("fault_mov_range", std::string(regName(dr)) + " destination range exceeds the region"); return; }
+        if (sr == 1 && pf.csrBufValid) {
+            const uint32_t want = len >= 32 ? 0xFFFFFFFFu : (((1u << len) - 1) << so);
+            if ((m.bufOk & want) != want) { fail("fault_csrbuf_invalid", "MOV from MAIN_CSR_DATA_BUF bytes whose EXEC_CSR READ did not complete (csr_buf_valid, spec v31 4.3): a failed readback must not be consumed"); return; }
+        }
         if (sr == 2 && (!st.slot.valid || st.slot.busy)) { fail("fault_slot_not_valid", "MOV from PERI_RESULT_SLOT while it holds no result"); return; }   // ASSUMED: spec says only that a failed precheck keeps valid_q
         std::vector<uint8_t> bytes;
         if (!regionBytes(regName(sr), so, len, bytes)) { fail("fault_mov_range", "source read failed"); return; }

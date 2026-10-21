@@ -44,11 +44,11 @@
 - [x] 事件延遲的分項報告與「無上界」判定
 
 ## 階段 5：新驗證項（B6、B8）
-- [ ] 感測器位元組序（big-endian 進 ALU）→ `E_SENSOR_BYTE_ORDER`
-- [ ] Timer 啟動先於等待；Poll arm 前有成功讀 RX[0] 的路徑
-- [ ] 服務契約：payload 長度與 wire order；未知 service 政策
-- [ ] CSR READ_BUF 失敗後不可使用 readback
-- [ ] 診斷代碼與 v31 建議的 `E_*` 名稱對照表（B8）
+- [x] 感測器位元組序（big-endian 進 ALU）→ `E_SENSOR_BYTE_ORDER`
+- [x] Timer 啟動先於等待；Poll arm 前有成功讀 RX[0] 的路徑
+- [x] 服務契約：payload 長度與 wire order；未知 service 政策
+- [x] CSR READ_BUF 失敗後不可使用 readback
+- [x] 診斷代碼與 v31 建議的 `E_*` 名稱對照表（B8）
 
 ## 階段 6：時序與就緒等級（A9、B5）
 - [ ] profile 加入 Frontend／SRAM 仲裁／引擎延遲欄位

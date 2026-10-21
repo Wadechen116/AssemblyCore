@@ -255,6 +255,10 @@ RET:     MOV MAIN_SCRATCHPAD[slot..+1] -> ALU_OPA
 | W511 | 同一個 service_id 以不同長度發佈 |
 | W512 | `safe` 分支之後仍要讀的狀態，可能被事件 handler 覆寫 |
 | W513 | 事件回應時間無上界（沒有 safe 分支或前景迴圈缺 safe） |
+| W514 | 線上高位元組在前的 2 位元組感測器值未經交換就進 ALU（第 12 節） |
+| W515 | 在計時器可能沒啟動的路徑上測試計時器旗標（第 12 節） |
+| W516 | 測試 Poll 結果前，沒有「arm → 成功 READ 進 `PERI_RX_BUF[0]`」（第 12 節） |
+| W517 | 發佈／消耗長度與服務契約（`.service …, len=N`）不符（第 12 節） |
 
 ## 8. 映像檔佈局（規格 v31）
 
@@ -315,3 +319,20 @@ error 時代碼變成 E5xx 並使建置失敗）、`--no-warn W502`（可重複�
 
 - （模擬器已完成，見 `docs/SIM.md`。）
 - 以 timing 預測式（`*_COMMIT_ELIGIBLE`）自動產生 `CSR_WCET_*` 的值（目前只提供 `--wcet` 查詢）。
+
+## 12. 服務契約與 Peri 流程檢查（規格 v31，階段 5）
+
+這些檢查需要組譯器知道硬體沒有告訴它的事（CSR 位址由 profile 決定、感測器的線上位元組序由裝置決定），所以**由你在原始碼裡宣告**；沒宣告就不猜、不警告。診斷碼對應 v31 的 `E_*` 名稱，`asmc --explain 碼` 與 `asmc --list-codes` 可查，`validation.json` 的每筆診斷帶 `spec_name` 與 `fix`。
+
+```
+.service GYRO = 1, len=6, big     ; service_id 1；payload 6 位元組；線上高位元組先（big）或低位元組先（little）
+.csrbit PERI_CTRL[3] = timer_start    ; 這個 CSR 位元寫 1 就啟動計時器（角色：timer_start / timer_clear / poll_arm / poll_clear）
+.csrbit POLL_CTRL[1] = poll_arm
+.csrbit POLL_CTRL[0] = poll_clear
+```
+
+- **W514 感測器位元組序**（`E_SENSOR_BYTE_ORDER`）：宣告 `big` 的服務，其 payload 以 2 位元組為一組（偶數偏移起）；若一組的兩個位元組**照原順序**直接 `MOV` 進 `ALU_OPA`／`ALU_OPB`，ALU 會看到位元組互換的值（ALU 運算元是小端）。修法：用兩個 1 位元組的 MOV 經 scratchpad 交換（低位元組到 `T`、高位元組到 `T+1`），再把 `T..T+1` 搬進 ALU。需要 handler 的 service id 已由比較判定。
+- **W515 計時器流程**（`E_TIMER_START_FLOW`）：有宣告 `timer_start` 時，`BR.IF_TIMER_DONE`／`IF_TIMER_NOT_DONE` 之前每條路徑都必須寫過啟動位元（寫 1；`WRITE8` 或 `SET8`），且之後沒有 `timer_clear`。`timer_done = 0` 不代表計時器在跑。計時器應在等待迴圈**外**啟動一次。
+- **W516 Poll**（`E_POLL_ARM_PRODUCER`）：有宣告 `poll_arm` 時，`BR.IF_READY`／`IF_NOT_READY` 之前每條路徑都必須「arm → 一次成功的 `EXEC_XFER READ` 且寫入 `PERI_RX_BUF[0]`」，中間不可 `poll_clear`。
+- **W517 服務契約**：`EXEC_PUB` 的長度、Main handler 消耗的長度都必須等於 `len=N`。
+- **CSR 讀回**（`E_CSR_READBACK_SOURCE`）：`MAIN_CSR_DATA_BUF` 只能由 `READ8`／`READ_BUF` 寫（E202），讀未寫的位元組是 W502。若 profile 有選用的 `csr_buf_valid`（`csr_buf_valid = true`），模擬器會逐位元組記錄讀回是否完成，從沒完成的位元組 `MOV` 出來會 fault（`fault_csrbuf_invalid`）。

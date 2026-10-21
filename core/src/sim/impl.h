@@ -32,6 +32,7 @@ const Cycle kNever = ~(Cycle)0;
 struct MainState {
     uint32_t pc = 0;
     uint8_t scr[32] = {}, buf[32] = {};
+    uint32_t bufOk = 0;                // csr_buf_valid: bit i = MAIN_CSR_DATA_BUF[i] holds the result of a completed READ (only used when the profile has it)
     uint16_t opa = 0, opb = 0;
     uint32_t out = 0;
     bool cmp = false, zero = false, neg = false, carry = false, borrow = false, ovs = false, ov16 = false;

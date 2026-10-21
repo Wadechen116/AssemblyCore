@@ -74,6 +74,7 @@ struct Profile {
     AluCodes alu;
     int constPoolMax = 256;                 // MOV src_offset is 8 bits
     int eventCount = 8;                     // event ids 0..eventCount-1 per domain (vector sources / numbering are profile-defined, v31 16.7)
+    bool csrBufValid = false;               // the (optional, v31 proposed) per-byte csr_buf_valid protection exists: a MOV from a byte whose READ failed faults
     bool sameRegionMov = true;              // MOV between NON-overlapping ranges of one region (spec v31 5.2 forbids only overlap; confirm with the RTL tests)
     bool profileCond0 = false;              // Main ConditionMap 0xE is "profile-defined"; illegal unless the profile defines it
     // SoftRet call model: where the assembler keeps its private state (must not be used by the program)

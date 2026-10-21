@@ -142,6 +142,7 @@ void Simulator::Impl::resetState() {
     for (const SigDef& d : sigs) if (d.stored >= 0) n.sig[(size_t)d.stored] = d.init;
     n.dev.resize(devs.size());
     st = n;
+    st.m.bufOk = pf.csrBufResetDefined ? 0xFFFFFFFFu : 0u;
     for (auto& kv : csrDefs) if (kv.second.kind == "ram") st.csr[kv.first] = (uint8_t)kv.second.reset;
     for (size_t i = 0; i < devs.size(); i++) devs[i].dev->init(st.dev[i]);
     if (timing.frameCycles > 0) schedule((Cycle)timing.frameCycles, TimedEvent::FrameEnd);

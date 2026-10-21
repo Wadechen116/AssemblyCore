@@ -95,9 +95,10 @@ Language Language::defaults(const Profile& pf) {
     add(".EQU", Tok::Directive, kBoth, ".equ NAME = expr", "Define a constant.", "");
     add("EQU", Tok::Directive, kBoth, "NAME EQU expr", "Define a constant (8051 style).", "");
     add(".CSR", Tok::Directive, kBoth, ".csr NAME = addr", "Name a 12-bit CSR address.", "4");
-    add(".SERVICE", Tok::Directive, kBoth, ".service NAME = id", "Name a service id (1..15) shared by Main and Peri.", "12");
+    add(".SERVICE", Tok::Directive, kBoth, ".service NAME = id [, len=N] [, big|little]", "Name a service id (1..15) shared by Main and Peri; optionally declare its payload length and wire byte order (checked by W514, W517).", "12");
     add(".CONST", Tok::Directive, kMain, ".const NAME db|dw v, ...", "Constants placed in MAIN_CONST_POOL.", "5");
     add(".DEVMAP", Tok::Directive, kBoth, ".devmap i, I2C, addr7 [, name]", "Entry i of the DeviceMap.", "9");
+    add(".CSRBIT", Tok::Directive, kBoth, ".csrbit CSR[bit] = timer_start|timer_clear|poll_arm|poll_clear", "Declare which CSR bit starts/clears the Peri timer or arms/clears the Poll evaluator, so the assembler can check the flow (W515, W516).", "6");
     add(".VECTOR", Tok::Directive, kBoth, ".vector EVENT_ID, label", "Entry of the event handler for this id in the current domain. The handler must end in BR.ERET (spec v31 16).", "16");
     add(".PROC", Tok::Directive, kBoth, ".proc NAME", "Begin a procedure.", "");
     add(".ENDP", Tok::Directive, kBoth, ".endp", "End a procedure.", "");

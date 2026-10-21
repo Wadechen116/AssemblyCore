@@ -20,6 +20,7 @@ profile_cond0 = false
 ret_slot_base = 24
 ret_stage_base = 30
 profile_id = planning-default
+csr_buf_valid = false             ; v31 4.3 optional per-byte readback-valid protection (simulator: fault_csrbuf_invalid)
 same_region_mov = true             ; v31 5.2: only OVERLAPPING same-region MOV is forbidden (confirm with RTL)
 layout_offset_bits = 16            ; width of each ImageLayout sideband field (offsets are logical BYTES)
 

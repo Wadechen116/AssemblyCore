@@ -110,6 +110,12 @@ struct Ctx {
     // `.assume REGION[a..b] defined`: ranges initialised by someone else (a boot sequence, the other domain...)
     struct Assume { int domain; std::string region; int off, len; SrcLoc loc; };
     std::vector<Assume> assumes;
+    // `.service NAME = id [, len=N] [, big|little]`: the logical payload contract of a ResultSlot service (spec v31 12.8 / handoff 5.1)
+    struct ServiceDecl { std::string name; int len = -1; char wire = '?'; SrcLoc loc; };    // wire: 'B' high byte first, 'L' low byte first, '?' unknown
+    std::map<int, ServiceDecl> services;
+    // `.csrbit NAME[n] = role`: which CSR bit starts / clears the Peri timer or arms / clears the Poll evaluator (profile-defined addresses)
+    struct CsrBit { uint32_t addr; int bit; std::string role; SrcLoc loc; };
+    std::vector<CsrBit> csrBits;
     // `.vector ID, label` declarations per domain (resolved against the flow labels after layout)
     struct VecDecl { int id; std::string label; SrcLoc loc; };
     std::vector<VecDecl> vectors[2];

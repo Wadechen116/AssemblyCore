@@ -156,6 +156,10 @@ dump | log 文字 | history 1000 50 | rewind 4000 | trace on
 ```
 註解用 `;`。呼叫端可用 `runScenario(sim, script, &extra)` 加入自己的指令。
 
+## 7b. `csr_buf_valid`（選用，規格 v31 4.3）
+
+profile 設 `csr_buf_valid = true` 時，模擬器為 `MAIN_CSR_DATA_BUF` 的每個位元組記錄「讀回是否完成」：`EXEC_CSR READ8`／`READ_BUF` 一開始就讓目標範圍失效，**整筆成功完成**才變有效；從無效位元組做 `MOV` 會 fault（`fault_csrbuf_invalid`）。預設關閉，因為規格說這是 v31 的選用提案，不可假設硬體有。
+
 ## 8. 規格沒寫、模擬器自行選擇的地方
 
 | # | 選擇 | 規格狀況 |

@@ -5,6 +5,7 @@
 #include <map>
 #include <sstream>
 
+#include "asmcore/diagnostics.h"
 #include "asmcore/sram.h"
 #include "codec.h"
 #include "internal.h"
@@ -260,7 +261,9 @@ std::string Result::validationReportJson() const {
     for (size_t i = 0; i < diags.size(); i++) {
         const Diagnostic& d = diags[i];
         o << (i ? "," : "") << "\n  {\"severity\":\"" << (d.sev == Diagnostic::Error ? "error" : d.sev == Diagnostic::Warning ? "warning" : "note") << "\",\"code\":" << q(d.code) << ",\"file\":" << q(d.loc.file) << ",\"line\":" << d.loc.line
-          << ",\"col\":" << d.loc.col << ",\"end_col\":" << d.loc.endCol << ",\"message\":" << q(d.msg) << "}";
+          << ",\"col\":" << d.loc.col << ",\"end_col\":" << d.loc.endCol << ",\"message\":" << q(d.msg);
+        if (const DiagInfo* info = diagInfo(d.code)) { if (info->specName[0]) o << ",\"spec_name\":" << q(info->specName); o << ",\"fix\":" << q(info->fix); }
+        o << "}";
     }
     o << "\n ]\n}\n";
     return o.str();

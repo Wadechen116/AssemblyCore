@@ -100,8 +100,9 @@ struct Facts {
 
 // ---- Main -----------------------------------------------------------------------------------------------------------------------------------
 struct Tag {                                         // where a byte came from, to recognise "service_id == constant" comparisons
-    uint8_t kind = 0, v = 0;                         // 1: constant byte v;  2: byte v of PERI_RESULT_META
-    bool operator==(const Tag& o) const { return kind == o.kind && v == o.v; }
+    uint8_t kind = 0, v = 0;                         // 1: constant byte v;  2: byte v of PERI_RESULT_META;  3: byte v of a service payload
+    bool w = false;                                  // kind 3: the service declares the high byte first (.service ..., big)
+    bool operator==(const Tag& o) const { return kind == o.kind && v == o.v && w == o.w; }
 };
 struct MState {
     bool reach = false;
@@ -215,6 +216,15 @@ struct MainFlow {
                         say(o, "507", "this handler is for service " + std::to_string(s.svc) + ", which Peri publishes with " + have + " byte(s), but it consumes " + std::to_string(len));
                     }
                 }
+                if (s.svc >= 0) {
+                    auto sd = c.services.find(s.svc);
+                    if (sd != c.services.end()) {
+                        if (sd->second.len >= 0 && len != sd->second.len)
+                            say(o, "517", "service " + sd->second.name + " is declared with len=" + std::to_string(sd->second.len) + " (line " + std::to_string(sd->second.loc.line) + "), but this handler consumes " + std::to_string(len) + " byte(s)");
+                        if (sd->second.wire == 'B')                                         // remember: this payload is in bus order, high byte first
+                            for (int i = 0; i < len; i++) { tags[i].kind = 3; tags[i].v = (uint8_t)(m.srcOff + i); tags[i].w = true; }
+                    }
+                }
                 s.valid = false;
                 break;
             }
@@ -237,8 +247,15 @@ struct MainFlow {
         switch (m.dstRegion) {
             case R_SCRATCH: for (int i = 0; i < len && m.dstOff + i < 32; i++) { s.scr[m.dstOff + i] = true; s.scrT[m.dstOff + i] = tags[i]; } break;
             case R_CSRBUF: for (int i = 0; i < len && m.dstOff + i < 32; i++) { s.buf[m.dstOff + i] = true; s.bufT[m.dstOff + i] = tags[i]; } break;
-            case R_OPA: s.opa = true; s.aT[0] = tags[0]; s.aT[1] = tags[1]; break;
-            case R_OPB: s.opb = true; s.bT[0] = tags[0]; s.bT[1] = tags[1]; break;
+            case R_OPA: case R_OPB: {
+                if (len == 2 && tags[0].kind == 3 && tags[0].w && tags[1].kind == 3 && tags[1].w && tags[1].v == tags[0].v + 1 && tags[0].v % 2 == 0)
+                    say(o, "514", std::string(m.dstRegion == R_OPA ? "ALU_OPA" : "ALU_OPB") + " is loaded with bytes " + std::to_string(tags[0].v) + ".." + std::to_string(tags[1].v) +
+                                      " of a service payload that the contract declares high byte first (big-endian bus order), but ALU operands are little-endian (byte 0 = low byte): the ALU would see the value byte-swapped. "
+                                      "Swap the two bytes first: MOV the low byte to scratch[T], the high byte to scratch[T+1] (two 1-byte MOVs, non-overlapping), then MOV scratch[T..T+1] -> " + (m.dstRegion == R_OPA ? "ALU_OPA" : "ALU_OPB") + " (spec v31 handoff 5.2)");
+                if (m.dstRegion == R_OPA) { s.opa = true; s.aT[0] = tags[0]; s.aT[1] = tags[1]; }
+                else { s.opb = true; s.bT[0] = tags[0]; s.bT[1] = tags[1]; }
+                break;
+            }
             default: break;
         }
     }
@@ -284,6 +301,8 @@ struct MainFlow {
 // ---- Peri -------------------------------------------------------------------------------------------------------------------------------------
 struct PState {
     bool reach = false;
+    bool timer = false;                              // a timer_start CSR bit was written on every path (and not cleared since)
+    bool armed = false, evald = false;               // poll_arm written / a successful READ into PERI_RX_BUF[0] followed it
     bool rx[32];
     PState() { for (int i = 0; i < 32; i++) rx[i] = false; }
 };
@@ -292,6 +311,9 @@ bool joinPeri(PState& into, const PState& from) {
     if (!into.reach) { into = from; return true; }
     bool ch = false;
     for (int i = 0; i < 32; i++) if (into.rx[i] && !from.rx[i]) { into.rx[i] = false; ch = true; }
+    if (into.timer && !from.timer) { into.timer = false; ch = true; }
+    if (into.armed && !from.armed) { into.armed = false; ch = true; }
+    if (into.evald && !from.evald) { into.evald = false; ch = true; }
     return ch;
 }
 
@@ -313,17 +335,39 @@ void runDataflow(Ctx& c, const std::vector<Op>* mainOps, const std::vector<Op>* 
         for (int i = 0; i < 32; i++) in[0].rx[i] = pf.periRxResetDefined;
         for (const Ctx::Assume& a : c.assumes) if (a.domain == 1) for (int i = 0; i < a.len; i++) in[0].rx[a.off + i] = true;
         bool reporting = false;
+        bool hasTimerRole = false, hasPollRole = false;
+        for (const Ctx::CsrBit& b : c.csrBits) { if (b.role == "timer_start") hasTimerRole = true; if (b.role == "poll_arm") hasPollRole = true; }
         auto xfer = [&](const Op& o, PState& s) {
             if (!s.reach) return;
+            if (o.kind == OpKind::Csr1 && !o.extra.empty()) {
+                codec::Csr1 x = codec::unpackCsr1(o.desc);
+                if (x.op == CSR1_WRITE8 || x.op == CSR1_SET8)                       // a 1 written to the bit is the trigger (write-1 / set)
+                    for (const Ctx::CsrBit& b : c.csrBits) {
+                        if (b.addr != x.addr || !((o.extra[0] >> b.bit) & 1)) continue;
+                        if (b.role == "timer_start") s.timer = true;
+                        else if (b.role == "timer_clear") s.timer = false;
+                        else if (b.role == "poll_arm") { s.armed = true; s.evald = false; }
+                        else if (b.role == "poll_clear") { s.armed = false; s.evald = false; }
+                    }
+            } else if (o.kind == OpKind::PBr && reporting) {
+                if ((o.brType == 6 || o.brType == 7) && hasTimerRole && !s.timer)
+                    rep.report(o, "515", "the timer flag is tested here, but not every path to this branch has started the timer (.csrbit ... = timer_start): timer_done = 0 does not mean the timer runs, so this can wait forever. Start it once before the wait loop, not inside it");
+                if ((o.brType == 1 || o.brType == 2) && hasPollRole && !s.evald)
+                    rep.report(o, "516", "the poll result is tested here, but not every path to it arms the poll evaluator (.csrbit ... = poll_arm) and then reads PERI_RX_BUF[0] with a successful EXEC_XFER READ: nothing evaluates the status, so ready / not_ready never change");
+            }
             if (o.kind == OpKind::Xfer1) {
                 codec::Xfer1 x = codec::unpackXfer1(o.desc);
-                if (x.rw && !o.extra.empty()) s.rx[o.extra[0] & 31] = true;
+                if (x.rw && !o.extra.empty()) { s.rx[o.extra[0] & 31] = true; if (s.armed && (o.extra[0] & 31) == 0) { s.evald = true; s.armed = false; } }
             } else if (o.kind == OpKind::XferM) {
                 codec::XferM x = codec::unpackXferM(o.desc);
                 for (int i = 0; i < x.len && x.ptr + i < 32; i++) s.rx[x.ptr + i] = true;
+                if (x.rw && s.armed && x.ptr == 0) { s.evald = true; s.armed = false; }
             } else if (o.kind == OpKind::Pub) {
                 codec::Pub p = codec::unpackPub(o.desc);
                 if (reporting) {
+                    auto sd = c.services.find(p.service);
+                    if (sd != c.services.end() && sd->second.len >= 0 && sd->second.len != p.len)
+                        rep.report(o, "517", "service " + sd->second.name + " is declared with len=" + std::to_string(sd->second.len) + " (line " + std::to_string(sd->second.loc.line) + "), but EXEC_PUB publishes " + std::to_string(p.len) + " byte(s)");
                     int bad = 0;
                     for (int i = 0; i < p.len && p.src + i < 32; i++) if (!s.rx[p.src + i]) bad++;
                     if (bad) rep.report(o, "508", "EXEC_PUB publishes " + range("PERI_RX_BUF", p.src, p.len) + ", but " + std::to_string(bad) + " of its bytes are not read in by an EXEC_XFER on every path");

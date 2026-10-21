@@ -251,13 +251,34 @@ void Front::directive(const Stmt& st, const std::string& d, const std::string& r
         if (eq == std::string::npos) { c.error(loc, "E102", d + " NAME = value"); return; }
         std::string name = trim(rest.substr(0, eq));
         int64_t v;
-        if (!c.eval(rest.substr(eq + 1), v, loc)) return;
+        std::vector<std::string> opts;
+        std::string valueText = rest.substr(eq + 1);
+        if (d == ".service") {                                 // .service NAME = id [, len=N] [, big|little]
+            opts = splitTop(valueText);
+            valueText = opts.empty() ? "" : opts[0];
+        }
+        if (!c.eval(valueText, v, loc)) return;
         if (d == ".csr") {
             if (v < 0 || v > 0xFFF) { c.error(loc, "E201", "CSR address " + std::to_string(v) + " does not fit 12 bits"); return; }
             c.defineSym(name, "csr", v, 0, loc);
         } else {
             if (v < 1 || v > 15) { c.error(loc, "E201", "service_id must be 1..15 (0 is reserved, spec 10.3)"); return; }
-            c.defineSym(name, "service", v, 0, loc);
+            if (!c.defineSym(name, "service", v, 0, loc)) return;
+            Ctx::ServiceDecl sd;
+            sd.name = name;
+            sd.loc = loc;
+            for (size_t k = 1; k < opts.size(); k++) {
+                std::string o = lower(trim(opts[k]));
+                if (o == "big" || o == "big_endian" || o == "msb_first") sd.wire = 'B';
+                else if (o == "little" || o == "little_endian" || o == "lsb_first") sd.wire = 'L';
+                else if (o.compare(0, 4, "len=") == 0) {
+                    int64_t n;
+                    if (!c.eval(o.substr(4), n, loc)) return;
+                    if (n < 1 || n > 32) { c.error(loc, "E201", "service payload length must be 1..32 bytes (the ResultSlot holds 32)"); return; }
+                    sd.len = (int)n;
+                } else { c.error(loc, "E102", ".service NAME = id [, len=N] [, big|little]   ('" + trim(opts[k]) + "' is not an option)"); return; }
+            }
+            c.services[(int)v] = sd;
         }
     } else if (d == ".const") {
         // .const NAME db 1, 2, 3      .const NAME dw 100, 200
@@ -295,6 +316,16 @@ void Front::directive(const Stmt& st, const std::string& d, const std::string& r
         c.dev[idx].addr = (int)addr;
         c.dev[idx].loc = loc;
         if (a.size() == 4) c.defineSym(a[3], "devmap", idx, 0, loc);
+    } else if (d == ".csrbit") {
+        // .csrbit CSRNAME[bit] = timer_start | timer_clear | poll_arm | poll_clear
+        size_t lb = rest.find('['), rb = rest.find(']'), eq = rest.find('=');
+        if (lb == std::string::npos || rb == std::string::npos || eq == std::string::npos || rb < lb || eq < rb) { c.error(loc, "E102", ".csrbit CSRNAME[bit] = timer_start | timer_clear | poll_arm | poll_clear"); return; }
+        int64_t addr, bit;
+        std::string role = lower(trim(rest.substr(eq + 1)));
+        if (!c.eval(rest.substr(0, lb), addr, loc) || !c.eval(rest.substr(lb + 1, rb - lb - 1), bit, loc)) return;
+        if (role != "timer_start" && role != "timer_clear" && role != "poll_arm" && role != "poll_clear") { c.error(loc, "E102", "bit role '" + role + "': use timer_start, timer_clear, poll_arm or poll_clear"); return; }
+        if (addr < 0 || addr > 0xFFF || bit < 0 || bit > 7) { c.error(loc, "E201", ".csrbit: CSR address 0..0xFFF and bit 0..7"); return; }
+        c.csrBits.push_back({(uint32_t)addr, (int)bit, role, loc});
     } else if (d == ".vector") {
         // .vector EVENT_ID, label     (the handler entry of this domain; the handler must end in BR.ERET)
         if (!needDomain()) return;

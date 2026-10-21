@@ -33,6 +33,7 @@ const Key kKeys[] = {
     {"event_count", &Profile::eventCount, nullptr, nullptr},
     {"event_dispatch", nullptr, nullptr, &Latency::eventDispatch},
     {"event_eret", nullptr, nullptr, &Latency::eret},
+    {"csr_buf_valid", nullptr, &Profile::csrBufValid, nullptr},
     {"same_region_mov", nullptr, &Profile::sameRegionMov, nullptr},
     {"ret_slot_base", &Profile::retSlotBase, nullptr, nullptr},
     {"ret_stage_base", &Profile::retStageBase, nullptr, nullptr},

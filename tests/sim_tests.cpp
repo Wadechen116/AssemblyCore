@@ -772,6 +772,55 @@ static void t_events() {
     }
 }
 
+static void t_csr_buf_valid() {
+    section("csr_buf_valid (optional, spec v31 4.3): a readback that did not complete cannot be consumed");
+    const char* prog = ".main\ns: MOV MAIN_CSR_DATA_BUF[0..1] -> MAIN_SCRATCHPAD[4..5]\nh: JMP h\n";
+    {
+        Result r = assemble1(prog);
+        Simulator sim(r, SimConfig());
+        RunLimits l; l.maxCycles = 100;
+        sim.run(l);
+        check(!sim.faulted(Domain::Main), "without the feature a MOV from never-read csrbuf bytes just copies them");
+    }
+    {
+        Result r = assemble1(prog);
+        SimConfig c;
+        c.profile.csrBufValid = true;
+        Simulator sim(r, c);
+        RunLimits l; l.maxCycles = 100;
+        sim.run(l);
+        const Fault* f = sim.fault(Domain::Main);
+        check(f && f->code == "fault_csrbuf_invalid", "with csr_buf_valid the same MOV faults", f ? f->code : "no fault");
+    }
+    {   // a completed READ_BUF makes exactly its bytes valid
+        Result r = assemble1(".main\n.csr C = 0x120\ns: EXEC_CSR READ_BUF C, len=2, ptr=0\n MOV MAIN_CSR_DATA_BUF[0..1] -> MAIN_SCRATCHPAD[4..5]\n MOV MAIN_CSR_DATA_BUF[1..2] -> MAIN_SCRATCHPAD[6..7]\nh: JMP h\n");
+        check(r.ok, "setup", diags(r));
+        SimConfig c;
+        c.profile.csrBufValid = true;
+        Simulator sim(r, c);
+        RunLimits l; l.maxCycles = 200;
+        sim.run(l);
+        const Fault* f = sim.fault(Domain::Main);
+        check(f && f->code == "fault_csrbuf_invalid", "bytes 0..1 are valid after READ_BUF len=2, byte 2 is not (the second MOV faults)", f ? f->code : "no fault");
+        check(ev(sim, "scratch[4..5]") == 0 && sim.instructions(Domain::Main) == 2, "the first MOV (bytes 0..1) completed before the fault", std::to_string(sim.instructions(Domain::Main)));
+    }
+    {   // a failed read leaves its range invalid
+        Result r = assemble1(".main\n.csr C = 0x120\ns: EXEC_CSR READ_BUF C, len=2, ptr=0\n MOV MAIN_CSR_DATA_BUF[0..1] -> MAIN_SCRATCHPAD[4..5]\nh: JMP h\n");
+        SimConfig c;
+        c.profile.csrBufValid = true;
+        c.env = "[sim]\nunmapped_csr = fault\n";
+        Simulator sim(r, c);
+        RunLimits l; l.maxCycles = 200;
+        sim.run(l);
+        const Fault* f = sim.fault(Domain::Main);
+        check(f && f->code == "fault_csr_unmapped", "the READ itself fails on an unmapped CSR", f ? f->code : "no fault");
+        std::string e;
+        sim.injectNow("fault_clear main", e);
+        check(sim.faulted(Domain::Main) == false, "(fault cleared)");
+        check(sim.pc(Domain::Main) == 0 && sim.instructions(Domain::Main) == 0, "the pc stays at the failed READ: the MOV that would consume a stale readback never runs");
+    }
+}
+
 static void t_region_size() {
     section("regionSize");
     Fx f(".main\n.const K dw 0x1234, 0x5678\ns: JMP s\n");
@@ -872,6 +921,7 @@ int main() {
     t_interrupt();
     t_v31_rules();
     t_events();
+    t_csr_buf_valid();
     t_region_size();
     t_inject_now();
     t_extensions();

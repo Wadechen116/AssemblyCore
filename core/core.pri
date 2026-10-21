@@ -14,6 +14,7 @@ CORE_SOURCES = \
     $$ASMCORE_DIR/src/sram.cpp \
     $$ASMCORE_DIR/src/artifacts.cpp \
     $$ASMCORE_DIR/src/events.cpp \
+    $$ASMCORE_DIR/src/diag_names.cpp \
     $$ASMCORE_DIR/src/report.cpp \
     $$ASMCORE_DIR/src/image_view.cpp \
     $$ASMCORE_DIR/src/disasm.cpp \

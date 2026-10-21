@@ -8,6 +8,7 @@
 #include <sstream>
 
 #include "asmcore/asmcore.h"
+#include "asmcore/diagnostics.h"
 
 namespace fs = std::filesystem;
 
@@ -47,6 +48,8 @@ void usage() {
         "  --dataflow M         off | warn (default) | error   the data-flow check (docs/ASM_SYNTAX.md, W5xx)\n"
         "  --no-warn CODE       drop a warning code, e.g. W502 (repeatable)\n"
         "  --print-profile      print the effective profile and exit\n"
+        "  --explain CODE       what a diagnostic code means and how to fix it (e.g. E202, W514), with its spec v31 name\n"
+        "  --list-codes         every diagnostic code with its spec v31 name\n"
         "  -h, --help           this text\n"
         "Always writes PREFIX.main.bin / PREFIX.peri.bin (the LOGICAL images: code, descriptor tables, const pool / DeviceMap; no ImageLayout inside)\n"
         "and PREFIX.main.layout.json / PREFIX.peri.layout.json (the six ImageLayout offsets, delivered to the sideband latches). A .bin is meaningless\n"
@@ -96,6 +99,18 @@ int main(int argc, char** argv) {
         }
         else if (a == "--no-warn") opt.suppress.push_back(need("--no-warn"));
         else if (a == "--print-profile") printProfile = true;
+        else if (a == "--explain") {
+            std::string code = need("--explain");
+            for (auto& ch : code) ch = (char)std::toupper((unsigned char)ch);
+            std::string t = asmcore::explainDiagnostic(code);
+            if (t.empty()) { std::fprintf(stderr, "asmc: no diagnostic %s (try --list-codes)\n", code.c_str()); return 2; }
+            std::fputs(t.c_str(), stdout);
+            return 0;
+        }
+        else if (a == "--list-codes") {
+            for (const asmcore::DiagInfo& d : asmcore::allDiagnostics()) std::printf("%-5s %-28s %s\n", d.code, d.specName, d.title);
+            return 0;
+        }
         else if (!a.empty() && a[0] == '-') { std::fprintf(stderr, "asmc: unknown option %s (try --help)\n", a.c_str()); return 2; }
         else inputs.push_back(a);
     }
@@ -129,6 +144,7 @@ int main(int argc, char** argv) {
 
     asmcore::Result r = asmcore::assemble(sources, resolver, opt);
     std::fputs(r.diagnosticsText().c_str(), stderr);
+    if (!r.diags.empty()) std::fprintf(stderr, "asmc: 'asmc --explain %s' says what a code means and how to fix it (asmc --list-codes lists them all)\n", r.diags[0].code.c_str());
     if (!r.ok) {
         std::fprintf(stderr, "asmc: %d error(s), %d warning(s); nothing written\n", r.errorCount(), r.warningCount());
         return 1;

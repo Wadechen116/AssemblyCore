@@ -10,6 +10,7 @@
 #include "asmcore/asmcore.h"
 #include "asmcore/lang.h"
 #include "asmcore/index.h"
+#include "asmcore/diagnostics.h"
 #include "asmcore/sram.h"
 #include "isa.h"
 #include <set>
@@ -592,6 +593,105 @@ static void t_v31_events() {
     }
 }
 
+// ---- spec v31 stage 5: sensor byte order, timer / poll flows, service contracts, diagnostic names -------------------------------------
+static void t_v31_validators() {
+    section("spec v31 stage 5: byte order (W514), timer / poll flow (W515, W516), service contract (W517), diagnostic table");
+    const std::string head =
+        ".csr PCTL = 0x302\n.csr PLL = 0x301\n.csrbit PCTL[3] = timer_start\n.csrbit PLL[1] = poll_arm\n.csrbit PLL[0] = poll_clear\n.devmap 0, I2C, 0x68\n";
+    auto mainWith = [&](const std::string& svcDecl, const std::string& body) {
+        return svcDecl + ".csr PCTL = 0x302\n.main\nstart: BR.COND PERI_RESULT_VALID, d\n JMP start\n"
+               "d: MOV PERI_RESULT_META[0..1] -> ALU_OPA\n MOV CONST(1, 2) -> MAIN_SCRATCHPAD[20..21]\n MOV MAIN_SCRATCHPAD[20..21] -> ALU_OPB\n ALU CMP.EQ unsigned\n BR.COND ALU_CMP_TRUE, h\n JMP start\n"
+               "h: MOV PERI_RESULT_SLOT[0..5] -> MAIN_SCRATCHPAD[0..5]\n" + body + " JMP start\n";
+    };
+    const std::string svcBig = ".service GYRO = 1, len=6, big\n";
+    {   // sensor byte order
+        Result bad = build(mainWith(svcBig, " MOV MAIN_SCRATCHPAD[0..1] -> ALU_OPA\n"));
+        check(hasCode(bad, "W514"), "high-byte-first payload straight into ALU_OPA -> W514", codes(bad));
+        std::string msg;
+        for (auto& d : bad.diags) if (d.code == "W514") msg = d.msg;
+        check(msg.find("byte-swapped") != std::string::npos && msg.find("two 1-byte MOVs") != std::string::npos, "the message explains the problem and the swap", msg);
+        Result swapped = build(mainWith(svcBig, " MOV MAIN_SCRATCHPAD[1..1] -> MAIN_SCRATCHPAD[8..8]\n MOV MAIN_SCRATCHPAD[0..0] -> MAIN_SCRATCHPAD[9..9]\n MOV MAIN_SCRATCHPAD[8..9] -> ALU_OPA\n"));
+        check(!hasCode(swapped, "W514"), "after the two-MOV swap there is no W514", codes(swapped));
+        Result little = build(mainWith(".service GYRO = 1, len=6, little\n", " MOV MAIN_SCRATCHPAD[0..1] -> ALU_OPA\n"));
+        check(!hasCode(little, "W514"), "a little-endian service needs no swap");
+        Result undeclared = build(mainWith(".service GYRO = 1\n", " MOV MAIN_SCRATCHPAD[0..1] -> ALU_OPA\n"));
+        check(!hasCode(undeclared, "W514"), "an undeclared wire order is not guessed (no W514)");
+        Result opb = build(mainWith(svcBig, " MOV MAIN_SCRATCHPAD[2..3] -> ALU_OPB\n"));
+        check(hasCode(opb, "W514"), "the same for ALU_OPB (bytes 2..3 of the payload)");
+        Result odd = build(mainWith(svcBig, " MOV MAIN_SCRATCHPAD[1..2] -> ALU_OPA\n"));
+        check(!hasCode(odd, "W514"), "bytes 1..2 do not form one 16-bit field, so no W514");
+        Options o;
+        o.dataflow = DataflowMode::Error;
+        std::vector<Source> v{Source{"t.asm", mainWith(svcBig, " MOV MAIN_SCRATCHPAD[0..1] -> ALU_OPA\n")}};
+        check(hasCode(assemble(v, nullptr, o), "E514"), "--dataflow error makes it E514");
+    }
+    {   // service contract length
+        Result pub = build(head + ".service S = 1, len=6\n.peri\np: EXEC_XFER READ dev=0, len=4, ptr=0, ext=[0x43]\n EXEC_PUB service=S, src=0, len=4\n JMP p\n");
+        check(hasCode(pub, "W517"), "EXEC_PUB with another length than the contract -> W517", codes(pub));
+        Result ok = build(head + ".service S = 1, len=4\n.peri\np: EXEC_XFER READ dev=0, len=4, ptr=0, ext=[0x43]\n EXEC_PUB service=S, src=0, len=4\n JMP p\n");
+        check(!hasCode(ok, "W517"), "matching length: no W517");
+        Result cons = build(mainWith(".service GYRO = 1, len=4\n", " MOV MAIN_SCRATCHPAD[0..1] -> ALU_OPA\n"));
+        check(hasCode(cons, "W517"), "the handler consumes 6 bytes of a len=4 service -> W517", codes(cons));
+        check(hasCode(build(".service S = 1, len=40\n.main\ns: JMP s\n"), "E201"), "len beyond 32 -> E201");
+        check(hasCode(build(".service S = 1, loud\n.main\ns: JMP s\n"), "E102"), "an unknown .service option -> E102");
+    }
+    {   // timer flow
+        const std::string loopT = ".peri\np: BR.IF_TIMER_DONE t\n JMP p\nt: JMP p\n";
+        Result none = build(head + loopT);
+        check(hasCode(none, "W515"), "waiting for a timer that was never started -> W515", codes(none));
+        Result started = build(head + ".peri\n EXEC_CSR SET8 PCTL, 8\np: BR.IF_TIMER_DONE t\n JMP p\nt: JMP p\n");
+        check(!hasCode(started, "W515"), "timer started once before the loop: no W515", codes(started));
+        Result oneArm = build(head + ".peri\n BR.IF_READY a\n EXEC_CSR SET8 PCTL, 8\na: BR.IF_TIMER_DONE t\n JMP a\nt: JMP t\n");
+        check(hasCode(oneArm, "W515"), "started on only one of two paths -> W515");
+        Result noDecl = build(".csr PCTL = 0x302\n.peri\np: BR.IF_TIMER_DONE t\n JMP p\nt: JMP p\n");
+        check(!hasCode(noDecl, "W515"), "without '.csrbit ... = timer_start' the assembler cannot know and stays silent");
+        Result cleared = build(head + ".peri\n EXEC_CSR SET8 PCTL, 8\n EXEC_CSR WRITE8 PCTL, 0\np: BR.IF_TIMER_DONE t\n JMP p\nt: JMP p\n");
+        check(!hasCode(cleared, "W515"), "(writing 0 to the start bit does not clear the started state)");
+    }
+    {   // poll flow
+        Result bad = build(head + ".peri\np: BR.IF_READY r\n JMP p\nr: JMP p\n");
+        check(hasCode(bad, "W516"), "testing the poll result without arming -> W516", codes(bad));
+        Result good = build(head + ".peri\np: EXEC_CSR SET8 PLL, 2\n EXEC_XFER READ dev=0, addr=0x3A, addrlen=1, ptr=0\n BR.IF_READY r\n JMP p\nr: JMP p\n");
+        check(!hasCode(good, "W516"), "arm -> READ into PERI_RX_BUF[0] -> test: no W516", codes(good));
+        Result armNoRead = build(head + ".peri\np: EXEC_CSR SET8 PLL, 2\n BR.IF_READY r\n JMP p\nr: JMP p\n");
+        check(hasCode(armNoRead, "W516"), "armed but no READ before the test -> W516");
+        Result wrongPtr = build(head + ".peri\np: EXEC_CSR SET8 PLL, 2\n EXEC_XFER READ dev=0, len=2, ptr=4, ext=[0x43]\n BR.IF_READY r\n JMP p\nr: JMP p\n");
+        check(hasCode(wrongPtr, "W516"), "a READ that does not write PERI_RX_BUF[0] does not feed the evaluator -> W516");
+        Result clearedAfter = build(head + ".peri\np: EXEC_CSR SET8 PLL, 2\n EXEC_XFER READ dev=0, addr=0x3A, addrlen=1, ptr=0\n EXEC_CSR SET8 PLL, 1\n BR.IF_READY r\n JMP p\nr: JMP p\n");
+        check(hasCode(clearedAfter, "W516"), "clearing the latches after the READ throws the result away -> W516");
+    }
+    {   // directives
+        check(hasCode(build(".csr X = 0x10\n.csrbit X[1] = banana\n.main\ns: JMP s\n"), "E102"), ".csrbit with an unknown role -> E102");
+        check(hasCode(build(".csr X = 0x10\n.csrbit X[9] = poll_arm\n.main\ns: JMP s\n"), "E201"), ".csrbit with bit 9 -> E201");
+    }
+    {   // the diagnostic table
+        const DiagInfo* i = diagInfo("E202");
+        check(i && std::string(i->specName) == "E_MOV_REGION_OR_RANGE" && std::string(i->fix).size() > 10, "E202 maps to E_MOV_REGION_OR_RANGE and has a fix");
+        check(diagInfo("E514") == diagInfo("W514") && diagInfo("W514") != nullptr, "E514 (data-flow in error mode) shares the W514 entry");
+        check(std::string(diagInfo("W514")->specName) == "E_SENSOR_BYTE_ORDER" && std::string(diagInfo("W515")->specName) == "E_TIMER_START_FLOW" && std::string(diagInfo("W516")->specName) == "E_POLL_ARM_PRODUCER", "the new warnings carry the v31 names");
+        check(diagInfo("E999") == nullptr && explainDiagnostic("E999").empty(), "an unknown code has no entry");
+        check(explainDiagnostic("E310").find("BR_TARGET_UNREPRESENTABLE") != std::string::npos, "explain shows the spec name");
+        // the table and the documented codes are the same set
+        std::ifstream in(std::string(ASMCORE_SOURCE_DIR_STR) + "/docs/ASM_SYNTAX.md");
+        std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        std::set<std::string> documented;
+        for (size_t at = text.find("\n| "); at != std::string::npos; at = text.find("\n| ", at + 1)) {
+            std::string c = text.substr(at + 3, 4);
+            if (c.size() == 4 && (c[0] == 'E' || c[0] == 'W') && isdigit((unsigned char)c[1]) && isdigit((unsigned char)c[2]) && isdigit((unsigned char)c[3]) && text.compare(at + 7, 2, " |") == 0) documented.insert(c);
+        }
+        std::set<std::string> tabled;
+        for (const DiagInfo& d : allDiagnostics()) tabled.insert(d.code);
+        std::string only;
+        for (auto& c : documented) if (!tabled.count(c)) only += c + " (documented, not in the table) ";
+        for (auto& c : tabled) if (!documented.count(c)) only += c + " (in the table, not documented) ";
+        check(!documented.empty() && only.empty(), "docs/ASM_SYNTAX.md and the diagnostic table list the same codes", only);
+        // every spec name used is a name of the v31 contract (handoff section 12)
+        bool names = true;
+        for (const DiagInfo& d : allDiagnostics()) if (d.specName[0] && std::string(d.specName).compare(0, 2, "E_") != 0 && std::string(d.specName) != "BR_TARGET_UNREPRESENTABLE") names = false;
+        check(names, "spec names have the E_ form of the v31 contract");
+    }
+}
+
 static void t_v31_softret() {
     section("spec v31: softret keeps its state in the scratchpad");
     const char* prog = ".csr C = 0x10\n.main\n.proc f\n EXEC_CSR WRITE8 C, 1\n RET\n.endp\nstart: CALL f\n CALL f\nh: JMP h\n";
@@ -1144,6 +1244,7 @@ int main() {
     t_v31_profile_rules();
     t_v31_artifacts();
     t_v31_events();
+    t_v31_validators();
     t_limits();
     t_cascade();
     t_call_models();
