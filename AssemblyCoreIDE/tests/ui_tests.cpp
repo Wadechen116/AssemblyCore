@@ -1255,6 +1255,95 @@ private slots:
         QVERIFY(s.generated().text.find("(incomplete)") != std::string::npos);
     }
 
+    void doubleClickingTheEndOfABlockEditsItsComment() {
+        DragRig r(".main\nstart: MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]\n JMP start\n");
+        auto& s = r.ed->session();
+        r.sc().setAnimationsEnabled(false);
+        const std::string mov = s.document().sections[0].blocks[1].id;
+        auto tailOf = [&](const std::string& id) {
+            const auto* st = r.sc().layout().stackOf(id);
+            const auto* b = st->find(id);
+            return QPointF(st->origin.x + b->tailRect.center().x, st->origin.y + b->tailRect.center().y);
+        };
+        const double heightBefore = r.sc().blockRect(mov).height();
+        double srcBefore = 0, numBefore = 0;
+        {
+            const auto* st0 = r.sc().layout().stackOf(mov);
+            const auto* b0 = st0->find(mov);
+            srcBefore = st0->blocks[(size_t)b0->sockets[0].child].rect.h;
+            const auto& dst0 = st0->blocks[(size_t)b0->sockets[1].child];
+            numBefore = st0->blocks[(size_t)dst0.sockets[0].child].rect.h;
+        }
+        // a double click in the middle of a block, or on a component, edits nothing
+        QTest::mouseDClick(r.v().viewport(), Qt::LeftButton, Qt::NoModifier, r.at(r.center(mov) - QPointF(60, 0)));
+        QVERIFY(!r.ed->commentEdit().isOpen());
+        // on its end: the editor opens over it
+        acide::BlockScene::CommentTarget t;
+        QVERIFY(r.sc().commentTargetAt(tailOf(mov), t));
+        QCOMPARE(t.blockId, mov);
+        QVERIFY(t.text.empty());
+        QTest::mouseDClick(r.v().viewport(), Qt::LeftButton, Qt::NoModifier, r.at(tailOf(mov)));
+        QVERIFY(r.ed->commentEdit().isOpen());
+        QVERIFY(r.ed->commentEdit().isVisible());
+        QTest::keyClicks(&r.ed->commentEdit(), "load five");
+        QTest::keyClick(&r.ed->commentEdit(), Qt::Key_Return, Qt::ShiftModifier);          // a second line
+        QVERIFY(r.ed->commentEdit().isOpen());
+        QTest::keyClicks(&r.ed->commentEdit(), "then go on");
+        QTest::keyClick(&r.ed->commentEdit(), Qt::Key_Return, Qt::ShiftModifier);
+        QTest::keyClicks(&r.ed->commentEdit(), "line three");
+        QTest::keyClick(&r.ed->commentEdit(), Qt::Key_Return, Qt::ShiftModifier);
+        QTest::keyClicks(&r.ed->commentEdit(), "line four");
+        QTest::keyClick(&r.ed->commentEdit(), Qt::Key_Return);                             // keep it
+        QVERIFY(!r.ed->commentEdit().isOpen());
+        QCOMPARE(QString::fromStdString(s.document().find(mov)->comment), QString("load five\nthen go on\nline three\nline four"));
+        QVERIFY(s.generated().text.find("[0..1]    ; load five\n    ; then go on\n    ; line three\n    ; line four\n") != std::string::npos);
+        // the whole block is taller, and what is plugged in and nested in it fits the new height
+        const auto* st = r.sc().layout().stackOf(mov);
+        const auto* box = st->find(mov);
+        QVERIFY2(box->rect.h > heightBefore + 1, qPrintable(QString("%1 -> %2").arg(heightBefore).arg(box->rect.h)));
+        QCOMPARE((int)box->commentLines.size(), 4);
+        const auto& src = st->blocks[(size_t)box->sockets[0].child];
+        const auto& dst = st->blocks[(size_t)box->sockets[1].child];
+        QVERIFY(std::fabs(src.rect.h - (box->rect.h - 10)) < 0.6 && std::fabs(dst.rect.h - (box->rect.h - 10)) < 0.6);
+        const auto& num = st->blocks[(size_t)dst.sockets[0].child];
+        QVERIFY2(src.rect.h > srcBefore + 1 && num.rect.h > numBefore + 1 && num.rect.h < dst.rect.h, qPrintable(QString("src %1->%2 num %3->%4").arg(srcBefore).arg(src.rect.h).arg(numBefore).arg(num.rect.h)));
+        r.ed->grab().save(outDir() + "/blocks_comment.png");
+        // editing it again starts from the text; Esc leaves it as it was
+        QVERIFY(r.sc().commentTargetAt(tailOf(mov), t));
+        QCOMPARE(QString::fromStdString(t.text), QString("load five\nthen go on\nline three\nline four"));
+        QTest::mouseDClick(r.v().viewport(), Qt::LeftButton, Qt::NoModifier, r.at(tailOf(mov)));
+        QVERIFY(r.ed->commentEdit().isOpen());
+        QCOMPARE(r.ed->commentEdit().toPlainText(), QString("load five\nthen go on\nline three\nline four"));
+        QTest::keyClicks(&r.ed->commentEdit(), "zzz");
+        QTest::keyClick(&r.ed->commentEdit(), Qt::Key_Escape);
+        QVERIFY(!r.ed->commentEdit().isOpen());
+        QCOMPARE(QString::fromStdString(s.document().find(mov)->comment), QString("load five\nthen go on\nline three\nline four"));
+        // an empty comment takes it away and the block is low again
+        QTest::mouseDClick(r.v().viewport(), Qt::LeftButton, Qt::NoModifier, r.at(tailOf(mov)));
+        QVERIFY(r.ed->commentEdit().isOpen());
+        r.ed->commentEdit().selectAll();
+        QTest::keyClick(&r.ed->commentEdit(), Qt::Key_Delete);
+        QVERIFY2(r.ed->commentEdit().toPlainText().isEmpty(), qPrintable("text: " + r.ed->commentEdit().toPlainText()));
+        QTest::keyClick(&r.ed->commentEdit(), Qt::Key_Return);
+        QVERIFY2(s.document().find(mov)->comment.empty(), s.document().find(mov)->comment.c_str());
+        QVERIFY(std::fabs(r.sc().blockRect(mov).height() - heightBefore) < 0.6);
+        // undo: the comment is back
+        QVERIFY(s.undo());
+        QVERIFY(!s.document().find(mov)->comment.empty());
+        // the hat and a label take comments too
+        const auto& hat = r.sc().layout().stacks[0];
+        const QPointF hatTail(hat.origin.x + hat.header.tailRect.center().x, hat.origin.y + hat.header.tailRect.center().y);
+        QVERIFY(r.sc().commentTargetAt(hatTail, t) && t.section && t.stack == 0);
+        QTest::mouseDClick(r.v().viewport(), Qt::LeftButton, Qt::NoModifier, r.at(hatTail));
+        QVERIFY(r.ed->commentEdit().isOpen());
+        QTest::keyClicks(&r.ed->commentEdit(), "entry");
+        QTest::keyClick(&r.ed->commentEdit(), Qt::Key_Return);
+        QCOMPARE(QString::fromStdString(s.document().sections[0].comment), QString("entry"));
+        QVERIFY(s.generated().text.find(".main    ; entry") != std::string::npos);
+        const std::string label = s.document().sections[0].blocks[0].id;
+        QVERIFY(r.sc().commentTargetAt(tailOf(label), t) && t.blockId == label);
+    }
+
     void blocksWobbleSoftlyWhenTakenOutAndPutBack() {
         DragRig r(".main\n MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]\n");
         auto& s = r.ed->session();

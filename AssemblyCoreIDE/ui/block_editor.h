@@ -11,6 +11,7 @@
 #include "block_scene.h"
 #include "block_view.h"
 #include "blocks/block_session.h"
+#include "comment_edit.h"
 #include "document_tab.h"
 #include "generated_code_pane.h"
 
@@ -41,6 +42,7 @@ public:
     BlockScene& scene() { return *scene_; }
     BlockView& view() { return *view_; }
     GeneratedCodePane& codePane() { return *code_; }
+    CommentEdit& commentEdit() { return *commentEdit_; }
     QString errorText() const;                       // why the file could not be shown ("" if fine)
     QString infoText() const;                        // the summary line
     void selectBlock(const std::string& id, bool reveal = true);
@@ -52,6 +54,7 @@ private:
     void refreshCode();
     void refreshInfo();
     void applyTheme();
+    void beginCommentEdit(const BlockScene::CommentTarget& t);            // a double click on the end of a block: edit its comment over it
     void refreshSymbols();                           // the names the hardware description defines (for the "not defined" checks)
     void onBlockClicked(const std::string& id, Qt::KeyboardModifiers m);
 
@@ -63,6 +66,9 @@ private:
     BlockScene* scene_ = nullptr;
     BlockView* view_ = nullptr;
     GeneratedCodePane* code_ = nullptr;
+    CommentEdit* commentEdit_ = nullptr;
+    BlockScene::CommentTarget editing_;
+    unsigned commentSerial_ = 0;
     QWidget* zoomBar_;
     QLabel *info_, *banner_, *zoomLabel_;
     std::unique_ptr<ConnectionBag> conns_ = std::make_unique<ConnectionBag>();      // released first in the destructor

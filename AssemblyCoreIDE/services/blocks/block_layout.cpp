@@ -112,6 +112,54 @@ struct LayoutEngine::Run {
             if (std::find(ids.begin(), ids.end(), p.blockId) != ids.end()) { p.pos.x += dx; p.pos.y += dy; }
     }
 
+    // The comment of a block as lines (a comment may have several), each with its "; " and shortened to fit. h is the height of all lines.
+    void measureComment(const std::string& comment, std::vector<std::string>& lines, double& wMax, double& h) const {
+        lines.clear();
+        wMax = h = 0;
+        if (comment.empty()) return;
+        std::string cur;
+        std::vector<std::string> raw;
+        for (char ch : comment) {
+            if (ch == '\r') continue;
+            if (ch == '\n') { raw.push_back(cur); cur.clear(); } else cur += ch;
+        }
+        raw.push_back(cur);
+        while (raw.size() > 1 && raw.back().empty()) raw.pop_back();
+        const double lh = e.m_.lineHeight(false);
+        for (const std::string& r : raw) {
+            bool el = false;
+            lines.push_back(elide("; " + r, S.commentMaxWidth, false, el));
+            wMax = std::max(wMax, w(lines.back(), false));
+        }
+        h = (double)lines.size() * lh;
+    }
+
+    // A component whose row got taller (a long comment on its host) grows to fill it, and what is plugged into it grows with it: every part of the
+    // tree that is inside it is made to fit, and kept centred.
+    void stretchTo(int idx, double newH) {
+        BlockBox& b = out.blocks[(size_t)idx];
+        const double oldH = b.rect.h;
+        if (newH <= oldH + 0.01) return;
+        const double delta = newH - oldH;
+        b.rect.h = newH;
+        b.head.h = newH;
+        const double inner = newH - 2 * S.rowPadY;
+        for (FieldBox& f : b.fields) { f.rect.y += delta / 2; f.labelRect.y += delta / 2; }
+        b.titleRect.y += delta / 2;
+        b.commentRect.y += delta / 2;
+        for (ConnectionPoint& p : out.points) if (p.blockId == b.id && (p.kind == ConnectionPoint::Plug || p.kind == ConnectionPoint::Socket)) p.pos.y += delta / 2;
+        const double centre = b.rect.y + newH / 2;
+        for (SocketBox& sb : b.sockets) {
+            sb.labelRect.y += delta / 2;
+            if (sb.child < 0) { sb.rect.y += delta / 2; continue; }
+            const int ci = sb.child;
+            stretchTo(ci, inner);
+            const BlockBox& cb = out.blocks[(size_t)ci];
+            translate(ci, 0, centre - (cb.rect.y + cb.rect.h / 2));
+            sb.rect = out.blocks[(size_t)ci].rect;
+        }
+    }
+
     // a cascade runs from its BEGIN to the last END before the next BEGIN (the numbering and the exits are checked by validate)
     void markCascades(const std::vector<int>& items) {
         for (size_t i = 0; i < items.size(); i++) {
@@ -181,13 +229,27 @@ struct LayoutEngine::Run {
                 bool el = false;
                 const std::string shown = elide(name, S.maxChipWidth, true, el);
                 const double cw = w(shown, true) + 2 * S.chipPadX + 8;
+                std::vector<std::string> cl;
+                double cwid = 0, ch = 0;
+                measureComment(b.comment, cl, cwid, ch);
+                const double rowH = std::max(base * 0.8 + 4, ch + 2 * S.rowPadY);
                 FieldBox f;
                 f.name = "name"; f.label = ""; f.text = shown; f.fullText = b.get("name"); f.kind = FieldKind::Text; f.elided = el;
-                f.rect = {x + 4, y + (base * 0.8 < chipHeight() ? 0 : (base - base * 0.8) / 2), cw, std::max(chipHeight(), base * 0.8)};
+                const double fh = std::max(chipHeight(), base * 0.8);
+                f.rect = {x + 4, y + (rowH - fh) / 2, cw, fh};
                 self().fields.push_back(f);
-                self().rect = {x, y, cw + 8, base * 0.8 + 4};
+                double right = x + 4 + cw + 4;
+                self().commentLines = cl;
+                if (!cl.empty()) {
+                    self().commentRect = {right + S.gap, y + (rowH - ch) / 2, cwid, ch};
+                    right = self().commentRect.right() + S.padX;
+                    self().tailRect = {self().commentRect.x - 4, y, cwid + 4 + S.padX, rowH};
+                } else {
+                    self().tailRect = {right, y, S.tailStub, rowH};
+                    right += S.tailStub;
+                }
+                self().rect = {x, y, right - x, rowH};
                 self().head = self().rect;
-                self().fields[0].rect.y = y + (self().rect.h - self().fields[0].rect.h) / 2;
                 return idx;
             }
             case Shape::Note:
@@ -199,10 +261,26 @@ struct LayoutEngine::Run {
                 const double tw = w(shown.empty() ? std::string(" ") : shown, mono);
                 FieldBox f;
                 f.name = "text"; f.text = shown; f.fullText = full; f.kind = FieldKind::Text; f.elided = el; f.empty = full.empty();
-                const double rowH = std::max(S.minRow * 0.8, (mono ? e.m_.lineHeight(true) : lh) + 2 * S.rowPadY);
-                f.rect = {x + S.padX, y + S.rowPadY, tw, rowH - 2 * S.rowPadY};
+                std::vector<std::string> cl;
+                double cwid = 0, ch = 0;
+                if (mono) measureComment(b.comment, cl, cwid, ch);                          // assembler text carries a comment; a comment block does not
+                const double rowH = std::max(std::max(S.minRow * 0.8, (mono ? e.m_.lineHeight(true) : lh) + 2 * S.rowPadY), ch + 2 * S.rowPadY);
+                const double fh = (mono ? e.m_.lineHeight(true) : lh);
+                f.rect = {x + S.padX, y + (rowH - fh) / 2, tw, fh};
                 self().fields.push_back(f);
-                self().rect = {x, y, std::max(S.minWidth, tw + 2 * S.padX), rowH};
+                double right = x + S.padX + tw;
+                self().commentLines = cl;
+                if (mono) {
+                    if (!cl.empty()) {
+                        self().commentRect = {right + S.gap * 2, y + (rowH - ch) / 2, cwid, ch};
+                        self().tailRect = {self().commentRect.x - 4, y, cwid + 4 + S.padX, rowH};
+                        right = self().commentRect.right();
+                    } else {
+                        self().tailRect = {right + S.padX, y, S.tailStub, rowH};
+                        right += S.padX + S.tailStub;
+                    }
+                }
+                self().rect = {x, y, std::max(S.minWidth, right + S.padX - x), rowH};
                 self().head = self().rect;
                 return idx;
             }
@@ -236,7 +314,12 @@ struct LayoutEngine::Run {
                 maxChildH = std::max(maxChildH, out.blocks[(size_t)ci].rect.h);
             }
         }
-        const double rowH = std::max(base, maxChildH + 2 * S.rowPadY);
+        std::vector<std::string> commentLines;
+        double commentW = 0, commentH = 0;
+        if (info.shape != Shape::Value) measureComment(b.comment, commentLines, commentW, commentH);       // (a component carries no comment of its own)
+        const double rowH = std::max(std::max(base, maxChildH + 2 * S.rowPadY), commentH + 2 * S.rowPadY);
+        // a row made taller by a long comment: what is plugged into it grows to fill it, with everything inside that
+        for (int ci : plugged) if (ci >= 0) stretchTo(ci, rowH - 2 * S.rowPadY);
         double cx = x + S.padX;
         auto centerY = [&](double h) { return y + (rowH - h) / 2; };
         if (!title.empty()) {
@@ -352,15 +435,17 @@ struct LayoutEngine::Run {
                 self().sockets.push_back(sb);
             }
         }
-        if (!b.comment.empty()) {
-            bool el = false;
-            const std::string shown = elide("; " + b.comment, S.commentMaxWidth, false, el);
-            const double cw = w(shown, false);
-            self().commentRect = {cx, centerY(lh), cw, lh};
-            cx += cw + S.gap;
+        self().commentLines = commentLines;
+        double tailX = cx;
+        if (!commentLines.empty()) {
+            self().commentRect = {cx, centerY(commentH), commentW, commentH};
+            cx += commentW + S.gap;
+        } else if (info.shape != Shape::Value) {
+            cx += S.tailStub;                                                       // the zone where a double click starts a comment
         }
         double width = std::max(S.minWidth, cx - x - S.gap + S.padX);
         self().head = {x, y, width, rowH};
+        if (info.shape != Shape::Value) self().tailRect = commentLines.empty() ? Rect{tailX - 2, y, x + width - tailX + 2, rowH} : Rect{tailX - 4, y, commentW + 4 + S.padX, rowH};
         double height = rowH;
         if (info.shape == Shape::Value) {
             ConnectionPoint plug;
@@ -422,8 +507,24 @@ StackLayout LayoutEngine::layoutStack(const Section& s, size_t index) const {
         out.header.kind = HeaderBox::Hat;
         out.header.domain = s.domain;
         out.header.text = text_->hatTitle(s.domain);
-        out.header.rect = {0, 0, std::max(style_.hatMinWidth, m_.width(out.header.text, false) + 2 * style_.hatPadX), style_.hatHeight};
-        top = style_.hatHeight;
+        out.header.comment = s.comment;
+        double hw = std::max(style_.hatMinWidth, m_.width(out.header.text, false) + 2 * style_.hatPadX), hh = style_.hatHeight;
+        {
+            double cwid = 0, ch = 0;
+            run.measureComment(s.comment, out.header.commentLines, cwid, ch);
+            hh = std::max(hh, ch + 2 * style_.rowPadY + 6);
+            const double tx = m_.width(out.header.text, false) + 2 * style_.hatPadX;
+            if (!out.header.commentLines.empty()) {
+                out.header.commentRect = {std::max(hw, tx) + style_.gap, (hh - ch) / 2, cwid, ch};
+                hw = out.header.commentRect.right() + style_.padX;
+                out.header.tailRect = {out.header.commentRect.x - 4, 0, hw - out.header.commentRect.x + 4, hh};
+            } else {
+                out.header.tailRect = {hw, 0, style_.tailStub, hh};
+                hw += style_.tailStub;
+            }
+        }
+        out.header.rect = {0, 0, hw, hh};
+        top = hh;
         ConnectionPoint under;
         under.kind = ConnectionPoint::Next; under.pos = {0, top}; under.blockId = ""; under.slot = "";
         out.points.push_back(under);

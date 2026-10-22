@@ -19,6 +19,10 @@
         <source>not part of the program</source>
         <translation>不屬於程式</translation>
     </message>
+    <message>
+        <source>Double-click to write or edit the comment at the end of this block</source>
+        <translation>在積木尾端雙擊，可寫入或編輯結尾註解</translation>
+    </message>
 </context>
 <context>
     <name>BreakpointsPanel</name>
@@ -639,6 +643,13 @@
     <message>
         <source>Rename Symbol	F2</source>
         <translation>重新命名符號	F2</translation>
+    </message>
+</context>
+<context>
+    <name>acide::CommentEdit</name>
+    <message>
+        <source>Enter keeps the comment, Shift+Enter starts a new line, Esc cancels</source>
+        <translation>Enter 保留註解，Shift+Enter 換行，Esc 取消</translation>
     </message>
 </context>
 <context>

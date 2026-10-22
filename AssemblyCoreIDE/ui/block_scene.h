@@ -103,6 +103,17 @@ public:
     const blocks::DropTarget& dropTarget() const { return dropTarget_; }
     void cancelDrag();                                                   // Esc: put everything back
 
+    // ---- the comment at the end of a block (double click on the tail)
+    struct CommentTarget {
+        bool section = false;                                            // the comment after .main / .peri (a hat) rather than a block's
+        size_t stack = 0;
+        std::string blockId;
+        QRectF rect;                                                     // the tail, canvas coordinates
+        std::string text;
+    };
+    bool commentTargetAt(const QPointF& scenePos, CommentTarget& out) const;
+    Signal<const CommentTarget&> commentEdit;                            // asked for: the owner opens an editor over `rect`
+
     // ---- soft effects (visual only: the document and the layout never change). Springs, stepped by a timer; setAnimationsEnabled(false) switches them off.
     void setAnimationsEnabled(bool on);
     bool animationsEnabled() const { return animate_; }
@@ -130,6 +141,7 @@ public:
 
 protected:
     void keyPressEvent(QKeyEvent* e) override;
+    void mouseDoubleClickEvent(QGraphicsSceneMouseEvent* e) override;
     void mousePressEvent(QGraphicsSceneMouseEvent* e) override;
     void mouseMoveEvent(QGraphicsSceneMouseEvent* e) override;
     void mouseReleaseEvent(QGraphicsSceneMouseEvent* e) override;

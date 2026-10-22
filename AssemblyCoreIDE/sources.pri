@@ -39,7 +39,8 @@ UI_SOURCES = \
     $$IDE_DIR/ui/block_scene.cpp \
     $$IDE_DIR/ui/block_view.cpp \
     $$IDE_DIR/ui/generated_code_pane.cpp \
-    $$IDE_DIR/ui/block_editor.cpp
+    $$IDE_DIR/ui/block_editor.cpp \
+    $$IDE_DIR/ui/comment_edit.cpp
 
 # headers that declare Q_OBJECT classes (qmake runs moc on the HEADERS it is given)
 UI_MOC_HEADERS = \
@@ -50,6 +51,7 @@ UI_MOC_HEADERS = \
     $$IDE_DIR/ui/hardware_designer.h \
     $$IDE_DIR/ui/block_view.h \
     $$IDE_DIR/ui/block_editor.h \
+    $$IDE_DIR/ui/comment_edit.h \
     $$IDE_DIR/ui/generated_code_pane.h
 
 # the translations (compiled .qm files are in the repository)

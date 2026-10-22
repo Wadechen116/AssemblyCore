@@ -287,10 +287,31 @@ std::string render(const std::string& tmpl, const Block& b, const Registry& reg)
     return out;
 }
 
+// A comment may have several lines (the canvas lets a block carry a longer note). The first goes at the end of the line; the others follow as comment lines of
+// their own, so the assembler text stays one comment per line.
+std::vector<std::string> commentLines(const std::string& comment) {
+    std::vector<std::string> lines;
+    std::string cur;
+    for (char c : comment) {
+        if (c == '\r') continue;
+        if (c == '\n') { lines.push_back(cur); cur.clear(); }
+        else cur += c;
+    }
+    lines.push_back(cur);
+    while (lines.size() > 1 && trim(lines.back()).empty()) lines.pop_back();
+    return lines;
+}
+
 struct Gen {
     const Registry& reg;
     Generated out;
     int line = 0;
+    // a line that ends in the comment, and the lines that continue it
+    void emitWithComment(const std::string& text, const std::string& comment, const std::string& id, int indent) {
+        const std::vector<std::string> ls = commentLines(comment);
+        emit(ls[0].empty() && ls.size() == 1 ? text : text + "    ; " + ls[0], id);
+        for (size_t i = 1; i < ls.size(); i++) emit(std::string((size_t)indent, ' ') + "; " + ls[i], id);
+    }
     void emit(const std::string& text, const std::string& id) {
         out.text += text + "\n";
         out.lines.push_back({++line, id});
@@ -305,7 +326,7 @@ struct Gen {
             stmt = b.get("text");
             indent = !stmt.empty() && stmt[0] == '.' ? 0 : 4;
         } else if (b.type == "proc") {
-            emit(".proc " + b.get("name") + (b.comment.empty() ? "" : "    ; " + b.comment), b.id);
+            emitWithComment(".proc " + b.get("name"), b.comment, b.id, 0);
             if (const std::vector<Block>* body = b.stack("BODY")) for (const Block& c : *body) block(c);
             emit(".endp", b.id);
             return;
@@ -323,7 +344,7 @@ struct Gen {
             if (b.type == "label" || b.type == "directive" || b.type == "vector" || b.type == "wcet" || b.type == "assume") indent = 0;
         }
         if (b.disabled) { emit("; " + stmt, b.id); return; }
-        if (!b.comment.empty()) stmt += "    ; " + b.comment;
+        if (!b.comment.empty()) { emitWithComment(std::string((size_t)indent, ' ') + stmt, b.comment, b.id, indent); return; }
         emit(std::string((size_t)indent, ' ') + stmt, b.id);
     }
 };
@@ -358,7 +379,7 @@ Generated generate(const Document& doc, const Registry& reg, const GenerateOptio
         const Section& s = doc.sections[si];
         if (!s.domain.empty()) {
             if (g.line > 0) g.emit("", "");                                  // one blank line between sections
-            g.emit("." + s.domain + (s.comment.empty() ? "" : "    ; " + s.comment), "");
+            g.emitWithComment("." + s.domain, s.comment, "", 0);
         }
         for (const Block& b : s.blocks) g.block(b);
     }

@@ -702,6 +702,33 @@ static void t_classes() {
     check(reg.ofClass("instruction").size() >= 16 && reg.ofClass("component").size() >= 24, "the counts", std::to_string(reg.ofClass("instruction").size()) + " / " + std::to_string(reg.ofClass("component").size()));
 }
 
+// ---- comments with several lines -------------------------------------------------------------------------------------------------------------
+static void t_comments() {
+    section("a comment may have several lines");
+    Document d = importAsm(".main\nstart: MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]\n JMP start\n.proc f\n RET\n.endp\n");
+    Editor ed(d);
+    const std::string mov = d.sections[0].blocks[1].id, proc = d.sections[0].blocks[3].id;
+    ed.setComment(mov, "load five\nthen use it");
+    std::string g = genText(d);
+    check(g.find("MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]    ; load five\n    ; then use it\n") != std::string::npos, "the first line ends the instruction's line, the others follow as comment lines", g);
+    ed.setComment(proc, "does\nthings\n");
+    g = genText(d);
+    check(g.find(".proc f    ; does\n; things\n    RET") != std::string::npos, "a procedure too (trailing blank lines are dropped)", g);
+    ed.setSectionComment(0, "entry\nsecond line");
+    g = genText(d);
+    check(g.find(".main    ; entry\n; second line\nstart:") != std::string::npos, "and the comment after .main", g);
+    // one line stays as it was
+    ed.setComment(mov, "one line");
+    check(genText(d).find("[0..1]    ; one line\n") != std::string::npos && genText(d).find("; then use it") == std::string::npos, "back to one line");
+    // the assembler is fine with all of it, and the text keeps its meaning: the continuation lines come back as comment blocks
+    Document back = importAsm(genText(d));
+    check(genText(back) == genText(d), "text -> blocks -> text is stable with such comments", genText(back));
+    ed.setComment(mov, "");
+    check(genText(d).find("[0..1]\n") != std::string::npos, "no comment: none written");
+    ed.setComment(mov, "\n\n");
+    check(genText(d).find("[0..1]\n") != std::string::npos, "a comment of only blank lines writes nothing on the instruction's line");
+}
+
 // ---- stage M2b-3: bit masks, cascades, flag branches --------------------------------------------------------------------------------------
 static bool hasHint(const Document& d, const std::string& needle, bool error, const char* kind) {
     for (const BlockProblem& p : validate(d)) if (p.error == error && p.kind == kind && p.message.find(needle) != std::string::npos) return true;
@@ -873,6 +900,7 @@ int main() {
     t_rules();
     t_compat();
     t_drag_ops();
+    t_comments();
     t_m2b3();
     t_classes();
     t_symbols();

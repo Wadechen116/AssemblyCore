@@ -164,6 +164,72 @@ static void t_plug_shapes() {
     check(alone.blocks[0].parent < 0 && alone.bounds.x <= alone.blocks[0].rect.x - LayoutStyle().plugDepth + 0.01, "a number lying alone: the bounds include its tab");
 }
 
+static void t_layout_comments() {
+    section("layout: the comment at the end of a block, over several lines");
+    StackLayout one = layoutOf(".main\n MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]\n");
+    const BlockBox& m1 = one.blocks[0];
+    check(!m1.tailRect.empty() && m1.tailRect.right() <= m1.rect.right() + 0.01 && m1.tailRect.x > m1.sockets.back().rect.right() - 0.01 && m1.commentLines.empty(), "every instruction has an empty zone at its end for a double click");
+    // with a comment
+    Document d = docOf(".main\n MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]\n");
+    d.sections[0].blocks[0].comment = "first\nsecond\nthird";
+    FakeMetrics m;
+    StackLayout three = LayoutEngine(m).layoutStack(d.sections[0], 0);
+    const BlockBox& m3 = three.blocks[0];
+    check(m3.commentLines.size() == 3 && m3.commentLines[0] == "; first" && m3.commentRect.h == 3 * 16, "three lines of comment, each with its semicolon");
+    check(m3.rect.h >= 3 * 16 + 2 * LayoutStyle().rowPadY - 0.01 && m3.rect.h > m1.rect.h, "the whole block is taller to hold them", std::to_string(m3.rect.h) + " vs " + std::to_string(m1.rect.h));
+    check(inside(m3.commentRect, m3.head) && !m3.tailRect.empty() && inside(m3.tailRect, m3.rect), "the comment lies inside the block, and its zone is the tail");
+    // what is plugged in grows with the row, and what is inside that too
+    const BlockBox& src = three.blocks[(size_t)m3.sockets[0].child];
+    const BlockBox& dst = three.blocks[(size_t)m3.sockets[1].child];
+    const double inner = m3.rect.h - 2 * LayoutStyle().rowPadY;
+    check(std::fabs(src.rect.h - inner) < 0.01 && std::fabs(dst.rect.h - inner) < 0.01, "the number and the region plugged into it are as high as the row allows", std::to_string(src.rect.h) + " / " + std::to_string(dst.rect.h) + " / " + std::to_string(inner));
+    const BlockBox& first = three.blocks[(size_t)dst.sockets[0].child];
+    check(first.rect.h > one.blocks[(size_t)one.blocks[(size_t)m1.sockets[1].child].sockets[0].child].rect.h + 1 && first.rect.h <= dst.rect.h - 2 * LayoutStyle().rowPadY + 0.01, "...and the numbers inside the region too, a little less each level");
+    bool centred = true;
+    for (const BlockBox* b : {&src, &dst, &first}) centred = centred && std::fabs((b->rect.y + b->rect.h / 2) - (m3.rect.y + m3.rect.h / 2)) < 0.6;
+    check(centred, "all of them stay centred in the row");
+    bool partsInside = true;
+    for (const BlockBox* b : {&src, &dst, &first}) {
+        for (const FieldBox& f : b->fields) partsInside = partsInside && inside(f.rect, b->rect);
+        for (const SocketBox& s : b->sockets) partsInside = partsInside && inside(s.rect, b->rect) && s.rect.h <= b->rect.h + 0.01;
+    }
+    check(partsInside, "the parts of the grown blocks are inside them");
+    // a connection point of a grown component follows
+    bool pointsOk = true;
+    for (const ConnectionPoint& p : three.points)
+        if (p.kind == ConnectionPoint::Plug && p.blockId == src.id) pointsOk = pointsOk && std::fabs(p.pos.y - (src.rect.y + src.rect.h / 2)) < 0.6;
+    check(pointsOk, "the plug point of a grown component is in the middle of it");
+    // the stack below is pushed down; a container's slot content follows its head
+    Document c = docOf(".main\n.proc f\n RET\n.endp\n JMP x\n");
+    c.sections[0].blocks[0].comment = "a\nb";
+    StackLayout cl = LayoutEngine(m).layoutStack(c.sections[0], 0);
+    const BlockBox& proc = cl.blocks[0];
+    check(proc.head.h >= 2 * 16 + 2 * LayoutStyle().rowPadY - 0.01 && proc.slotBoxes[0].rect.y >= proc.head.bottom() - 0.01 && inside(proc.slotBoxes[0].rect, proc.rect), "a procedure with a long comment: its head is taller and the body starts below it");
+    bool below = true;
+    for (size_t i = 1; i < cl.top.size(); i++) below = below && cl.blocks[(size_t)cl.top[i]].rect.y >= cl.blocks[(size_t)cl.top[i - 1]].rect.bottom() - 0.01;
+    check(below, "the blocks after it are pushed down (no overlap)");
+    // a label and assembler text carry comments too
+    Document l = docOf(".main\nstart:    ; entry\n weird thing    ; why\n JMP start\n");
+    l.sections[0].blocks[0].comment = "entry\npoint";
+    StackLayout ll = LayoutEngine(m).layoutStack(l.sections[0], 0);
+    check(ll.blocks[0].shape == Shape::Tag && ll.blocks[0].commentLines.size() == 2 && ll.blocks[0].rect.h >= 2 * 16 + 2 * LayoutStyle().rowPadY - 0.01 && !ll.blocks[0].tailRect.empty(), "a label with a two-line comment is taller");
+    check(ll.blocks[1].shape == Shape::Text && ll.blocks[1].commentLines.size() == 1 && ll.blocks[1].tailRect.x >= ll.blocks[1].fields[0].rect.right(), "assembler text carries its comment after the text");
+    // a hat
+    Document h = docOf(".main\n JMP x\n");
+    h.sections[0].comment = "the entry\nof the program";
+    StackLayout hl = LayoutEngine(m).layoutStack(h.sections[0], 0);
+    check(hl.header.commentLines.size() == 2 && hl.header.rect.h > LayoutStyle().hatHeight && hl.header.commentRect.x >= hl.header.rect.x + 40 && !hl.header.tailRect.empty() && inside(hl.header.commentRect, hl.header.rect), "a hat with a two-line comment is taller; the blocks start below it");
+    check(std::fabs(hl.blocks[0].rect.y - hl.header.rect.bottom()) < 0.01, "(and the first block under it)");
+    StackLayout hp = layoutOf(".main\n JMP x\n");
+    check(!hp.header.tailRect.empty() && hp.header.tailRect.x >= hp.header.rect.x + 40, "a hat has the empty zone at its end");
+    // elision
+    Document long_;
+    long_ = docOf(".main\n JMP x\n");
+    long_.sections[0].blocks[0].comment = std::string(400, 'z');
+    StackLayout el = LayoutEngine(m).layoutStack(long_.sections[0], 0);
+    check(el.blocks[0].commentRect.w <= LayoutStyle().commentMaxWidth + 0.01, "a long line is shortened");
+}
+
 static void t_layout_regions() {
     section("layout: a cascade is framed");
     StackLayout s = layoutOf(".main\nstart: JMP start\n CASCADE_BEGIN 1, b0\nb0: JMP x\n CASCADE_END 0, done\nb1: JMP y\n CASCADE_END 1, done\ndone: JMP done\n");
@@ -689,6 +755,7 @@ int main() {
     t_shapes();
     t_spring();
     t_plug_shapes();
+    t_layout_comments();
     t_layout_regions();
     t_layout_rows();
     t_layout_shapes();

@@ -36,4 +36,5 @@ set(ACIDE_UI_SOURCES
   ${CMAKE_CURRENT_LIST_DIR}/ui/block_view.cpp
   ${CMAKE_CURRENT_LIST_DIR}/ui/generated_code_pane.cpp
   ${CMAKE_CURRENT_LIST_DIR}/ui/block_editor.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/ui/comment_edit.cpp
 )

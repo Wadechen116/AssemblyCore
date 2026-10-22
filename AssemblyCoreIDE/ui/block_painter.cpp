@@ -24,31 +24,26 @@ static QRectF qr(const Rect& r) { return QRectF(r.x, r.y, r.w, r.h); }
 
 namespace {
 
-constexpr double kRadius = 5, kNotchX = 14, kNotchW = 14, kNotchH = 4;
+constexpr double kRadius = 6, kNotchX = 14, kNotchW = 20, kNotchH = 5;
 
 QPainterPath roundedRect(const QRectF& r, double rad) {
     QPainterPath p;
     p.addRoundedRect(r, rad, rad);
     return p;
 }
-QPainterPath notch(const QRectF& r) {            // the dent on top of a block that the tab of the block above fills
+// The joint between stacked blocks: a smooth, rounded hill under a block (tab) and the matching hollow in the top of the block below (notch). Both are the
+// same curve, so a block fits exactly into the one above it; there are no corners.
+QPainterPath hill(double x0, double y0, double dir) {          // dir: +1 a hill below the edge y0 (tab), -1... (the notch uses the same curve downward from the top edge)
     QPainterPath n;
-    n.moveTo(r.left() + kNotchX, r.top());
-    n.lineTo(r.left() + kNotchX + 3, r.top() + kNotchH);
-    n.lineTo(r.left() + kNotchX + kNotchW - 3, r.top() + kNotchH);
-    n.lineTo(r.left() + kNotchX + kNotchW, r.top());
+    const double W = kNotchW, H = kNotchH * dir;
+    n.moveTo(x0, y0);
+    n.cubicTo(x0 + W * 0.22, y0, x0 + W * 0.25, y0 + H, x0 + W * 0.5, y0 + H);
+    n.cubicTo(x0 + W * 0.75, y0 + H, x0 + W * 0.78, y0, x0 + W, y0);
     n.closeSubpath();
     return n;
 }
-QPainterPath tab(const QRectF& r, double left) {  // the tab under a block
-    QPainterPath n;
-    n.moveTo(r.left() + left, r.bottom());
-    n.lineTo(r.left() + left + 3, r.bottom() + kNotchH);
-    n.lineTo(r.left() + left + kNotchW - 3, r.bottom() + kNotchH);
-    n.lineTo(r.left() + left + kNotchW, r.bottom());
-    n.closeSubpath();
-    return n;
-}
+QPainterPath notch(const QRectF& r) { return hill(r.left() + kNotchX, r.top(), 1); }           // the hollow on top of a block (it goes down into the block)
+QPainterPath tab(const QRectF& r, double left) { return hill(r.left() + left, r.bottom(), 1); }   // the hill under a block (it goes down out of the block)
 
 // A component's outline: a body with a small corner radius and, on the left edge, the tab of its type. The same function draws the dent of an empty
 // socket, so a tab fits its dent exactly and a tab of another shape visibly does not.
@@ -122,6 +117,30 @@ public:
     }
 };
 
+// the end-of-line comment of a block: one or several lines, as the layout fitted them
+void paintComment(PaintContext& c, const BlockBox& b, const QColor& text) {
+    if (b.commentLines.empty() || b.commentRect.empty()) return;
+    QColor cc = text;
+    cc.setAlphaF(0.7f);
+    QString all;
+    for (size_t i = 0; i < b.commentLines.size(); i++) all += (i ? "\n" : "") + QString::fromUtf8(b.commentLines[i].c_str());
+    QFont f = c.ui;
+    f.setItalic(true);
+    c.p.setFont(f);
+    c.p.setPen(cc);
+    c.p.drawText(qr(b.commentRect), Qt::AlignLeft | Qt::AlignTop, all);
+}
+
+// While the pointer is over a block that has no comment, the empty zone at its end hints that a double click writes one there
+void paintTailHint(PaintContext& c, const BlockBox& b, const BlockPaintState& st, const QColor& text) {
+    if (!st.hovered || !b.commentLines.empty() || b.tailRect.empty()) return;
+    QColor hc = text;
+    hc.setAlphaF(0.45f);
+    c.p.setFont(c.ui);
+    c.p.setPen(hc);
+    c.p.drawText(qr(b.tailRect), Qt::AlignVCenter | Qt::AlignLeft, QStringLiteral("; \u2026"));
+}
+
 // ---- shapes
 // the row shared by Statement, Container and Value: title, labelled fields, sockets and the comment
 void paintRow(PaintContext& c, const BlockBox& b, const QColor& text) {
@@ -154,11 +173,7 @@ void paintRow(PaintContext& c, const BlockBox& b, const QColor& text) {
             c.p.setClipping(false);
         }
     }
-    if (!b.comment.empty() && !b.commentRect.empty()) {
-        QColor cc = text;
-        cc.setAlphaF(0.65f);
-        drawText(c, qr(b.commentRect), QString::fromUtf8(("; " + b.comment).c_str()), c.ui, cc, false, true);
-    }
+    paintComment(c, b, text);
 }
 
 void finishBlock(PaintContext& c, const BlockBox& b, const QPainterPath& path, const BlockPaintState& st) {
@@ -206,7 +221,9 @@ public:
         c.p.setPen(QPen(fill.darker(135), 1));
         c.p.setBrush(fill);
         c.p.drawPath(path);
-        paintRow(c, b, toQColor(c.theme.textOn(Rgba{(uint8_t)fill.red(), (uint8_t)fill.green(), (uint8_t)fill.blue(), 255})));
+        const QColor rowText = toQColor(c.theme.textOn(Rgba{(uint8_t)fill.red(), (uint8_t)fill.green(), (uint8_t)fill.blue(), 255}));
+        paintRow(c, b, rowText);
+        paintTailHint(c, b, st, rowText);
         for (const SlotBox& sl : b.slotBoxes) {                              // an empty slot of a container is a black hole too: instructions can be dropped into it
             if (!sl.items.empty()) continue;
             c.p.setPen(QPen(toQColor(c.theme.holeBorder), 1));
@@ -228,7 +245,8 @@ public:
         const QColor text = toQColor(c.theme.textOn(Rgba{(uint8_t)fill.red(), (uint8_t)fill.green(), (uint8_t)fill.blue(), 255}));
         if (b.shape == Shape::Tag) {
             for (const FieldBox& f : b.fields) drawText(c, qr(f.rect).adjusted(6, 0, 0, 0), QString::fromUtf8(f.text.c_str()), c.mono, text, b.disabled);
-            if (!b.comment.empty() && !b.commentRect.empty()) paintRow(c, b, text);
+            paintComment(c, b, text);
+            paintTailHint(c, b, st, text);
         } else {
             paintRow(c, b, text);
         }
@@ -252,6 +270,7 @@ public:
             if (note) t = "; " + t;
             drawText(c, qr(f.rect), t, note ? c.ui : c.mono, text, b.disabled, note);
         }
+        if (!note) { paintComment(c, b, text); paintTailHint(c, b, st, text); }
         finishBlock(c, b, path, st);
     }
 };
@@ -278,10 +297,15 @@ QPainterPath BlockPainter::outline(const BlockBox& b) {
     const QRectF r = qr(b.rect);
     switch (b.shape) {
         case Shape::Value: return plugPath(r, b.plug, b.plugDepth);
-        case Shape::Tag: return roundedRect(r, std::min(r.height() / 2, 14.0));
-        case Shape::Note:
-        case Shape::Text:
         case Shape::Spacer: return roundedRect(r, 3);
+        case Shape::Tag:                                                // labels, comments and assembler text are stack blocks too: the same hollow and hill
+        case Shape::Note:
+        case Shape::Text: {
+            QPainterPath p = roundedRect(r, kRadius - 1);
+            p -= notch(r);
+            p |= tab(r, kNotchX);
+            return p;
+        }
         case Shape::Container: {
             QPainterPath p;
             if (b.slotBoxes.empty()) { p = roundedRect(r, kRadius); }
@@ -363,7 +387,18 @@ void BlockPainter::paintStack(QPainter& p, const StackLayout& s, const StackPain
         f.setBold(true);
         p.setFont(f);
         p.setPen(toQColor(th.hatText));
-        p.drawText(r.adjusted(14, 0, -8, 0), Qt::AlignVCenter | Qt::AlignLeft, QString::fromUtf8(s.header.text.c_str()));
+        p.drawText(QRectF(r.left() + 14, r.top(), p.fontMetrics().horizontalAdvance(QString::fromUtf8(s.header.text.c_str())) + 4, r.height()), Qt::AlignVCenter | Qt::AlignLeft, QString::fromUtf8(s.header.text.c_str()));
+        if (!s.header.commentLines.empty()) {
+            QString all;
+            for (size_t i = 0; i < s.header.commentLines.size(); i++) all += (i ? "\n" : "") + QString::fromUtf8(s.header.commentLines[i].c_str());
+            QFont cf = ui_;
+            cf.setItalic(true);
+            p.setFont(cf);
+            QColor cc = toQColor(th.hatText);
+            cc.setAlphaF(0.7f);
+            p.setPen(cc);
+            p.drawText(qr(s.header.commentRect), Qt::AlignLeft | Qt::AlignTop, all);
+        }
     } else if (s.header.kind == HeaderBox::Tag) {
         QFont f = ui_;
         f.setItalic(true);

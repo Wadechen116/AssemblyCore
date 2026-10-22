@@ -74,6 +74,8 @@ void StackItem::hoverMoveEvent(QGraphicsSceneHoverEvent* e) {
     scene_.setHovered(b ? b->id : std::string());
     if (!b) { setToolTip(QString()); return; }
     QString tip;
+    if (b->shape != Shape::Value && b->shape != Shape::Note && b->shape != Shape::Spacer && b->tailRect.contains({e->pos().x(), e->pos().y()}))
+        tip += QCoreApplication::translate("BlockCanvas", "Double-click to write or edit the comment at the end of this block") + "\n\n";
     auto it = scene_.problems_.find(b->id);
     if (it != scene_.problems_.end()) tip += QString::fromUtf8(it->second.c_str()) + "\n\n";
     tip += QString::fromUtf8(b->title.empty() ? b->type.c_str() : b->title.c_str());
@@ -515,6 +517,41 @@ void BlockScene::cancelDrag() {
         mode_ = Mode::Idle;
         rebuild();
     }
+}
+
+// The end of a block (or of a hat): the comment if there is one, else the empty zone reserved for it. Only blocks that are lines of the program carry a
+// comment -- not components, not comment blocks.
+bool BlockScene::commentTargetAt(const QPointF& p, CommentTarget& out) const {
+    for (size_t i = layout_.stacks.size(); i-- > 0;) {
+        const blocks::StackLayout& s = layout_.stacks[i];
+        const blocks::Pt local{p.x() - s.origin.x, p.y() - s.origin.y};
+        if (s.header.kind == blocks::HeaderBox::Hat && s.header.tailRect.contains(local)) {
+            out.section = true;
+            out.stack = i;
+            out.blockId.clear();
+            out.rect = QRectF(s.origin.x + s.header.tailRect.x, s.origin.y + s.header.tailRect.y, s.header.tailRect.w, s.header.tailRect.h);
+            out.text = session_.document().sections[i].comment;
+            return true;
+        }
+        for (size_t k = s.blocks.size(); k-- > 0;) {
+            const blocks::BlockBox& b = s.blocks[k];
+            if (b.shape == blocks::Shape::Value || b.shape == blocks::Shape::Note || b.shape == blocks::Shape::Spacer || b.tailRect.empty()) continue;
+            if (!b.tailRect.contains(local)) continue;
+            out.section = false;
+            out.stack = i;
+            out.blockId = b.id;
+            out.rect = QRectF(s.origin.x + b.tailRect.x, s.origin.y + b.tailRect.y, b.tailRect.w, b.tailRect.h);
+            out.text = b.comment;
+            return true;
+        }
+    }
+    return false;
+}
+
+void BlockScene::mouseDoubleClickEvent(QGraphicsSceneMouseEvent* e) {
+    CommentTarget t;
+    if (e->button() == Qt::LeftButton && commentTargetAt(e->scenePos(), t)) { commentEdit.fire(t); e->accept(); return; }
+    QGraphicsScene::mouseDoubleClickEvent(e);
 }
 
 void BlockScene::keyPressEvent(QKeyEvent* e) {

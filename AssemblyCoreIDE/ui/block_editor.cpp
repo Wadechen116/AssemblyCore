@@ -92,6 +92,7 @@ BlockEditor::BlockEditor(AppContext& ctx, const std::string& path, QWidget* pare
     view_->setObjectName("blockView");
     scene_->setAnimationsEnabled(ctx.settings.get("blocks.animate", "1") != "0");      // the soft, bouncy effects (blocks.animate = 0 switches them off)
     view_->setTheme(scene_->theme());
+    commentEdit_ = new CommentEdit(this);                  // a child of the editor, not of the view: the view's Esc / Delete shortcuts must not reach it
     code_ = new GeneratedCodePane(ctx.language, theme, mono, this);
     pages_->addWidget(view_);
     pages_->addWidget(code_);
@@ -124,6 +125,22 @@ BlockEditor::BlockEditor(AppContext& ctx, const std::string& path, QWidget* pare
         syncing_ = false;
     });
 
+    conns_->add(scene_->commentEdit, [this](const BlockScene::CommentTarget& t) { beginCommentEdit(t); });
+    connect(commentEdit_, &CommentEdit::committed, this, [this](const QString& text) {
+        std::string t = text.toUtf8().toStdString();
+        while (!t.empty() && (t.back() == '\n' || t.back() == '\r' || t.back() == ' ' || t.back() == '\t')) t.pop_back();       // trailing blank lines and spaces are not a comment
+        session_.beginGroup("comment:" + std::to_string(++commentSerial_));              // each kept comment is its own undo step (typing in the editor is not an edit yet)
+        struct EndGroup { BlockSession& s; ~EndGroup() { s.endGroup(); } } endGroup{session_};
+        if (editing_.section) {
+            session_.apply([&](asmcore::blocks::Editor& ed) { return ed.setSectionComment(editing_.stack, t); });
+        } else if (!editing_.blockId.empty() && session_.document().find(editing_.blockId)) {
+            const bool changed = t != editing_.text;
+            session_.apply([&](asmcore::blocks::Editor& ed) { return ed.setComment(editing_.blockId, t); });
+            if (changed) scene_->popEffect(editing_.blockId);                                  // the block settles with a little wobble
+        }
+        view_->setFocus();
+    });
+    connect(commentEdit_, &CommentEdit::cancelled, this, [this] { view_->setFocus(); });
     conns_->add(scene_->blockClicked, [this](const std::string& id, Qt::KeyboardModifiers m) { onBlockClicked(id, m); });
     conns_->add(scene_->emptyClicked, [this](Qt::KeyboardModifiers m) { if (!(m & Qt::ControlModifier)) session_.clearSelection(); });
     conns_->add(session_.changed, [this] { refreshCode(); refreshInfo(); });
@@ -196,6 +213,17 @@ void BlockEditor::refreshSymbols() {
     symbolsFrom_ = achw;
     asmcore::blocks::SymbolTable table;
     if (hardwareSymbols(ctx_.workspace, achw, table)) session_.setExternalSymbols(table);
+}
+
+void BlockEditor::beginCommentEdit(const BlockScene::CommentTarget& t) {
+    if (commentEdit_->isOpen()) return;
+    editing_ = t;
+    QRect r = view_->mapFromScene(t.rect).boundingRect();
+    r.moveTopLeft(view_->viewport()->mapTo(this, r.topLeft()));
+    QFont f = font();
+    f.setPointSizeF(std::max(7.0, f.pointSizeF() * view_->zoom()));
+    const blocks::BlockTheme& th = scene_->theme();
+    commentEdit_->open(QRect(r.x(), r.y(), std::max(r.width(), (int)(190 * view_->zoom())), r.height()), QString::fromUtf8(t.text.c_str()), f, toQColor(th.canvas).lighter(125), toQColor(th.chipText), toQColor(th.selection));
 }
 
 void BlockEditor::refreshCode() { code_->setCode(QString::fromUtf8(session_.generated().text.c_str())); }
