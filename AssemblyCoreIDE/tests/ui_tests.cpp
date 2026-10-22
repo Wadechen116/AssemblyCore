@@ -1110,6 +1110,29 @@ private slots:
         r.ed->scene().moveSelectedStacksBy(QPointF(-1e7, -1e7), true);
         for (const auto& sec : s.document().sections) QVERIFY(sec.x >= area.left() - 1 && sec.y >= area.top() - 1);
     }
+    void namesFromTheHardwareDescriptionAreKnown() {
+        Rig r(".main\n EXEC_CSR WRITE8 BOARD_CTRL, 1\n");
+        auto flagged = [&](const QString& name) {
+            for (const auto& p : r.ed->session().problems()) if (QString::fromStdString(p.message).contains("'" + name + "' is not defined")) return true;
+            return false;
+        };
+        QVERIFY(flagged("BOARD_CTRL"));                                           // nothing defines it yet
+        QVERIFY(r.w->newHardware("/w/board.achw"));                              // a description is created and attached to the project
+        HardwareDesigner* hd = r.w->currentDesigner();
+        QVERIFY(hd);
+        const QString csr = hd->addComponent("csr");                              // a CSR with a free name
+        hd->flush();
+        QVERIFY(!csr.isEmpty());
+        // a program that uses that CSR by name
+        r.f.ws.setText("/w/prog.acblk", asmcore::blocks::serializeDocument(asmcore::blocks::importAsm(".main\n EXEC_CSR WRITE8 " + csr.toStdString() + ", 1\n")));
+        QVERIFY2(!flagged(csr), qPrintable(csr + " is a CSR of the hardware description"));
+        QVERIFY(r.ed->session().symbols().find(csr.toStdString(), "csr") != nullptr);
+        const asmcore::blocks::Block& b = r.ed->session().document().sections[0].blocks[0];
+        QVERIFY2(b.value("csr") && b.value("csr")->type == "csr_ref", "the name is a CSR reference (it is defined by the description)");
+        // and a name it does not define is still flagged
+        r.f.ws.setText("/w/prog.acblk", asmcore::blocks::serializeDocument(asmcore::blocks::importAsm(".main\n EXEC_CSR WRITE8 NOT_THERE, 1\n")));
+        QVERIFY(flagged("NOT_THERE"));
+    }
     void zoomAndFit() {
         Rig r;
         BlockView& v = r.ed->view();

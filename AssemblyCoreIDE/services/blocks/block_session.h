@@ -42,6 +42,10 @@ public:
     void setGenerateOptions(const asmcore::blocks::GenerateOptions& o);
     const asmcore::blocks::Generated& generated() const;
     const std::vector<asmcore::blocks::BlockProblem>& problems() const;
+    // Symbols defined outside the document (the hardware description): the names components may use, and the "not defined" checks know them.
+    void setExternalSymbols(const asmcore::blocks::SymbolTable& t);
+    // The symbols of the document and the outside together (cached until the next change): what a name drop-down offers.
+    const asmcore::blocks::SymbolTable& symbols() const;
     struct Stats {
         size_t blocks = 0, stacks = 0, programStacks = 0, floatingStacks = 0, rawBlocks = 0, problems = 0;
     };
@@ -72,7 +76,9 @@ private:
     asmcore::blocks::RuleOptions rules_;
     asmcore::blocks::GenerateOptions genOptions_;
     std::set<std::string> selection_;
-    mutable bool haveGenerated_ = false, haveProblems_ = false;
+    asmcore::blocks::SymbolTable external_;
+    mutable asmcore::blocks::SymbolTable symbols_;
+    mutable bool haveGenerated_ = false, haveProblems_ = false, haveSymbols_ = false;
     mutable asmcore::blocks::Generated generated_;
     mutable std::vector<asmcore::blocks::BlockProblem> problems_;
 };

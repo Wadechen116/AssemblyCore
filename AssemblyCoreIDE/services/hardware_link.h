@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 
+#include "asmcore/blocks.h"
 #include "asmcore/hardware.h"
 #include "workspace.h"
 
@@ -15,6 +16,10 @@ struct HardwareFiles {
 };
 
 HardwareFiles hardwareFiles(const std::string& achwPath, const asmcore::Hardware& hw);
+
+// The symbols the description defines (CSRs, services, devices, constants: what its generated include defines), added to `table`, which then counts as an
+// open world (names may come from the description). False if the description cannot be read. Used to check the names in block programs.
+bool hardwareSymbols(Workspace& ws, const std::string& achwPath, asmcore::blocks::SymbolTable& table);
 
 // Reads the description from the workspace (an open buffer wins over the disk). False with `errors` if it cannot be read or parsed.
 bool loadHardware(Workspace& ws, const std::string& achwPath, asmcore::Hardware& hw, std::vector<std::string>& errors);

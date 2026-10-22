@@ -107,6 +107,11 @@ BlockDef* Registry::edit(const std::string& type) {
     for (BlockDef& d : defs_) if (d.type == type) return &d;
     return nullptr;
 }
+std::vector<const BlockDef*> Registry::ofClass(const std::string& cls) const {
+    std::vector<const BlockDef*> v;
+    for (const BlockDef& d : defs_) if (d.cls == cls) v.push_back(&d);
+    return v;
+}
 const BlockDef* Registry::find(const std::string& type) const {
     for (const BlockDef& d : defs_) if (d.type == type) return &d;
     return nullptr;
@@ -209,6 +214,15 @@ const Registry& Registry::defaults() {
         def("blank", "blank line", "Text", kBoth, {}, "");
         def("raw", "assembler text", "Text", kBoth, {F("text", "text")}, "{text}", "", "A line the blocks do not cover (yet), kept exactly as written.");
         detail::addComponentDefs(r, L);
+        // the class of every built-in block: components are the value blocks; the rest by drawer
+        for (const BlockDef& d0 : r.all()) {
+            BlockDef* d = r.edit(d0.type);
+            if (!d->valueType.empty()) d->cls = "component";
+            else if (d->category == "Structure") d->cls = "structure";
+            else if (d->category == "Definitions") d->cls = "definition";
+            else if (d->category == "Text") d->cls = "text";
+            else d->cls = "instruction";
+        }
         return r;
     }();
     return reg;
@@ -417,13 +431,17 @@ void checkBlock(const Block& b, const std::string& domain, bool inProc, bool asV
 }
 }  // namespace
 
-std::vector<BlockProblem> validate(const Document& doc, const Registry& reg) {
+std::vector<BlockProblem> validate(const Document& doc, const Registry& reg, const SymbolTable* extra) {
     std::vector<BlockProblem> out;
     std::set<std::string> ids;
     for (const Section& s : doc.sections) {
         if (s.domain != "" && s.domain != "main" && s.domain != "peri" && s.domain != "floating") out.push_back({true, "", "unknown section '" + s.domain + "' (main, peri or floating)"});
         checkList(s.blocks, s.domain, false, reg, out, ids);
     }
+    SymbolTable table;
+    table.addDocument(doc);
+    if (extra) table.addTable(*extra);
+    detail::referenceProblems(doc, reg, table, out);
     return out;
 }
 
@@ -437,6 +455,7 @@ std::string mirrorText(const Block& b, const BlockDef* d, const std::string& nam
     if (b.value(name)) return partText(b, *d, name, reg);
     for (const InputDef& in : d->inputs) {
         if (in.derive.empty() || !b.value(in.name)) continue;
+        if (in.derive.compare(0, 4, "arg:") == 0) { if (in.derive.substr(4) == name) return partText(b, *d, name, reg); continue; }
         const std::string spec = in.derive.substr(6);
         const size_t comma = spec.find(',');
         if (name == spec.substr(0, comma) || name == spec.substr(comma + 1)) return partText(b, *d, name, reg);
@@ -568,7 +587,7 @@ std::string serializeDocument(const Document& doc, const Registry& reg) {
     return out + "\n";
 }
 
-bool parseDocument(const std::string& text, Document& out, std::string& error, const Registry& reg) {
+bool parseDocument(const std::string& text, Document& out, std::string& error, const Registry& reg, const SymbolTable* extra) {
     out = Document();
     json::Parser p(text);
     json::Value root;
@@ -607,7 +626,7 @@ bool parseDocument(const std::string& text, Document& out, std::string& error, c
     for (const Section& s : out.sections) maxId = std::max(maxId, maxNumericId(s.blocks));
     out.nextId = std::max<unsigned>(maxId + 1, root.get("next_id") && root.get("next_id")->kind == json::Value::Number ? (unsigned)root.get("next_id")->num : 1);
     out.assignMissingIds();
-    reconcileDocument(out, reg);                                                     // components agree with their text mirrors; text without components is split
+    reconcileDocument(out, reg, extra);                                                     // components agree with their text mirrors; text without components is split
     return true;
 }
 

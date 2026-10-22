@@ -4,6 +4,7 @@
 // can fall back to Statement.
 #include <map>
 #include <string>
+#include <vector>
 
 #include "asmcore/blocks.h"
 
@@ -24,6 +25,20 @@ struct ShapeInfo {
     Shape shape = Shape::Statement;
     bool showTitle = true;               // the title ("move") before the fields; the shapes that are only a name or a text do not use it
 };
+
+// The shape of the joint of a component: its plug (the tab on its left edge) and the dent of the socket it fits. The shape follows the value TYPE, so
+// a number cannot be mistaken for a region or an option, and a socket shows what it takes.
+enum class PlugShape {
+    None,
+    Round,           // int: numbers, names, expressions
+    Point,           // region:*  (a pointed tab)
+    Square,          // options: alu operation, sign, conditions
+    Flag,            // label.flow, label.proc
+    Diamond,         // references: csr, service, dev
+    Any              // a socket that takes several shapes: a plain square dent, dotted
+};
+PlugShape plugShapeOf(const std::string& valueType);
+PlugShape plugShapeOfSocket(const std::vector<std::string>& accepts);
 
 class ShapeRegistry {
 public:

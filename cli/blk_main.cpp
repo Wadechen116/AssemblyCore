@@ -53,15 +53,21 @@ int main(int argc, char** argv) {
         else input = a;
     }
     if (cmd == "blocks") {
-        std::map<std::string, std::vector<const BlockDef*>> by;
-        for (const BlockDef& d : Registry::defaults().all()) by[d.category].push_back(&d);
-        for (auto& kv : by) {
-            std::printf("%s\n", kv.first.c_str());
-            for (const BlockDef* d : kv.second) {
-                std::printf("  %-14s %-26s %s", d->type.c_str(), d->title.c_str(), d->domains == kMain ? "[Main] " : d->domains == kPeri ? "[Peri] " : "");
-                for (const FieldDef& f : d->fields) std::printf(" %s", f.label.c_str());
-                if (!d->stacks.empty()) std::printf("  (holds blocks)");
-                std::printf("\n");
+        // by class (instructions and components are different kinds of block), then by drawer
+        static const struct { const char* cls; const char* title; } kClasses[] = {
+            {"instruction", "INSTRUCTIONS (stack on each other)"}, {"component", "COMPONENTS (plug into an instruction)"}, {"structure", "STRUCTURE"}, {"definition", "DEFINITIONS"}, {"text", "TEXT"}};
+        for (const auto& k : kClasses) {
+            std::map<std::string, std::vector<const BlockDef*>> by;
+            for (const BlockDef* d : Registry::defaults().ofClass(k.cls)) by[d->category].push_back(d);
+            std::printf("== %s ==\n", k.title);
+            for (auto& kv : by) {
+                std::printf("%s\n", kv.first.c_str());
+                for (const BlockDef* d : kv.second) {
+                    std::printf("  %-24s %-26s %s", d->type.c_str(), d->title.c_str(), d->domains == kMain ? "[Main] " : d->domains == kPeri ? "[Peri] " : "");
+                    for (const FieldDef& f : d->fields) std::printf(" %s", f.label.c_str());
+                    if (!d->stacks.empty()) std::printf("  (holds blocks)");
+                    std::printf("\n");
+                }
             }
         }
         return 0;

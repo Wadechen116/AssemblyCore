@@ -61,6 +61,11 @@ struct BlockDef {
     std::vector<FieldDef> fields;
     std::vector<std::string> stacks;         // names of statement slots (".proc" has "BODY")
     std::vector<InputDef> inputs;            // value sockets
+    // The CLASS of a block (set for the built-in blocks): "instruction" (one line of the program: move, calculate, write CSR, branch ...),
+    // "component" (a value that plugs into an instruction: numbers, regions, options), "structure" (procedures, labels, vectors),
+    // "definition" (.equ .csr ...), "text" (comments, blank lines, assembler text). Instructions and components are different kinds of block:
+    // they stack vs. plug, and a toolbox lists them apart.
+    std::string cls;
     std::string semantic;                    // how a component block is read: "number", "binop", "unop", "paren", "region" ("" = by its template)
     std::string valueType;                   // non-empty: this block is a VALUE (it plugs into a socket and generates an expression, not a line)
     // Text this block generates. {field} is replaced by the field; {?flag:text} is text only when the Flag field is set;
@@ -75,6 +80,7 @@ public:
     static const Registry& defaults();       // the Level 1 blocks, options taken from the language vocabulary
     const BlockDef* find(const std::string& type) const;
     BlockDef* edit(const std::string& type);                  // for building a registry
+    std::vector<const BlockDef*> ofClass(const std::string& cls) const;
     const std::vector<BlockDef>& all() const { return defs_; }
     void add(const BlockDef& d);
 private:
@@ -157,13 +163,16 @@ std::vector<size_t> programOrder(const Document& doc);
 struct BlockProblem {
     bool error = true;
     std::string blockId, message;
+    std::string kind = "structure";          // "structure": the block is built wrongly; "reference": a name that is undefined, of the wrong kind, out of reach, or recursion
 };
 // Structure only (known type, required fields, a block in a domain it exists in, choices). Whether the program is right is the assembler's
 // job: assemble the generated text.
-std::vector<BlockProblem> validate(const Document& doc, const Registry& reg = Registry::defaults());
+class SymbolTable;
+std::vector<BlockProblem> validate(const Document& doc, const Registry& reg = Registry::defaults(), const SymbolTable* extra = nullptr);
 
 // ---- the .acblk file -----------------------------------------------------------------------------------------------------------------
-bool parseDocument(const std::string& text, Document& out, std::string& error, const Registry& reg = Registry::defaults());
+class SymbolTable;
+bool parseDocument(const std::string& text, Document& out, std::string& error, const Registry& reg = Registry::defaults(), const SymbolTable* extra = nullptr);
 std::string serializeDocument(const Document& doc, const Registry& reg = Registry::defaults());
 
 // ---- helpers for editors: take an operand apart and put it together -----------------------------------------------------------------------
@@ -175,6 +184,7 @@ struct Operand {
 bool parseOperand(const std::string& text, Operand& out);
 std::string formatOperand(const Operand& op);
 
+class SymbolTable;
 // ---- components (stage M2b) ------------------------------------------------------------------------------------------------------------
 // Value types a socket can take and a value block gives (BlockDef::valueType, InputDef::accepts).
 constexpr const char* kTypeInt = "int";
@@ -194,13 +204,49 @@ std::string valueText(const Block& v, const Registry& reg = Registry::defaults()
 // into blocks, but only where the blocks give back exactly the same text (ignoring spaces); anything else stays as text in the mirror field.
 // Returns how many component blocks were made. A damaged / older file never fails: its text is what counts.
 int explodeBlock(Block& b, Document& doc, const Registry& reg = Registry::defaults());
-int explodeDocument(Document& doc, const Registry& reg = Registry::defaults());
+int explodeDocument(Document& doc, const Registry& reg = Registry::defaults(), const SymbolTable* extra = nullptr);   // extra: symbols from outside (the hardware description)
+// A name that is now known (e.g. a CSR of the hardware description) becomes a reference of its kind where a socket takes that kind. Returns how many.
+int retypeReferences(Document& doc, const Registry& reg, const SymbolTable& table);
 // Brings the components in line with the text mirrors after a file was read: a component whose text differs from its mirror is dropped
 // (the text wins -- an older tool may have edited it), then the text is split again.
-void reconcileDocument(Document& doc, const Registry& reg = Registry::defaults());
+void reconcileDocument(Document& doc, const Registry& reg = Registry::defaults(), const SymbolTable* extra = nullptr);
 
 // A number literal as the assembler reads it ("123", "0x7F", "7Fh", "0b101", "101b", "'A'"); false if the text is not one.
 bool parseNumberLiteral(const std::string& text, long long& out);
+
+// ---- symbols: what the definitions define and the components use (stage M2b-2) ---------------------------------------------------------
+// The definitions of a program are the PRODUCERS of typed symbols, the components the CONSUMERS: `.equ` makes an int, `.csr` a CSR, `.service` a
+// service, `.devmap` a device, `.const` an item of the constant pool; labels and procedures are code positions. A component that names a symbol
+// is checked against the table (defined? of the right kind? visible from here?), and the names offered for a socket are the symbols of its kind.
+struct Symbol {
+    std::string name;
+    std::string kind;                        // "int" (.equ), "csr", "service", "dev", "const", "label.flow", "label.proc"
+    std::string value;                       // the text after '=' (for a tooltip)
+    std::string where;                       // the id of the block that defines it, or a source such as "hardware"
+    std::string domain;                      // labels and procedures: "main" / "peri"
+    std::string proc;                        // a label inside a procedure: its name ("" = a flow label)
+};
+
+class SymbolTable {
+public:
+    void add(const Symbol& s) { syms_.push_back(s); }
+    void addDocument(const Document& doc);                                  // the directives, labels and procedures of a document
+    void addAsm(const std::string& text);                                   // assembler text (e.g. the include generated from the hardware description)
+    void addTable(const SymbolTable& other);
+    const std::vector<Symbol>& all() const { return syms_; }
+    const Symbol* find(const std::string& name, const std::string& kind = "") const;     // kind "" = any; "int" also matches the kinds that are numbers
+    std::vector<const Symbol*> ofKind(const std::string& kind) const;
+    // A label or procedure seen from a place: Found, Hidden (a label inside another procedure), Missing, OtherDomain (Main <-> Peri).
+    enum class Look { Found, Hidden, Missing, OtherDomain };
+    Look look(const std::string& name, const std::string& kind, const std::string& domain, const std::string& proc, const Symbol** found = nullptr) const;
+    // True if names may be defined outside what the table knows (.include, a hardware description): then "not defined" is only a warning.
+    bool openWorld() const { return openWorld_; }
+    void setOpenWorld(bool v) { openWorld_ = v; }
+
+private:
+    std::vector<Symbol> syms_;
+    bool openWorld_ = false;
+};
 
 }  // namespace blocks
 }  // namespace asmcore

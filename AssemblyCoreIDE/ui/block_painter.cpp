@@ -50,6 +50,35 @@ QPainterPath tab(const QRectF& r, double left) {  // the tab under a block
     return n;
 }
 
+// A component's outline: a body with a small corner radius and, on the left edge, the tab of its type. The same function draws the dent of an empty
+// socket, so a tab fits its dent exactly and a tab of another shape visibly does not.
+QPainterPath plugPath(const QRectF& body, PlugShape shape, double depth, double radius = 4) {
+    QPainterPath p = roundedRect(body, radius);
+    if (shape == PlugShape::None || depth <= 0) return p;
+    const double cy = body.center().y(), l = body.left(), half = std::min(7.0, body.height() / 2 - 2);
+    QPainterPath t;
+    switch (shape) {
+        case PlugShape::Round:
+            t.addEllipse(QRectF(l - depth, cy - half, 2 * depth, 2 * half));
+            break;
+        case PlugShape::Point:
+            t.moveTo(l, cy - half); t.lineTo(l - depth, cy); t.lineTo(l, cy + half); t.closeSubpath();
+            break;
+        case PlugShape::Flag:
+            t.moveTo(l, cy - half); t.lineTo(l - depth, cy - half * 0.45); t.lineTo(l - depth, cy + half * 0.45); t.lineTo(l, cy + half); t.closeSubpath();
+            break;
+        case PlugShape::Diamond:
+            t.moveTo(l, cy - half); t.lineTo(l - depth * 0.55, cy - half); t.lineTo(l - depth, cy); t.lineTo(l - depth * 0.55, cy + half); t.lineTo(l, cy + half); t.closeSubpath();
+            break;
+        case PlugShape::Square:
+        case PlugShape::Any:
+        default:
+            t.addRect(QRectF(l - depth, cy - half, depth + 1, 2 * half));
+            break;
+    }
+    return p | t;
+}
+
 void drawText(PaintContext& c, const QRectF& r, const QString& s, const QFont& f, const QColor& col, bool strike = false, bool italic = false) {
     QFont ff = f;
     ff.setStrikeOut(strike);
@@ -107,10 +136,10 @@ void paintRow(PaintContext& c, const BlockBox& b, const QColor& text) {
     }
     for (const SocketBox& s : b.sockets) {
         if (!s.label.empty() && !s.labelRect.empty()) drawText(c, qr(s.labelRect), QString::fromUtf8(s.label.c_str()), c.ui, text, b.disabled);
-        if (s.child < 0 && !s.empty) {                           // nothing plugged in, but text typed: a chip (the same look as a field)
+        if (s.child < 0 && !s.empty) {                           // nothing plugged in, but text typed: a chip in the shape of the dent
             c.p.setPen(QPen(toQColor(c.theme.chipBorder), 1));
             c.p.setBrush(toQColor(c.theme.chip));
-            c.p.drawRoundedRect(qr(s.rect), 4, 4);
+            c.p.drawPath(plugPath(qr(s.rect), s.plug, s.plugDepth));
             QColor tc = toQColor(c.theme.chipText);
             if (b.disabled) tc.setAlphaF(0.55f);
             drawText(c, qr(s.rect).adjusted(6, 0, -6, 0), QString::fromUtf8(s.text.c_str()), c.mono, tc, b.disabled);
@@ -119,7 +148,7 @@ void paintRow(PaintContext& c, const BlockBox& b, const QColor& text) {
             QColor dent = toQColor(c.theme.chip);
             dent.setAlphaF(0.35f);
             c.p.setBrush(dent);
-            c.p.drawRoundedRect(qr(s.rect), qr(s.rect).height() / 2, qr(s.rect).height() / 2);
+            c.p.drawPath(plugPath(qr(s.rect), s.plug, s.plugDepth));
         }
     }
     if (!b.comment.empty() && !b.commentRect.empty()) {
@@ -239,7 +268,7 @@ public:
 QPainterPath BlockPainter::outline(const BlockBox& b) {
     const QRectF r = qr(b.rect);
     switch (b.shape) {
-        case Shape::Value:
+        case Shape::Value: return plugPath(r, b.plug, b.plugDepth);
         case Shape::Tag: return roundedRect(r, std::min(r.height() / 2, 14.0));
         case Shape::Note:
         case Shape::Text:

@@ -21,6 +21,8 @@ std::string renderTemplate(const std::string& tmpl, const Block& b, const Regist
 void addComponentDefs(Registry& r, const lang::Language& L);
 // structure problems of a component block (numbers out of range, regions ...), appended to `out`
 void componentProblems(const Block& b, const BlockDef& d, const Registry& reg, std::vector<BlockProblem>& out);
+// names that are not defined / of the wrong kind / out of reach, and recursion (blocks_symbols.cpp)
+void referenceProblems(const Document& doc, const Registry& reg, const SymbolTable& tab, std::vector<BlockProblem>& out);
 // all component problems of a block and everything plugged into it (used to see what a new plug breaks)
 std::vector<BlockProblem> subtreeProblems(const Block& host, const Registry& reg);
 // problems of one component plugged into one socket (a constant too wide for CONST, a float where an integer is needed ...)

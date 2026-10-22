@@ -1,6 +1,7 @@
 #include "blocks/block_layout.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 
 namespace acide {
@@ -141,6 +142,7 @@ struct LayoutEngine::Run {
         box.disabled = b.disabled;
         box.collapsed = b.collapsed;
         box.known = def != nullptr;
+        if (def) { box.valueType = def->valueType; box.plug = plugShapeOf(def->valueType); box.plugDepth = box.plug == PlugShape::None ? 0 : S.plugDepth; }
         box.category = def ? def->category : "Text";
         ShapeInfo info;
         if (def) info = e.shapes_.infoFor(*def);
@@ -195,9 +197,21 @@ struct LayoutEngine::Run {
         // the blocks plugged into value sockets are laid out first (their size decides the height of the row)
         std::vector<int> plugged;                       // parallel to def->inputs, -1 = empty
         double maxChildH = 0;
+        // a socket shows if its condition holds; the parts of a composite text ("dev=.., addr=..") show only while the text is split into them (or empty)
+        auto inputVisible = [&](const InputDef& in) {
+            if (!asmcore::blocks::partVisible(in.when, b)) return false;
+            if (in.derive.compare(0, 4, "arg:") == 0) {
+                bool any = false;
+                for (const InputDef& o : def->inputs) if (o.derive == in.derive && b.value(o.name)) any = true;
+                std::string text = b.get(in.derive.substr(4));
+                while (!text.empty() && std::isspace((unsigned char)text.back())) text.pop_back();
+                if (!any && !text.empty()) return false;
+            }
+            return true;
+        };
         if (def) {
             for (const InputDef& in : def->inputs) {
-                const Block* child = asmcore::blocks::partVisible(in.when, b) ? b.value(in.name) : nullptr;
+                const Block* child = inputVisible(in) ? b.value(in.name) : nullptr;
                 if (!child) { plugged.push_back(-1); continue; }
                 const int ci = block(*child, 0, 0, depth + 1, idx, in.name);
                 plugged.push_back(ci);
@@ -221,8 +235,9 @@ struct LayoutEngine::Run {
                 for (size_t i = 0; i < def->inputs.size(); i++) if (def->inputs[i].name == n) return (int)i;
                 return -1;
             };
-            auto derivedAway = [&](const std::string& n) {                  // ptr / len while a window is plugged in: the window says it
+            auto derivedAway = [&](const std::string& n) {                  // ptr / len while a window is plugged in: the window says it; "args" while it is split
                 for (const InputDef& in : def->inputs) {
+                    if (in.derive.compare(0, 4, "arg:") == 0 && in.derive.substr(4) == n && b.value(in.name)) return true;
                     if (in.derive.compare(0, 6, "range:") != 0 || !b.value(in.name)) continue;
                     const std::string spec = in.derive.substr(6);
                     const size_t comma = spec.find(',');
@@ -234,14 +249,14 @@ struct LayoutEngine::Run {
                 const FieldDef& f = def->fields[fi];
                 if (!asmcore::blocks::partVisible(f.when, b)) continue;
                 const int si = socketNamed(f.name);
-                if (si >= 0) { if (asmcore::blocks::partVisible(def->inputs[(size_t)si].when, b)) parts.push_back({true, (size_t)si}); continue; }
+                if (si >= 0) { if (inputVisible(def->inputs[(size_t)si])) parts.push_back({true, (size_t)si}); continue; }
                 if (derivedAway(f.name)) continue;
                 parts.push_back({false, fi});
             }
             for (size_t i = 0; i < def->inputs.size(); i++) {
                 bool mirrored = false;
                 for (const FieldDef& f : def->fields) if (f.name == def->inputs[i].name) mirrored = true;
-                if (!mirrored && asmcore::blocks::partVisible(def->inputs[i].when, b)) parts.push_back({true, i});
+                if (!mirrored && inputVisible(def->inputs[i])) parts.push_back({true, i});
             }
             auto fieldOf = [&](const std::string& n) -> const FieldDef* { for (const FieldDef& f : def->fields) if (f.name == n) return &f; return nullptr; };
             for (const Part& part : parts) {
@@ -290,11 +305,14 @@ struct LayoutEngine::Run {
                 sb.label = T.inputLabel(*def, in);
                 if (sb.label.empty() && mirror) sb.label = T.fieldLabel(*def, *mirror);
                 sb.types = in.accepts;
+                sb.plug = plugShapeOfSocket(in.accepts);
+                sb.plugDepth = sb.plug == PlugShape::None ? 0 : S.plugDepth;
                 if (!sb.label.empty() && S.showFieldLabels) {
                     const double lw = w(sb.label, false);
                     sb.labelRect = {cx, centerY(lh), lw, lh};
                     cx += lw + S.gap / 2;
                 }
+                cx += sb.plugDepth;                                                  // room for the tab of what plugs in (or the notch of the dent)
                 if (plugged[i] >= 0) {
                     const BlockBox cb = out.blocks[(size_t)plugged[i]];
                     translate(plugged[i], cx - cb.rect.x, centerY(cb.rect.h) - cb.rect.y);
@@ -328,7 +346,7 @@ struct LayoutEngine::Run {
         double height = rowH;
         if (info.shape == Shape::Value) {
             ConnectionPoint plug;
-            plug.kind = ConnectionPoint::Plug; plug.pos = {x, y + rowH / 2}; plug.blockId = b.id;
+            plug.kind = ConnectionPoint::Plug; plug.pos = {x - self().plugDepth, y + rowH / 2}; plug.blockId = b.id;
             out.points.push_back(plug);
         }
         // ---- containers
@@ -403,7 +421,11 @@ StackLayout LayoutEngine::layoutStack(const Section& s, size_t index) const {
     run.list(s.blocks, 0, top, 0, -1, "", items, width);
     out.top = items;
     Rect b = out.header.rect;
-    for (const BlockBox& bb : out.blocks) b = unite(b, bb.rect);
+    for (const BlockBox& bb : out.blocks) {
+        Rect r = bb.rect;
+        if (bb.parent < 0 && bb.plugDepth > 0) { r.x -= bb.plugDepth; r.w += bb.plugDepth; }      // a component standing alone: its tab is part of it
+        b = unite(b, r);
+    }
     out.bounds = b;
     return out;
 }

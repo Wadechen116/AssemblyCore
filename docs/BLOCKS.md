@@ -152,6 +152,21 @@ asmblk blocks                              列出所有積木與欄位
   插進已佔用的插槽 → 原積木彈出成漂浮積木（H7f）。
 - 實際程式：範例與 examples 18 個檔 748 個元件；MOV 運算元 110/111、CSR 運算元 142/142、窗口 19/19 拆成元件，且產生的文字與位元組與原文字完全相同。
 
+### 類別、嵌合形狀（使用者回饋 2026-10-22）
+
+- **類別（`BlockDef::cls`）**：`instruction`（一行指令：move、calculate、CSR、分支、call／ret、xfer、pub…，上下疊）、`component`（元件：數字、區域、選項、參照，左右插）、`structure`（procedure、label、vector…）、`definition`（`.equ` `.csr`…）、`text`（註解、空行、組譯器文字）。
+  指令與元件的**抽屜也不同**：指令用 Data／Math／CSR／Control／Peripheral；元件用 Values／Regions／Options／References（各有自己的顏色）。`asmblk blocks` 依類別分組列出。
+- **嵌合形狀依型別**（`plugShapeOf`）：數字＝圓形凸耳、區域＝尖形、選項（運算／正負／條件）＝方形、標籤＝旗形、參照（CSR／service／裝置）＝菱形；接受多種形狀的插槽＝方形虛線凹槽。元件左緣有對應的凸耳，空插槽畫同形狀的凹槽，所以形狀不合一眼就看得出來。
+
+### 符號表與參照檢查（M2b-2）
+
+- **定義是型別化符號的生產者，元件是消費者**：`.equ`→`int`、`.csr`→`csr`、`.service`→`service`、`.devmap i, I2C, addr, name`→`dev`、`.const`→常數池項目、標籤→`label.flow`、`proc`→`label.proc`（含 8051 寫法 `NAME EQU v`）。來源：文件本身、`.include`（開放世界）、硬體描述（`.achw` 產生的 include）。
+- **參照元件**：`csr_ref`／`service_ref`／`dev_ref`（`name` 仍是 `int`）。匯入時，定義為 CSR／service／裝置的名稱自動成為對應的參照；硬體描述後來才載入時，`retypeReferences` 把已知的名稱改成參照。
+- **檢查（`validate`，`kind = "reference"`）**：名稱未定義（警告；有 `.include` 或硬體描述時提示可能來自那裡）、種類不符（CSR 參照指向 service：錯誤；標籤當數字：錯誤）、
+  標籤可見範圍（程序內的標籤不可跳進：E305；Main／Peri 不可互相跳／呼叫）、`CALL` 遞迴（E305，每個環報一次）。
+- **`xfer`**：`args` 拆成 dev／addr／addrlen／data／len／ptr 插槽（`ext` 位址位元組保留文字），顯示哪些依方向而定；三種形式各有規則（多位元組 WRITE 不可用、READ 要有 ptr、`ptr+len ≤ 32`、單位元組位址 10 位元、`addr` 給了 `addrlen` 不可為 0…）。
+  順序與定義不同的文字保持為文字（不丟資料）；對拆不開的文字插入零件會被拒絕。
+
 ## 值插槽（為 B4 預留）
 
 `BlockDef.inputs`／`valueType`、`Block.values`、範本中的 `{插槽名}`、型別檢查（H7）、`.acblk` 的 `"values"`。目前沒有 Level 1 積木使用，測試用自訂定義驗證（巢狀運算式產生、拒絕錯誤型別、插入已佔用插槽）。

@@ -50,6 +50,7 @@ private:
     void refreshCode();
     void refreshInfo();
     void applyTheme();
+    void refreshSymbols();                           // the names the hardware description defines (for the "not defined" checks)
     void onBlockClicked(const std::string& id, Qt::KeyboardModifiers m);
 
     AppContext& ctx_;
@@ -64,7 +65,7 @@ private:
     QLabel *info_, *banner_, *zoomLabel_;
     std::unique_ptr<ConnectionBag> conns_ = std::make_unique<ConnectionBag>();      // released first in the destructor
     bool syncing_ = false;
-    std::string lastText_;
+    std::string lastText_, symbolsFrom_;
 };
 
 }  // namespace acide

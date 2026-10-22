@@ -61,6 +61,15 @@ bool attachHardware(Workspace& ws, const std::string& achwPath, const asmcore::H
     return ws.saveProject(error);
 }
 
+bool hardwareSymbols(Workspace& ws, const std::string& achwPath, asmcore::blocks::SymbolTable& table) {
+    asmcore::Hardware hw;
+    std::vector<std::string> errors;
+    if (!loadHardware(ws, achwPath, hw, errors)) return false;
+    table.addAsm(asmcore::generateInc(hw, ""));
+    table.setOpenWorld(true);
+    return true;
+}
+
 bool createHardware(Workspace& ws, const std::string& achwPath, std::string& error) {
     asmcore::Hardware hw;
     hw.name = stem(achwPath);

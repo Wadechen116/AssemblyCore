@@ -549,7 +549,7 @@ static void t_fuzz() {
             if (o.ok) {
                 accepted++;
                 if (o.fit == Fit::Warn) warned++;
-                for (const BlockProblem& p : validate(d)) if (p.error) { validateErrors++; if (firstProblem.empty()) firstProblem = "op " + std::to_string(op) + ": " + p.message; }
+                for (const BlockProblem& p : validate(d)) if (p.error && p.kind == "structure") { validateErrors++; if (firstProblem.empty()) firstProblem = "op " + std::to_string(op) + ": " + p.message; }
                 const std::string txt = generate(d).text;
                 if (generate(importAsm(txt)).text != txt) notIdempotent++;
                 Options opt;

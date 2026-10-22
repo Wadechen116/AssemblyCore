@@ -583,6 +583,7 @@ Outcome Editor::setField(const std::string& id, const std::string& name, const s
         // typed text replaces the component it was the mirror of (the text is the truth; the components are re-derived from it when the file is read)
         b->clearValue(name);
         if (d) for (const InputDef& in : d->inputs) {
+            if (in.derive.compare(0, 4, "arg:") == 0) { if (in.derive.substr(4) == name) b->clearValue(in.name); continue; }          // typed text replaces all the parts of a composite
             if (in.derive.empty() || !b->value(in.name)) continue;
             const std::string spec = in.derive.substr(6);
             const size_t comma = spec.find(',');
@@ -642,6 +643,18 @@ Outcome Editor::plugValue(const std::string& blockId, const std::string& socket,
         const Violation v = checkSocket(*in, child, reg_);
         if (v.fit == Fit::No) { out.violations.push_back(v); out.fit = Fit::No; return true; }
         if (child.id.empty()) child.id = doc_.newId();
+        if (in->derive.compare(0, 4, "arg:") == 0) {                          // a part of a composite text: split the text into its parts first, so the others are kept
+            bool any = false;
+            for (const InputDef& i2 : d->inputs) if (i2.derive == in->derive && host->value(i2.name)) any = true;
+            if (!any) {
+                explodeBlock(*host, doc_, reg_);
+                for (const InputDef& i2 : d->inputs) if (i2.derive == in->derive && host->value(i2.name)) any = true;
+                if (!any && !host->get(in->derive.substr(4)).empty()) {          // text that cannot be split: plugging one part would lose the rest
+                    out.error = "the text of this block (" + host->get(in->derive.substr(4)) + ") cannot be split into parts; edit the text instead";
+                    return false;
+                }
+            }
+        }
         // what the plug would break: the new problems of the host and the plugged blocks (a constant to anything but the scratchpad, a length that
         // does not match, a 64-bit value in a CONST ...), found by plugging it into a copy
         {
@@ -674,7 +687,8 @@ Outcome Editor::plugValue(const std::string& blockId, const std::string& socket,
         }
         host->setValue(socket, child);
         if (host->field(socket)) host->set(socket, valueText(child, reg_, in));        // the text mirror follows
-        if (!in->derive.empty() && d) {                                                // ... and the fields a window gives (ptr, len)
+        if (in->derive.compare(0, 4, "arg:") == 0 && d) host->set(in->derive.substr(4), partText(*host, *d, in->derive.substr(4), reg_));
+        if (in->derive.compare(0, 6, "range:") == 0 && d) {                            // ... and the fields a window gives (ptr, len)
             const std::string spec = in->derive.substr(6);
             const size_t comma = spec.find(',');
             for (const std::string& f : {spec.substr(0, comma), spec.substr(comma + 1)}) host->set(f, partText(*host, *d, f, reg_));

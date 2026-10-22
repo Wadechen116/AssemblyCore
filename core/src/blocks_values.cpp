@@ -131,15 +131,21 @@ void addComponentDefs(Registry& r, const lang::Language& L) {
         sign.optional = true;
         FieldDef width = choice("width", "bits", {"", "8", "16", "24", "32", "64"});
         width.optional = true;
-        value("num", "number", "Math", kBoth, kTypeInt, {v, kind, sign, width}, {input("value", "", intOnly, true)}, "{value}");
+        value("num", "number", "Values", kBoth, kTypeInt, {v, kind, sign, width}, {input("value", "", intOnly, true)}, "{value}");
         r.edit("num")->semantic = "number";
     }
-    value("name", "name", "Math", kBoth, kTypeInt, {field("name", "")}, {}, "{name}");
+    value("name", "name", "Values", kBoth, kTypeInt, {field("name", "")}, {}, "{name}");
+    r.edit("name")->semantic = "name";
+    // references to what the definitions define (typed: a CSR is not a service)
+    value("csr_ref", "CSR", "References", kBoth, "csr", {field("name", "")}, {}, "{name}");
+    value("service_ref", "service", "References", kBoth, "service", {field("name", "")}, {}, "{name}");
+    value("dev_ref", "device", "References", kBoth, "dev", {field("name", "")}, {}, "{name}");
+    for (const char* t : {"csr_ref", "service_ref", "dev_ref"}) r.edit(t)->semantic = "ref";
     {
         std::vector<std::string> ops(std::begin(kBinOps), std::end(kBinOps));
-        value("expr_bin", "", "Math", kBoth, kTypeInt, {choice("op", "", ops)}, {input("a", "", intOnly), input("b", "", intOnly)}, "{a} {op} {b}");
-        value("expr_un", "", "Math", kBoth, kTypeInt, {choice("op", "", {"-", "+", "~"})}, {input("x", "", intOnly)}, "{op}{x}");
-        value("expr_paren", "", "Math", kBoth, kTypeInt, {}, {input("x", "", intOnly)}, "({x})");
+        value("expr_bin", "", "Values", kBoth, kTypeInt, {choice("op", "", ops)}, {input("a", "", intOnly), input("b", "", intOnly)}, "{a} {op} {b}");
+        value("expr_un", "", "Values", kBoth, kTypeInt, {choice("op", "", {"-", "+", "~"})}, {input("x", "", intOnly)}, "{op}{x}");
+        value("expr_paren", "", "Values", kBoth, kTypeInt, {}, {input("x", "", intOnly)}, "({x})");
         r.edit("expr_bin")->semantic = "binop";
         r.edit("expr_un")->semantic = "unop";
         r.edit("expr_paren")->semantic = "paren";
@@ -172,7 +178,7 @@ void addComponentDefs(Registry& r, const lang::Language& L) {
             {"MAIN_SCRATCHPAD", "scratchpad"}, {"MAIN_CSR_DATA_BUF", "CSR buffer"}, {"PERI_RESULT_SLOT", "result slot"}, {"ALU_OPA", "ALU A"}, {"ALU_OPB", "ALU B"},
             {"ALU_OUT", "ALU out"}, {"ALU_STATUS", "ALU status"}, {"MAIN_CONST_POOL", "const pool"}, {"PERI_RESULT_META", "result info"}};
         for (auto& t : kTitles) if (title == t.name) title = t.title;
-        value(regionBlockType(ri.name).c_str(), title.c_str(), "Data", kMain, regionType(ri.name), fields, inputs, "{alias}");
+        value(regionBlockType(ri.name).c_str(), title.c_str(), "Regions", kMain, regionType(ri.name), fields, inputs, "{alias}");
         r.edit(regionBlockType(ri.name))->semantic = "region";
     }
     {
@@ -181,24 +187,26 @@ void addComponentDefs(Registry& r, const lang::Language& L) {
         alias.when = "alias!=";
         FieldDef first = field("first", ""), last = field("last", "");
         first.optional = last.optional = true;
-        value(regionBlockType(kPeriRx).c_str(), "RX buffer", "Peripheral", kPeri, regionType(kPeriRx), {alias, first, last},
+        value(regionBlockType(kPeriRx).c_str(), "RX buffer", "Regions", kPeri, regionType(kPeriRx), {alias, first, last},
               {input("first", "", intOnly, true), input("last", "to", intOnly, true)}, "{alias}");
         r.edit(regionBlockType(kPeriRx))->semantic = "region";
     }
     // ---- references and options (components for the choice fields)
-    value("label_ref", "label", "Control", kBoth, "label.flow", {field("name", "")}, {}, "{name}");
-    value("proc_ref", "procedure", "Control", kBoth, "label.proc", {field("name", "")}, {}, "{name}");
+    value("label_ref", "label", "Options", kBoth, "label.flow", {field("name", "")}, {}, "{name}");
+    value("proc_ref", "procedure", "Options", kBoth, "label.proc", {field("name", "")}, {}, "{name}");
+    r.edit("label_ref")->semantic = "ref";
+    r.edit("proc_ref")->semantic = "ref";
     {
         std::vector<std::string> alu;
         for (const lang::Entry* e : L.all(lang::Tok::SubOp, lang::Dom::None)) if (e->group == "alu") alu.push_back(e->name);
-        value("alu_op", "operation", "Math", kMain, "op.alu", {choice("value", "", alu, true)}, {}, "{value}");
-        value("sign_mode", "sign", "Math", kMain, "sign", {choice("value", "", {"unsigned", "signed"}, true)}, {}, "{value}");
+        value("alu_op", "operation", "Options", kMain, "op.alu", {choice("value", "", alu, true)}, {}, "{value}");
+        value("sign_mode", "sign", "Options", kMain, "sign", {choice("value", "", {"unsigned", "signed"}, true)}, {}, "{value}");
         std::vector<std::string> mc, pc;
         for (const lang::Entry* e : L.all(lang::Tok::Condition, lang::Dom::Main)) mc.push_back(e->name);
         for (const lang::Entry* e : L.all(lang::Tok::Mnemonic, lang::Dom::Peri))
             if (e->name.compare(0, 3, "BR.") == 0 && e->name != "BR.COND" && e->name != "BR.ERET") pc.push_back(e->name.substr(3));
-        value("cond_main_c", "condition", "Control", kMain, "cond.main", {choice("value", "", mc, true)}, {}, "{value}");
-        value("cond_peri_c", "condition", "Control", kPeri, "cond.peri", {choice("value", "", pc, true)}, {}, "{value}");
+        value("cond_main_c", "condition", "Options", kMain, "cond.main", {choice("value", "", mc, true)}, {}, "{value}");
+        value("cond_peri_c", "condition", "Options", kPeri, "cond.peri", {choice("value", "", pc, true)}, {}, "{value}");
     }
 
     // ---- the sockets of the instructions (the same-named field is the text mirror)
@@ -224,12 +232,13 @@ void addComponentDefs(Registry& r, const lang::Language& L) {
     socket("alu", "op", {"op.alu"});
     socket("alu", "amount", intOnly, "", "op=SHL,SHR");
     socket("alu", "mode", {"sign"}, "", "op!=AND,OR,XOR,NOT");
-    for (const char* t : {"csr_write8", "csr_set8", "csr_clr8"}) { socket(t, "csr", intOnly); socket(t, "imm", intOnly); }
-    socket("csr_read8", "csr", intOnly);
+    const std::vector<std::string> csrOrInt = {"csr", kTypeInt};
+    for (const char* t : {"csr_write8", "csr_set8", "csr_clr8"}) { socket(t, "csr", csrOrInt); socket(t, "imm", intOnly); }
+    socket("csr_read8", "csr", csrOrInt);
     socket("csr_read8", "dst", {regionType("MAIN_CSR_DATA_BUF")});
-    socket("csr_write_sp", "csr", intOnly);
+    socket("csr_write_sp", "csr", csrOrInt);
     socket("csr_write_sp", "window", {regionType("MAIN_SCRATCHPAD")}, "range:ptr,len");
-    socket("csr_read_buf", "csr", intOnly);
+    socket("csr_read_buf", "csr", csrOrInt);
     socket("csr_read_buf", "window", {regionType("MAIN_CSR_DATA_BUF")}, "range:ptr,len");
     socket("br_cond", "cond", {"cond.main"});
     socket("br_cond", "target", {"label.flow"});
@@ -237,7 +246,28 @@ void addComponentDefs(Registry& r, const lang::Language& L) {
     socket("br_peri", "cond", {"cond.peri"});
     socket("br_peri", "target", {"label.flow"});
     socket("call", "target", {"label.proc"});
+    socket("pub", "service", {"service", kTypeInt});
     socket("pub", "window", {regionType(kPeriRx)}, "range:src,len");
+    // EXEC_XFER: "dev=D, addr=A, addrlen=K, data=V" is split into sockets (the text of all of them is the mirror in `args`); which ones show depends on the direction
+    {
+        BlockDef* x = r.edit("xfer");
+        FieldDef ext = field("ext", "external address");
+        ext.optional = true;
+        ext.when = "rw=READ";
+        x->fields.push_back(ext);
+        auto arg = [&](const char* name, const char* label, std::vector<std::string> accepts, const char* when = "") {
+            InputDef in(name, label, std::move(accepts), true);
+            in.derive = "arg:args";
+            in.when = when;
+            x->inputs.push_back(in);
+        };
+        arg("dev", "device", {"dev", kTypeInt});
+        arg("addr", "address", intOnly);
+        arg("addrlen", "address bytes", intOnly);
+        arg("data", "data", intOnly, "rw=WRITE");
+        arg("len", "bytes", intOnly, "rw=READ");
+        arg("ptr", "buffer byte", intOnly);
+    }
     // the window sockets have no mirror field of their own; their text lives in the fields they derive
     for (const char* t : {"csr_write_sp", "csr_read_buf", "pub"}) {
         BlockDef* d = r.edit(t);
@@ -379,8 +409,38 @@ std::string valueText(const Block& v, const Registry& reg, const InputDef* into)
     return text;
 }
 
+namespace {
+// "name=value, name=value": the sockets that make up a composite field, in the order of the definition, then the typed remainder (`ext`)
+bool composedFrom(const BlockDef& d, const std::string& field, std::vector<const InputDef*>& parts) {
+    for (const InputDef& in : d.inputs) if (in.derive == "arg:" + field) parts.push_back(&in);
+    return !parts.empty();
+}
+std::string composeArgs(const Block& b, const BlockDef& d, const std::vector<const InputDef*>& parts, const Registry& reg) {
+    (void)d;
+    std::string out;
+    for (const InputDef* in : parts) {
+        const Block* c = b.value(in->name);
+        if (!c) continue;
+        out += (out.empty() ? "" : ", ") + in->name + "=" + valueText(*c, reg, in);
+    }
+    const std::string ext = trim(b.get("ext"));
+    if (!ext.empty() && !out.empty()) out += ", ext=" + ext;
+    return out;
+}
+bool anyPlugged(const Block& b, const std::vector<const InputDef*>& parts) {
+    for (const InputDef* in : parts) if (b.value(in->name)) return true;
+    return false;
+}
+}  // namespace
+
 std::string partText(const Block& b, const BlockDef& d, const std::string& name, const Registry& reg) {
     if (const Block* c = b.value(name)) return valueText(*c, reg, inputOf(d, name));
+    {
+        std::vector<const InputDef*> parts;
+        if (composedFrom(d, name, parts) && anyPlugged(b, parts)) return composeArgs(b, d, parts, reg);
+        for (const InputDef& in : d.inputs)                                                       // a part of a composite: its own text
+            if (in.name == name && in.derive.compare(0, 4, "arg:") == 0 && !b.value(name)) return std::string();
+    }
     for (const InputDef& in : d.inputs) {
         if (in.derive.compare(0, 6, "range:") != 0) continue;
         const Block* w = b.value(in.name);
@@ -596,12 +656,58 @@ bool sameText(const std::string& a, const std::string& b) { return squeeze(a) ==
 
 }  // namespace
 
+namespace {
+bool isNameText(const std::string& t) {
+    if (t.empty() || !(std::isalpha((unsigned char)t[0]) || t[0] == '_')) return false;
+    for (char c : t) if (!std::isalnum((unsigned char)c) && c != '_') return false;
+    return true;
+}
+int explodeWith(Block& b, Document& doc, const Registry& reg, const SymbolTable& table);
+}  // namespace
+
 int explodeBlock(Block& b, Document& doc, const Registry& reg) {
+    SymbolTable table;
+    table.addDocument(doc);
+    return explodeWith(b, doc, reg, table);
+}
+
+namespace {
+int explodeWith(Block& b, Document& doc, const Registry& reg, const SymbolTable& table) {
     const BlockDef* d = reg.find(b.type);
     int made = 0;
     if (d) {
+        // a composite text ("dev=0, addr=1, ...") split into its sockets, if every part is known, in the order of the definition, and gives back the text
+        for (const FieldDef& f : d->fields) {
+            std::vector<const InputDef*> parts;
+            if (!composedFrom(*d, f.name, parts) || anyPlugged(b, parts) || trim(b.get(f.name)).empty()) continue;
+            const std::vector<std::string> items = splitTop(b.get(f.name));
+            Block probe = b;
+            std::vector<Block> made_;
+            size_t lastIndex = 0;
+            bool ok = true;
+            for (const std::string& item : items) {
+                const size_t eq = item.find('=');
+                if (eq == std::string::npos) { ok = false; break; }
+                const std::string key = trim(item.substr(0, eq)), val = trim(item.substr(eq + 1));
+                if (key == "ext") { probe.set("ext", val); continue; }
+                size_t at = parts.size();
+                for (size_t i = 0; i < parts.size(); i++) if (parts[i]->name == key) at = i;
+                if (at == parts.size() || (probe.value(key)) || at < lastIndex) { ok = false; break; }
+                lastIndex = at;
+                Block child;
+                bool typed = false;
+                for (const std::string& a : parts[at]->accepts) if (a == "dev" && isNameText(val) && table.find(val, "dev")) { child = doc.make("dev_ref"); child.set("name", val); typed = true; }
+                if (!typed && !parseWholeExpr(doc, reg, val, child)) { ok = false; break; }
+                probe.setValue(key, child);
+            }
+            if (ok && sameText(composeArgs(probe, *d, parts, reg), b.get(f.name))) {
+                for (const InputDef* in : parts) if (const Block* c = probe.value(in->name)) { made += countBlocks(*c); b.setValue(in->name, *c); }
+                b.set("ext", probe.get("ext"));
+            }
+        }
         for (const InputDef& in : d->inputs) {
             if (b.value(in.name) || !isComponentSocket(in)) continue;
+            if (in.derive.compare(0, 4, "arg:") == 0) continue;                      // split as a group, below
             if (!in.derive.empty()) {
                 // a window from the two numbers it stands for: ptr and len (literals only)
                 const std::string spec = in.derive.substr(6);
@@ -627,6 +733,18 @@ int explodeBlock(Block& b, Document& doc, const Registry& reg) {
             }
             const std::string text = trim(b.get(in.name));
             if (text.empty()) continue;
+            // a name that the definitions define as a CSR / service / device becomes a reference of that kind
+            {
+                std::string refKind;
+                for (const std::string& a : in.accepts) if (a == "csr" || a == "service" || a == "dev") refKind = a;
+                if (!refKind.empty() && isNameText(text) && table.find(text, refKind)) {
+                    Block ref = doc.make((refKind == "csr" ? "csr_ref" : refKind == "service" ? "service_ref" : "dev_ref"));
+                    ref.set("name", text);
+                    made += 1;
+                    b.setValue(in.name, ref);
+                    continue;
+                }
+            }
             bool wantsRegion = false;
             for (const std::string& a : in.accepts) wantsRegion = wantsRegion || isRegionType(a);
             Block child;
@@ -648,13 +766,45 @@ int explodeBlock(Block& b, Document& doc, const Registry& reg) {
             b.setValue(in.name, child);
         }
     }
-    for (auto& st : b.stacks) for (Block& c : st.second) made += explodeBlock(c, doc, reg);
+    for (auto& st : b.stacks) for (Block& c : st.second) made += explodeWith(c, doc, reg, table);
     return made;
 }
+}  // namespace
 
-int explodeDocument(Document& doc, const Registry& reg) {
+int retypeReferences(Document& doc, const Registry& reg, const SymbolTable& table) {
     int n = 0;
-    for (Section& s : doc.sections) for (Block& b : s.blocks) n += explodeBlock(b, doc, reg);
+    std::function<void(Block&)> walk = [&](Block& b) {
+        const BlockDef* d = reg.find(b.type);
+        if (d) {
+            for (auto& vl : b.values) {
+                if (vl.second.empty()) continue;
+                const InputDef* in = inputOf(*d, vl.first);
+                Block& c = vl.second[0];
+                const BlockDef* cd = reg.find(c.type);
+                if (in && cd && cd->semantic == "name") {
+                    for (const std::string& a : in->accepts) {
+                        if (a != "csr" && a != "service" && a != "dev") continue;
+                        if (!table.find(c.get("name"), a)) continue;
+                        c.type = a == "csr" ? "csr_ref" : a == "service" ? "service_ref" : "dev_ref";
+                        n++;
+                        break;
+                    }
+                }
+                walk(c);
+            }
+        }
+        for (auto& st : b.stacks) for (Block& c : st.second) walk(c);
+    };
+    for (Section& s : doc.sections) for (Block& b : s.blocks) walk(b);
+    return n;
+}
+
+int explodeDocument(Document& doc, const Registry& reg, const SymbolTable* extra) {
+    SymbolTable table;                                            // the symbols of the document itself (the directives, labels and procedures) and from outside
+    table.addDocument(doc);
+    if (extra) table.addTable(*extra);
+    int n = 0;
+    for (Section& s : doc.sections) for (Block& b : s.blocks) n += explodeWith(b, doc, reg, table);
     return n;
 }
 
@@ -669,7 +819,7 @@ void dropStale(Block& b, const Registry& reg) {
             if (in && !it->second.empty()) {
                 const std::string* mirror = b.field(it->first);
                 if (mirror && !sameText(valueText(it->second[0], reg, in), *mirror)) drop = true;
-                if (in && !in->derive.empty()) {
+                if (in && in->derive.compare(0, 6, "range:") == 0) {
                     const std::string spec = in->derive.substr(6);
                     const size_t comma = spec.find(',');
                     const std::string pf = spec.substr(0, comma), lf = spec.substr(comma + 1);
@@ -680,13 +830,20 @@ void dropStale(Block& b, const Registry& reg) {
             else ++it;
         }
     }
+    if (d) {                                                         // a composite that no longer gives back its text: the text wins
+        for (const FieldDef& f : d->fields) {
+            std::vector<const InputDef*> parts;
+            if (!composedFrom(*d, f.name, parts) || !anyPlugged(b, parts) || !b.field(f.name)) continue;
+            if (!sameText(composeArgs(b, *d, parts, reg), b.get(f.name))) for (const InputDef* in : parts) b.clearValue(in->name);
+        }
+    }
     for (auto& st : b.stacks) for (Block& c : st.second) dropStale(c, reg);
 }
 }  // namespace
 
-void reconcileDocument(Document& doc, const Registry& reg) {
+void reconcileDocument(Document& doc, const Registry& reg, const SymbolTable* extra) {
     for (Section& s : doc.sections) for (Block& b : s.blocks) dropStale(b, reg);
-    explodeDocument(doc, reg);
+    explodeDocument(doc, reg, extra);
 }
 
 // ---- checking the components -------------------------------------------------------------------------------------------------------------
@@ -785,6 +942,37 @@ void componentProblems(const Block& b, const BlockDef& d, const Registry& reg, s
                 err("a constant can only be moved to the scratchpad (spec v31 5.1): load it into the scratchpad first, then move it on");       // H7c / E202
             const int ls = knownLength(*src, reg), ld = knownLength(*dst, reg);
             if (ls > 0 && ld > 0 && ls != ld && !(src->type == "num" && src->get("width").empty())) err("the two sides are " + std::to_string(ls) + " and " + std::to_string(ld) + " bytes long; they must be the same");
+        }
+    }
+    if (b.type == "xfer") {                                                          // the three forms of EXEC_XFER (spec 8 / 9; lower.cpp: doXfer)
+        std::vector<const InputDef*> parts;
+        if (composedFrom(d, "args", parts) && anyPlugged(b, parts)) {
+            const std::string rw = upper(b.get("rw"));
+            auto has = [&](const char* n) { return !partText(b, d, n, reg).empty(); };
+            auto lit = [&](const char* n, long long& v) { return literalOf(b, n, v); };
+            long long v = 0, v2 = 0;
+            if (!has("dev")) err("an I2C transfer needs a device (dev)");
+            else if (lit("dev", v) && (v < 0 || v > 7)) err("the device is a .devmap index, 0 to 7");
+            const bool multi = has("len");
+            if (rw == "WRITE") {
+                if (multi) err("a multi-byte WRITE is not available (there is no transmit buffer)");
+                else if (!has("data")) err("a write needs the byte to write (data)");
+                else if (lit("data", v) && (v < -128 || v > 255)) err("the data byte is -128 to 255");
+            } else if (rw == "READ") {
+                if (!has("ptr")) err("a read needs the buffer byte it is read into (ptr)");
+                else if (lit("ptr", v) && (v < 0 || v > 31)) err("the buffer byte (ptr) is 0 to 31");
+                if (multi) {
+                    if (lit("len", v) && (v < 1 || v > 32)) err("the number of bytes (len) is 1 to 32");
+                    if (lit("len", v) && lit("ptr", v2) && v + v2 > 32) err("ptr + len is more than the 32 bytes of the RX buffer");
+                    if (has("addr") || has("addrlen")) err("a multi-byte read has no addr / addrlen (use ext for the address bytes)", false);
+                } else if (has("data")) err("a read has no data byte", false);
+            }
+            if (!multi) {
+                long long a = 0, k = 0;
+                if (lit("addr", a) && a > 0x3FF) err("a one-byte transfer has a 10-bit address; use the multi-byte form (len=, ext=) for larger ones");
+                if (lit("addrlen", k) && (k < 0 || k > 2)) err("the address length is 0 to 2 bytes");
+                if (lit("addr", a) && lit("addrlen", k) && k == 0 && a != 0) err("addr is given but addrlen is 0");
+            }
         }
     }
     if (b.type == "alu") {

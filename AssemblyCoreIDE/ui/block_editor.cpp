@@ -10,6 +10,8 @@
 #include <QToolButton>
 #include <QVBoxLayout>
 
+#include "hardware_link.h"
+
 namespace acide {
 
 using namespace blocks;
@@ -120,8 +122,12 @@ BlockEditor::BlockEditor(AppContext& ctx, const std::string& path, QWidget* pare
         if (!syncing_) code_->setMarkedLines(session_.selectedLines(), page() == Page::Code);
         refreshInfo();
     });
-    conns_->add(ctx.workspace.documentChanged, [this](const std::string& p) { if (p == path_) reload(); });
+    conns_->add(ctx.workspace.documentChanged, [this](const std::string& p) {
+        if (p == path_) reload();
+        else if (!symbolsFrom_.empty() && p.compare(0, symbolsFrom_.size() - 5, symbolsFrom_, 0, symbolsFrom_.size() - 5) == 0) refreshSymbols();     // the description or the include generated from it
+    });
 
+    conns_->add(ctx.workspace.projectChanged, [this] { refreshSymbols(); });                    // a hardware description was attached / changed
     reload();
 }
 
@@ -163,9 +169,24 @@ void BlockEditor::reload() {
         return;
     }
     banner_->hide();
+    refreshSymbols();
     view_->showContent();
     refreshCode();
     refreshInfo();
+}
+
+// The program's hardware description (the one the file names, else the project's) defines names; they are known to the checks.
+void BlockEditor::refreshSymbols() {
+    std::string achw = session_.document().hardware;
+    if (!achw.empty() && achw[0] != '/' && !(achw.size() > 1 && achw[1] == ':')) {
+        const size_t slash = path_.find_last_of('/');
+        achw = (slash == std::string::npos ? std::string() : path_.substr(0, slash + 1)) + achw;
+    }
+    if (achw.empty() && ctx_.workspace.hasProject() && !ctx_.workspace.project().hardware.empty()) achw = ctx_.workspace.project().absolute(ctx_.workspace.project().hardware);
+    if (achw.empty() || achw.size() < 5) { symbolsFrom_.clear(); return; }
+    symbolsFrom_ = achw;
+    asmcore::blocks::SymbolTable table;
+    if (hardwareSymbols(ctx_.workspace, achw, table)) session_.setExternalSymbols(table);
 }
 
 void BlockEditor::refreshCode() { code_->setCode(QString::fromUtf8(session_.generated().text.c_str())); }

@@ -30,6 +30,7 @@ add_library(asmcore STATIC
   core/src/blocks.cpp
   core/src/blocks_import.cpp
   core/src/blocks_values.cpp
+  core/src/blocks_symbols.cpp
   core/src/blocks_edit.cpp
   core/src/report.cpp
   core/src/image_view.cpp

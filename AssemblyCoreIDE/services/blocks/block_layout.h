@@ -65,6 +65,7 @@ struct LayoutStyle {
     double maxChipWidth = 240, maxNoteWidth = 420;
     double spacerWidth = 48, spacerHeight = 10;
     double socketMinWidth = 34;
+    double plugDepth = 7;                        // how far the tab of a component reaches into the dent of its socket (to the left of the component)
     double commentMaxWidth = 220;
     bool showEmptyOptional = false;              // an editor shows the empty optional fields (to be filled in); a viewer leaves them out
     bool showFieldLabels = true;
@@ -84,6 +85,8 @@ struct SocketBox {
     std::string text, fullText;                   // nothing plugged in: the text typed (what the block says when it holds no component), shortened / whole
     bool empty = true, elided = false;
     std::vector<std::string> types;               // what the socket takes (value types): a renderer may shape the dent after it
+    PlugShape plug = PlugShape::None;             // the shape of the dent (from the types)
+    double plugDepth = 0;
 };
 struct SlotBox {
     std::string name;
@@ -91,7 +94,9 @@ struct SlotBox {
     std::vector<int> items;                       // top-level blocks of the slot, indexes into StackLayout::blocks
 };
 struct BlockBox {
-    std::string id, type, title, comment, category;
+    std::string id, type, title, comment, category, valueType;
+    PlugShape plug = PlugShape::None;             // a component's plug: the tab on its left edge
+    double plugDepth = 0;
     Shape shape = Shape::Statement;
     Rect rect;                                    // the whole block, slotBoxes included
     Rect head;                                    // its top row

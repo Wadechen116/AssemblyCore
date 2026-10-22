@@ -59,7 +59,7 @@ static void t_theme() {
     const Rgba unknown = l.categoryColor("SomethingNew");
     check(unknown == l.categoryColor("SomethingNew") && !(unknown == l.categoryColor("SomethingElse")), "an unknown category gets a stable colour of its own");
     bool all = true;
-    for (const char* cat : {"Data", "Math", "CSR", "Control", "Peripheral", "Structure", "Definitions", "Text"}) all = all && l.category.count(cat) && d.category.count(cat);
+    for (const BlockDef& def : Registry::defaults().all()) all = all && l.category.count(def.category) && d.category.count(def.category);   // every drawer of every built-in block
     check(all, "every drawer of the built-in blocks has a colour in both themes");
     std::set<std::string> distinct;
     for (auto& kv : l.category) distinct.insert(formatColor(kv.second));
@@ -98,6 +98,41 @@ static StackLayout layoutOf(const std::string& asmText, size_t section = 0, cons
     Document d = docOf(asmText);
     LayoutEngine e(m, style);
     return e.layoutStack(d.sections[section], section);
+}
+
+static void t_plug_shapes() {
+    section("the shape of a joint follows the value type");
+    check(plugShapeOf("int") == PlugShape::Round && plugShapeOf("region:ALU_OPA") == PlugShape::Point && plugShapeOf("op.alu") == PlugShape::Square && plugShapeOf("cond.main") == PlugShape::Square &&
+          plugShapeOf("sign") == PlugShape::Square && plugShapeOf("label.flow") == PlugShape::Flag && plugShapeOf("label.proc") == PlugShape::Flag && plugShapeOf("csr") == PlugShape::Diamond &&
+          plugShapeOf("service") == PlugShape::Diamond && plugShapeOf("") == PlugShape::None, "numbers are round, regions pointed, options square, labels a flag, references a diamond");
+    check(plugShapeOfSocket({"int"}) == PlugShape::Round && plugShapeOfSocket({"region:MAIN_SCRATCHPAD"}) == PlugShape::Point && plugShapeOfSocket({"csr", "int"}) == PlugShape::Any && plugShapeOfSocket({}) == PlugShape::None,
+          "a socket takes the shape of what it accepts; one that accepts several shapes is a plain square dent");
+    const Registry& reg = Registry::defaults();
+    bool onlyOwn = true;
+    std::set<PlugShape> shapes;
+    for (const BlockDef& d : reg.all()) if (!d.valueType.empty()) shapes.insert(plugShapeOf(d.valueType));
+    check(shapes.size() >= 5, "the components use five different joints", std::to_string(shapes.size()));
+    (void)onlyOwn;
+    // the layout leaves room for the tab: the child starts plugDepth after its label, and the dent of an empty socket has the shape of its types
+    StackLayout s = layoutOf(".main\n MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]\n JMP start\n");
+    const BlockBox& mov = s.blocks[(size_t)s.top[0]];
+    const BlockBox& num = s.blocks[(size_t)mov.sockets[0].child];
+    check(num.plug == PlugShape::Round && num.plugDepth == LayoutStyle().plugDepth && num.valueType == "int", "a number has a round plug");
+    check(mov.sockets[0].plug == PlugShape::Any && mov.sockets[1].plug == PlugShape::Point, "the source takes several shapes, the destination only regions");
+    check(mov.sockets[0].rect.x - mov.sockets[0].labelRect.right() >= LayoutStyle().plugDepth - 0.01, "room for the tab between the label and the component");
+    const BlockBox& region = s.blocks[(size_t)mov.sockets[1].child];
+    check(region.plug == PlugShape::Point && region.sockets.size() == 2 && region.sockets[0].plug == PlugShape::Round, "a region has a pointed plug and round sockets for its numbers");
+    const BlockBox& jmp = s.blocks[(size_t)s.top[1]];
+    check(jmp.sockets.size() == 1 && jmp.sockets[0].plug == PlugShape::Flag && jmp.sockets[0].empty == false, "the jump target takes a label: a flag-shaped dent holding the typed name");
+    // a component standing alone: its tab belongs to the stack's bounds
+    Document d;
+    Section sec;
+    sec.domain = "floating";
+    sec.blocks.push_back(d.make("num"));
+    d.sections.push_back(sec);
+    FakeMetrics m;
+    StackLayout alone = LayoutEngine(m).layoutStack(d.sections[0], 0);
+    check(alone.blocks[0].parent < 0 && alone.bounds.x <= alone.blocks[0].rect.x - LayoutStyle().plugDepth + 0.01, "a number lying alone: the bounds include its tab");
 }
 
 static void t_layout_rows() {
@@ -444,6 +479,21 @@ static void t_session() {
     Document r = docOf(".main\n weird\n weirder\n JMP x\n");
     s.setDocument(r);
     check(s.stats().rawBlocks == 2, "raw blocks are counted");
+    // symbols from outside
+    {
+        BlockSession sym;
+        sym.setDocument(docOf(".main\n EXEC_CSR WRITE8 EXT_CTRL, 1\n"));
+        auto undefined = [&] { for (const auto& p : sym.problems()) if (p.message.find("'EXT_CTRL' is not defined") != std::string::npos) return true; return false; };
+        check(undefined() && sym.symbols().find("EXT_CTRL") == nullptr, "a name nobody defines is flagged");
+        SymbolTable ext;
+        ext.addAsm(".csr EXT_CTRL = 0x30\n");
+        int fired = 0;
+        sym.changed.connect([&] { fired++; });
+        sym.setExternalSymbols(ext);
+        check(!undefined() && sym.symbols().find("EXT_CTRL", "csr") && fired == 1, "symbols from outside (the hardware description) are known to the checks and offered by name; the views are told");
+        sym.setDocument(docOf(".equ LOCAL = 1\n.main\n EXEC_CSR WRITE8 LOCAL, 1\n"));
+        check(sym.symbols().find("LOCAL", "int") && sym.symbols().find("EXT_CTRL", "csr"), "the document's own symbols and the outside ones together");
+    }
     // header option
     GenerateOptions go;
     go.header = "Generated from x.acblk";
@@ -494,6 +544,7 @@ int main() {
     std::printf("AssemblyCoreIDE block canvas services tests\n");
     t_theme();
     t_shapes();
+    t_plug_shapes();
     t_layout_rows();
     t_layout_shapes();
     t_layout_containers();

@@ -12,7 +12,7 @@ BlockSession::BlockSession(const Registry& reg) : reg_(reg), history_(doc_), edi
 
 bool BlockSession::load(const std::string& text, std::string& error) {
     Document d;
-    if (!parseDocument(text, d, error, reg_)) return false;
+    if (!parseDocument(text, d, error, reg_, &external_)) return false;
     setDocument(d);
     return true;
 }
@@ -29,6 +29,25 @@ void BlockSession::setDocument(const Document& doc) {
 void BlockSession::invalidate() {
     haveGenerated_ = false;
     haveProblems_ = false;
+    haveSymbols_ = false;
+}
+
+void BlockSession::setExternalSymbols(const SymbolTable& t) {
+    external_ = t;
+    invalidate();
+    retypeReferences(doc_, reg_, symbols());                       // names that the outside now defines become references (nothing in the text changes)
+    invalidate();
+    changed.fire();
+}
+
+const SymbolTable& BlockSession::symbols() const {
+    if (!haveSymbols_) {
+        symbols_ = SymbolTable();
+        symbols_.addDocument(doc_);
+        symbols_.addTable(external_);
+        haveSymbols_ = true;
+    }
+    return symbols_;
 }
 
 namespace {
@@ -109,7 +128,7 @@ const Generated& BlockSession::generated() const {
 
 const std::vector<BlockProblem>& BlockSession::problems() const {
     if (!haveProblems_) {
-        problems_ = validate(doc_, reg_);
+        problems_ = validate(doc_, reg_, &external_);
         haveProblems_ = true;
     }
     return problems_;
