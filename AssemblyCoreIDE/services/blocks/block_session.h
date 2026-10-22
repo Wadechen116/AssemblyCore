@@ -1,0 +1,81 @@
+#pragma once
+// One block program being edited: the document, its edit history, what it generates, what is selected. This is the "presenter" between the
+// model (asmcore blocks) and any view: it has no Qt, tells the views what changed through two signals, and every change to the document goes
+// through apply(), so a view never has to guess when to redraw and the caches (generated text, structure check) are never stale.
+#include <functional>
+#include <set>
+#include <string>
+#include <vector>
+
+#include "asmcore/blocks.h"
+#include "asmcore/blocks_edit.h"
+#include "signal.h"
+
+namespace acide {
+namespace blocks {
+
+class BlockSession {
+public:
+    explicit BlockSession(const asmcore::blocks::Registry& reg = asmcore::blocks::Registry::defaults());
+    BlockSession(const BlockSession&) = delete;
+    BlockSession& operator=(const BlockSession&) = delete;
+
+    // ---- the document
+    // Replaces the document with the .acblk text. On a damaged file `error` says why and the session is left as it was.
+    bool load(const std::string& acblkText, std::string& error);
+    void setDocument(const asmcore::blocks::Document& doc);         // e.g. after an import; resets the history and the selection
+    const asmcore::blocks::Document& document() const { return doc_; }
+    std::string serialize() const { return asmcore::blocks::serializeDocument(doc_); }
+    const asmcore::blocks::Registry& registry() const { return reg_; }
+
+    // ---- editing
+    // Runs an edit operation on the document; if it was done (ok) the caches are dropped, the selection is pruned of blocks that no longer exist
+    // and `changed` fires. A refused operation changes nothing and fires nothing.
+    asmcore::blocks::Outcome apply(const std::function<asmcore::blocks::Outcome(asmcore::blocks::Editor&)>& op);
+    bool undo();
+    bool redo();
+    std::string undoLabel() const { return history_.undoLabel(); }
+    std::string redoLabel() const { return history_.redoLabel(); }
+    void setRuleOptions(const asmcore::blocks::RuleOptions& o);
+
+    // ---- what the document generates and how it checks out (cached until the next change)
+    void setGenerateOptions(const asmcore::blocks::GenerateOptions& o);
+    const asmcore::blocks::Generated& generated() const;
+    const std::vector<asmcore::blocks::BlockProblem>& problems() const;
+    struct Stats {
+        size_t blocks = 0, stacks = 0, programStacks = 0, floatingStacks = 0, rawBlocks = 0, problems = 0;
+    };
+    Stats stats() const;
+
+    // ---- selection (block ids)
+    const std::set<std::string>& selection() const { return selection_; }
+    bool isSelected(const std::string& id) const { return selection_.count(id) != 0; }
+    void select(const std::vector<std::string>& ids);              // replaces the selection
+    void toggle(const std::string& id);
+    void clearSelection();
+    // The generated lines of the selected blocks, including everything inside them (the text view highlights them).
+    std::vector<int> selectedLines() const;
+    // The block that produced a generated line ("" if none).
+    std::string blockAtLine(int line) const;
+
+    Signal<> changed;                                              // the document was replaced or edited
+    Signal<> selectionChanged;
+
+private:
+    void invalidate();
+    void pruneSelection();
+
+    const asmcore::blocks::Registry& reg_;
+    asmcore::blocks::Document doc_;
+    asmcore::blocks::EditHistory history_;
+    asmcore::blocks::Editor editor_;
+    asmcore::blocks::RuleOptions rules_;
+    asmcore::blocks::GenerateOptions genOptions_;
+    std::set<std::string> selection_;
+    mutable bool haveGenerated_ = false, haveProblems_ = false;
+    mutable asmcore::blocks::Generated generated_;
+    mutable std::vector<asmcore::blocks::BlockProblem> problems_;
+};
+
+}  // namespace blocks
+}  // namespace acide

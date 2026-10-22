@@ -20,6 +20,8 @@
 namespace acide {
 
 class HardwareDesigner;
+class BlockEditor;
+class DocumentTab;
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -33,6 +35,8 @@ public:
     CodeEditor* currentEditor() const;
     HardwareDesigner* openHardware(const std::string& achwPath);       // the Hardware Designer tab of a description (created if needed)
     HardwareDesigner* currentDesigner() const;
+    BlockEditor* openBlocks(const std::string& acblkPath);             // the block editor tab of a .acblk file
+    QWidget* openTab(const std::string& path);                         // any non-text tab kind registered in TabRegistry (by extension)
     bool newHardware(const QString& achwPath);                         // File -> Hardware -> New: create, attach to the project, open
     bool adoptHardware(const QString& incPath, const QString& envPath, const QString& achwPath);
     bool closeProject();                  // closes the editors and stops debugging (the workspace keeps its project)
@@ -46,6 +50,7 @@ public:
 
     // for tests
     QTabWidget* tabs() const { return tabs_; }
+    bool closeEditorAt(int index) { return closeEditor(index); }      // closes a tab (asks about unsaved changes)
     QDockWidget* dock(const QString& id) const { return docks_.value(id); }
     QString buildStatusText() const { return buildLabel_->text(); }
     bool checkedAction(const QString& group, const QString& text) const;
@@ -95,8 +100,8 @@ private:
     QMenu* recentMenu_ = nullptr;
     QAction* closeProjectAct_ = nullptr;
     std::map<std::string, CodeEditor*> editors_;
-    std::map<std::string, HardwareDesigner*> designers_;
-    bool closeDesigner(int index);
+    std::map<std::string, QWidget*> docTabs_;                // the tabs made by TabRegistry, by path
+    bool closeDocTab(int index);
     QAction* openHardwareAct_ = nullptr;
     QAction *actStart_ = nullptr, *actPause_ = nullptr, *actStop_ = nullptr, *actRestart_ = nullptr, *actInto_ = nullptr, *actOver_ = nullptr,
             *actOut_ = nullptr, *actToCursor_ = nullptr, *actToggleBp_ = nullptr;

@@ -11,6 +11,8 @@
 #include <QWidget>
 
 #include "app_context.h"
+#include "document_tab.h"
+#include "hardware_link.h"
 #include "asmcore/hardware.h"
 
 class QComboBox;
@@ -28,11 +30,21 @@ class QTreeWidgetItem;
 
 namespace acide {
 
-class HardwareDesigner : public QWidget {
+class HardwareDesigner : public QWidget, public DocumentTab {
     Q_OBJECT
 public:
     HardwareDesigner(AppContext& ctx, const std::string& achwPath, QWidget* parent = nullptr);
     ~HardwareDesigner() override;
+
+    // DocumentTab
+    std::string tabPath() const override { return path_; }
+    QString tabTitle() const override { return tr("Hardware: %1").arg(QString::fromStdString(path_.substr(path_.find_last_of('/') + 1))); }
+    std::vector<std::string> workspacePaths() const override {
+        const HardwareFiles f = hardwareFiles(path_, hw_);
+        return {f.achw, f.include, f.env};
+    }
+    void prepareToClose() override { flush(); }
+    QWidget* widget() override { return this; }
 
     const std::string& path() const { return path_; }
     bool loaded() const { return loaded_; }

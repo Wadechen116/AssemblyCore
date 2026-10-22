@@ -30,7 +30,7 @@ target_link_libraries(AssemblyCoreIDE PRIVATE acide_ui)
 
 add_executable(acide_ui_tests ../tests/ui_tests.cpp)
 target_link_libraries(acide_ui_tests PRIVATE acide_ui Qt6::Test)
-target_compile_definitions(acide_ui_tests PRIVATE ACIDE_TRANSLATIONS_DIR="${CMAKE_CURRENT_LIST_DIR}/translations")
+target_compile_definitions(acide_ui_tests PRIVATE ACIDE_SAMPLE_DIR="${CMAKE_CURRENT_LIST_DIR}/../../sample" ACIDE_TRANSLATIONS_DIR="${CMAKE_CURRENT_LIST_DIR}/translations")
 if(MSVC)
   # C4701 inside Qt Test's template qtestmouse.h (instantiated from our tests; not our code)
   target_compile_options(acide_ui_tests PRIVATE /wd4701)

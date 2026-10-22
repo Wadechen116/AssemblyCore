@@ -15,6 +15,8 @@
 #include <QVBoxLayout>
 
 #include "artifacts.h"
+#include "block_editor.h"
+#include "document_tab.h"
 #include "hardware_designer.h"
 #include "hardware_link.h"
 #include "i18n.h"
@@ -33,6 +35,7 @@ std::string norm(const QString& p) {
 }  // namespace
 
 MainWindow::MainWindow(AppContext& ctx, PanelRegistry& panels, QWidget* parent) : QMainWindow(parent), ctx_(ctx) {
+    registerBuiltinTabs();
     setObjectName("MainWindow");
     resize(1280, 800);
     auto* central = new QWidget;
@@ -147,7 +150,7 @@ void MainWindow::createActions() {
     });
     file->addSeparator();
     act(file, tr("&Open File..."), QKeySequence::Open, [this] {
-        QString f = QFileDialog::getOpenFileName(this, tr("Open file"), QString(), tr("Assembly (*.asm *.inc *.s);;All files (*)"));
+        QString f = QFileDialog::getOpenFileName(this, tr("Open file"), QString(), tr("Assembly (*.asm *.inc *.s);;Block programs (*.acblk);;All files (*)"));
         if (!f.isEmpty()) openFile(norm(f));
     });
     act(file, tr("New &File..."), QKeySequence::New, [this] {
@@ -330,20 +333,27 @@ CodeEditor* MainWindow::currentEditor() const { return qobject_cast<CodeEditor*>
 
 HardwareDesigner* MainWindow::currentDesigner() const { return qobject_cast<HardwareDesigner*>(tabs_->currentWidget()); }
 
-HardwareDesigner* MainWindow::openHardware(const std::string& path) {
-    auto it = designers_.find(path);
-    if (it != designers_.end()) { tabs_->setCurrentWidget(it->second); return it->second; }
+QWidget* MainWindow::openTab(const std::string& path) {
+    auto it = docTabs_.find(path);
+    if (it != docTabs_.end()) { tabs_->setCurrentWidget(it->second); return it->second; }
+    const TabKind* kind = TabRegistry::instance().find(path);
+    if (!kind) return nullptr;
     if (!ctx_.workspace.open(path)) {
         warn(tr("Open"), tr("Cannot read %1").arg(fromStd(path)));
         return nullptr;
     }
-    auto* d = new HardwareDesigner(ctx_, path);
-    designers_[path] = d;
-    int idx = tabs_->addTab(d, tr("Hardware: %1").arg(QFileInfo(fromStd(path)).fileName()));
+    QWidget* w = kind->create(ctx_, path);
+    auto* tab = dynamic_cast<DocumentTab*>(w);
+    docTabs_[path] = w;
+    int idx = tabs_->addTab(w, tab ? tab->tabTitle() : QFileInfo(fromStd(path)).fileName());
     tabs_->setTabToolTip(idx, fromStd(path));
     tabs_->setCurrentIndex(idx);
-    return d;
+    return w;
 }
+
+HardwareDesigner* MainWindow::openHardware(const std::string& path) { return qobject_cast<HardwareDesigner*>(openTab(path)); }
+
+BlockEditor* MainWindow::openBlocks(const std::string& path) { return qobject_cast<BlockEditor*>(openTab(path)); }
 
 bool MainWindow::newHardware(const QString& file) {
     std::string err;
@@ -368,7 +378,7 @@ bool MainWindow::adoptHardware(const QString& incFile, const QString& envFile, c
 }
 
 CodeEditor* MainWindow::openFile(const std::string& path) {
-    if (path.size() > 5 && path.compare(path.size() - 5, 5, ".achw") == 0) { openHardware(path); return nullptr; }
+    if (TabRegistry::instance().find(path)) { openTab(path); return nullptr; }
     auto it = editors_.find(path);
     if (it != editors_.end()) { tabs_->setCurrentWidget(it->second); return it->second; }
     if (!ctx_.workspace.open(path)) {
@@ -389,18 +399,17 @@ CodeEditor* MainWindow::openFile(const std::string& path) {
     return e;
 }
 
-bool MainWindow::closeDesigner(int index) {
-    auto* d = qobject_cast<HardwareDesigner*>(tabs_->widget(index));
-    if (!d) return true;
-    d->flush();
-    const std::string path = d->path();
-    asmcore::Hardware hw = d->model();
-    const HardwareFiles files = hardwareFiles(path, hw);
-    const std::string paths[3] = {files.achw, files.include, files.env};
+bool MainWindow::closeDocTab(int index) {
+    QWidget* w = tabs_->widget(index);
+    auto* tab = dynamic_cast<DocumentTab*>(w);
+    if (!tab) return true;
+    tab->prepareToClose();
+    const std::string path = tab->tabPath();
+    const std::vector<std::string> paths = tab->workspacePaths();
     bool dirty = false;
     for (const std::string& p : paths) if (Document* doc = ctx_.workspace.find(p)) dirty |= doc->dirty;
     if (dirty) {
-        auto r = ask(tr("Unsaved changes"), tr("Save changes to the hardware description %1?").arg(QFileInfo(fromStd(path)).fileName()),
+        auto r = ask(tr("Unsaved changes"), tr("Save changes to %1?").arg(QFileInfo(fromStd(path)).fileName()),
                      QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel, QMessageBox::Discard);
         if (r == QMessageBox::Cancel) return false;
         std::string err;
@@ -414,14 +423,14 @@ bool MainWindow::closeDesigner(int index) {
         }
     }
     tabs_->removeTab(index);
-    designers_.erase(path);
-    delete d;
+    docTabs_.erase(path);
+    delete w;
     ctx_.workspace.close(path);
     return true;
 }
 
 bool MainWindow::closeEditor(int index) {
-    if (qobject_cast<HardwareDesigner*>(tabs_->widget(index))) return closeDesigner(index);
+    if (dynamic_cast<DocumentTab*>(tabs_->widget(index))) return closeDocTab(index);
     auto* e = qobject_cast<CodeEditor*>(tabs_->widget(index));
     if (!e) return true;
     Document* d = ctx_.workspace.find(e->path());
@@ -456,12 +465,13 @@ bool MainWindow::closeProject() {
     ctx_.debugger.saveBreakpoints();
     ctx_.debugger.stop();
     while (tabs_->count()) {
-        if (auto* hd = qobject_cast<HardwareDesigner*>(tabs_->widget(0))) {
-            const std::string hpath = hd->path();
+        if (auto* tab = dynamic_cast<DocumentTab*>(tabs_->widget(0))) {
+            QWidget* w = tabs_->widget(0);
+            const std::string tpath = tab->tabPath();
             tabs_->removeTab(0);
-            designers_.erase(hpath);
-            delete hd;
-            ctx_.workspace.close(hpath);
+            docTabs_.erase(tpath);
+            delete w;
+            ctx_.workspace.close(tpath);
             continue;
         }
         auto* e = qobject_cast<CodeEditor*>(tabs_->widget(0));
@@ -549,7 +559,7 @@ void MainWindow::saveSession() {
     std::vector<std::string> open;
     for (int i = 0; i < tabs_->count(); i++) {
         if (auto* e = qobject_cast<CodeEditor*>(tabs_->widget(i))) open.push_back(e->path());
-        else if (auto* d = qobject_cast<HardwareDesigner*>(tabs_->widget(i))) open.push_back(d->path());
+        else if (auto* d = dynamic_cast<DocumentTab*>(tabs_->widget(i))) open.push_back(d->tabPath());
     }
     ctx_.settings.setList("session." + ctx_.workspace.project().file, open);
 }
@@ -573,13 +583,10 @@ void MainWindow::updateTitle() {
     if (ctx_.workspace.anyDirty()) t += " *";
     setWindowTitle(t);
     for (int i = 0; i < tabs_->count(); i++) {
-        if (auto* hd = qobject_cast<HardwareDesigner*>(tabs_->widget(i))) {
-            const asmcore::Hardware& model = hd->model();
-            const HardwareFiles files = hardwareFiles(hd->path(), model);
+        if (auto* tab = dynamic_cast<DocumentTab*>(tabs_->widget(i))) {
             bool dirty = false;
-            for (const std::string& p : {files.achw, files.include, files.env}) if (Document* doc = ctx_.workspace.find(p)) dirty |= doc->dirty;
-            const QString name = tr("Hardware: %1").arg(QFileInfo(fromStd(hd->path())).fileName());
-            tabs_->setTabText(i, dirty ? name + " *" : name);
+            for (const std::string& p : tab->workspacePaths()) if (Document* doc = ctx_.workspace.find(p)) dirty |= doc->dirty;
+            tabs_->setTabText(i, dirty ? tab->tabTitle() + " *" : tab->tabTitle());
             continue;
         }
         auto* e = qobject_cast<CodeEditor*>(tabs_->widget(i));

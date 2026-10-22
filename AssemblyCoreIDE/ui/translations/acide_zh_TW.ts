@@ -2,6 +2,25 @@
 <!DOCTYPE TS>
 <TS version="2.1" language="zh_TW" sourcelanguage="en_US">
 <context>
+    <name>BlockCanvas</name>
+    <message>
+        <source>Main</source>
+        <translation>Main</translation>
+    </message>
+    <message>
+        <source>Peri</source>
+        <translation>Peri</translation>
+    </message>
+    <message>
+        <source>Definitions</source>
+        <translation>定義</translation>
+    </message>
+    <message>
+        <source>not part of the program</source>
+        <translation>不屬於程式</translation>
+    </message>
+</context>
+<context>
     <name>BreakpointsPanel</name>
     <message>
         <source>On</source>
@@ -503,6 +522,83 @@
     </message>
 </context>
 <context>
+    <name>acide::BlockEditor</name>
+    <message>
+        <source>Blocks</source>
+        <translation>積木區塊</translation>
+    </message>
+    <message>
+        <source>Assembly code</source>
+        <translation>Assembly 程式碼</translation>
+    </message>
+    <message>
+        <source>Show the program as blocks</source>
+        <translation>以積木區塊顯示程式</translation>
+    </message>
+    <message>
+        <source>Show the assembler text the blocks generate</source>
+        <translation>顯示積木產生的組譯器文字</translation>
+    </message>
+    <message>
+        <source>Zoom out (Ctrl+-)</source>
+        <translation>縮小 (Ctrl+-)</translation>
+    </message>
+    <message>
+        <source>Zoom in (Ctrl++)</source>
+        <translation>放大 (Ctrl++)</translation>
+    </message>
+    <message>
+        <source>Actual size (Ctrl+0)</source>
+        <translation>實際大小 (Ctrl+0)</translation>
+    </message>
+    <message>
+        <source>Fit</source>
+        <translation>符合視窗</translation>
+    </message>
+    <message>
+        <source>Show the whole program</source>
+        <translation>顯示整個程式</translation>
+    </message>
+    <message>
+        <source>Blocks: %1</source>
+        <translation>積木: %1</translation>
+    </message>
+    <message>
+        <source>This file cannot be shown as blocks: %1</source>
+        <translation>此檔案無法以積木顯示: %1</translation>
+    </message>
+    <message numerus="yes">
+        <source>%n block(s)</source>
+        <translation>
+            <numerusform>%n 個積木</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <source>, %n floating stack(s)</source>
+        <translation>
+            <numerusform>，%n 組浮動積木</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <source>, %n text line(s)</source>
+        <translation>
+            <numerusform>，%n 行文字</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <source>, %n problem(s)</source>
+        <translation>
+            <numerusform>，%n 個問題</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <source> · %n selected</source>
+        <translation>
+            <numerusform> · 已選取 %n 個</numerusform>
+        </translation>
+    </message>
+</context>
+<context>
     <name>acide::CodeEditor</name>
     <message>
         <source>no code on or after this line: no breakpoint set</source>
@@ -1000,6 +1096,10 @@ sim：tie_order、unmapped_csr、fault_stops    timing：frame_cycles、vblank_s
         <source>Target profile</source>
         <translation>目標 profile</translation>
     </message>
+    <message>
+        <source>Hardware: %1</source>
+        <translation>硬體: %1</translation>
+    </message>
 </context>
 <context>
     <name>acide::MainWindow</name>
@@ -1068,10 +1168,6 @@ sim：tie_order、unmapped_csr、fault_stops    timing：frame_cycles、vblank_s
     <message>
         <source>Open file</source>
         <translation>開啟檔案</translation>
-    </message>
-    <message>
-        <source>Assembly (*.asm *.inc *.s);;All files (*)</source>
-        <translation>組合語言 (*.asm *.inc *.s);;所有檔案 (*)</translation>
     </message>
     <message>
         <source>New &amp;File...</source>
@@ -1540,10 +1636,6 @@ An IDE for the Sensor Micro-Sequencer ISA, built on the AssemblyCore assembler.<
         <translation>硬體描述另存為</translation>
     </message>
     <message>
-        <source>Hardware: %1</source>
-        <translation>硬體：%1</translation>
-    </message>
-    <message>
         <source>Created hardware description %1</source>
         <translation>已建立硬體描述 %1</translation>
     </message>
@@ -1556,8 +1648,8 @@ An IDE for the Sensor Micro-Sequencer ISA, built on the AssemblyCore assembler.<
         <translation>已接手 %1：定義檔與環境檔現在由描述產生；存檔後會取代原本的檔案。</translation>
     </message>
     <message>
-        <source>Save changes to the hardware description %1?</source>
-        <translation>要儲存對硬體描述 %1 的變更嗎？</translation>
+        <source>Assembly (*.asm *.inc *.s);;Block programs (*.acblk);;All files (*)</source>
+        <translation>Assembly (*.asm *.inc *.s);;積木程式 (*.acblk);;所有檔案 (*)</translation>
     </message>
 </context>
 </TS>

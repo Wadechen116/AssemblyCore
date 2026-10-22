@@ -18,10 +18,14 @@ ide = os.path.dirname(here)
 ui = os.path.join(ide, "ui")
 
 LIT = r'"((?:[^"\\]|\\.)*)"'
-CALL = re.compile(r'(?:\btr|\bQT_TR_NOOP|QObject::tr|QT_TRANSLATE_NOOP\(\s*"[A-Za-z:]+"\s*,)\(?\s*' + LIT)
+CALL = re.compile(r'(?:\btr|\bQT_TR_NOOP|QObject::tr|QCoreApplication::translate\(\s*"[A-Za-z:]+"\s*,|QT_TRANSLATE_NOOP\(\s*"[A-Za-z:]+"\s*,)\(?\s*' + LIT)
 
 
 def unescape(s):
+    # \xHH escapes are UTF-8 bytes (a literal such as "\xC2\xB7" is one character)
+    def hexes(m):
+        return bytes(int(h, 16) for h in re.findall(r"\\x([0-9A-Fa-f]{2})", m.group(0))).decode("utf-8", "replace")
+    s = re.sub(r"(?:\\x[0-9A-Fa-f]{2})+", hexes, s)
     return (s.replace("\\n", "\n").replace("\\t", "\t").replace('\\"', '"').replace("\\\\", "\\"))
 
 
@@ -48,6 +52,9 @@ for ts in sorted(glob.glob(os.path.join(ui, "translations", "*.ts"))):
         src = m.find("source").text or ""
         tr = m.find("translation")
         text = tr.text or ""
+        nf = tr.find("numerusform")
+        if nf is not None:
+            text = nf.text or ""
         have[src] = text
         kind = tr.attrib.get("type")
         if kind in ("unfinished", "obsolete", "vanished"):

@@ -10,6 +10,10 @@ set(ACIDE_SERVICE_SOURCES
   ${CMAKE_CURRENT_LIST_DIR}/services/sim_session.cpp
   ${CMAKE_CURRENT_LIST_DIR}/services/debugger.cpp
   ${CMAKE_CURRENT_LIST_DIR}/services/hardware_link.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/services/blocks/block_theme.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/services/blocks/block_shapes.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/services/blocks/block_layout.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/services/blocks/block_session.cpp
 )
 
 set(ACIDE_UI_SOURCES
@@ -25,4 +29,10 @@ set(ACIDE_UI_SOURCES
   ${CMAKE_CURRENT_LIST_DIR}/ui/i18n.cpp
   ${CMAKE_CURRENT_LIST_DIR}/ui/app_shell.cpp
   ${CMAKE_CURRENT_LIST_DIR}/ui/hardware_designer.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/ui/document_tab.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/ui/block_painter.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/ui/block_scene.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/ui/block_view.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/ui/generated_code_pane.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/ui/block_editor.cpp
 )

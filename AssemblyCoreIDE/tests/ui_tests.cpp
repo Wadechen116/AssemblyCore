@@ -17,7 +17,18 @@
 #include <QPlainTextEdit>
 #include <QXmlStreamReader>
 
+#include <QRadioButton>
+#include <QToolButton>
+#include <QImage>
+#include <filesystem>
+#include <fstream>
+#include <sstream>
+
 #include "app_shell.h"
+#include "block_editor.h"
+#include "document_tab.h"
+#include "asmcore/blocks.h"
+#include "asmcore/blocks_edit.h"
 #include "code_editor.h"
 #include "i18n.h"
 #include "editing.h"
@@ -792,15 +803,17 @@ private slots:
             if (!xml.isStartElement()) continue;
             if (xml.name() == QLatin1String("name")) { context = xml.readElementText(); continue; }
             if (xml.name() != QLatin1String("message")) continue;
+            const bool numerus = xml.attributes().value("numerus") == QLatin1String("yes");
             QString source, translation, comment;
             while (!(xml.isEndElement() && xml.name() == QLatin1String("message")) && !xml.atEnd()) {
                 xml.readNext();
                 if (!xml.isStartElement()) continue;
                 if (xml.name() == QLatin1String("source")) source = xml.readElementText();
-                else if (xml.name() == QLatin1String("translation")) translation = xml.readElementText();
+                else if (xml.name() == QLatin1String("translation")) translation = xml.readElementText(QXmlStreamReader::IncludeChildElements);
                 else if (xml.name() == QLatin1String("comment")) comment = xml.readElementText();
             }
-            QString got = QCoreApplication::translate(context.toUtf8().constData(), source.toUtf8().constData(), comment.isEmpty() ? nullptr : comment.toUtf8().constData());
+            QString got = QCoreApplication::translate(context.toUtf8().constData(), source.toUtf8().constData(), comment.isEmpty() ? nullptr : comment.toUtf8().constData(), numerus ? 1 : -1);
+            if (numerus) { translation = translation.trimmed().replace("%n", "1"); got = got.trimmed(); }   // the .ts indents numerus forms                                 // what the count 1 comes out as
             checked++;
             if (got != translation) { wrong++; problems << context + ": " + source; }
         }
@@ -872,12 +885,203 @@ private slots:
     }
 };
 
+// ---- the block editor ------------------------------------------------------------------------------------------------------------------
+static const char* kBlockProg = ".equ LIMIT = 4\n.main\nstart: MOV CONST(1, 1) -> MAIN_SCRATCHPAD[0..0]   ; load\n ALU ADD unsigned\n JMP start, safe\n.proc f\n CALL g\n RET\n.endp\n.peri\np: JMP p\n";
+
+class BlockTests : public QObject {
+    Q_OBJECT
+    struct Rig {
+        Fixture f;
+        PanelRegistry panels;
+        std::unique_ptr<MainWindow> w;
+        BlockEditor* ed = nullptr;
+        explicit Rig(const std::string& asmText = kBlockProg, bool open = true) {
+            registerBuiltinPanels(panels);
+            f.fs->write("/w/prog.acblk", asmcore::blocks::serializeDocument(asmcore::blocks::importAsm(asmText, "prog")));
+            w = std::make_unique<MainWindow>(f.ctx, panels);
+            w->setQuiet(true);
+            w->resize(1000, 700);
+            w->show();
+            if (open) { w->openProject("/w/p.acproj"); w->openFile("/w/prog.acblk"); ed = qobject_cast<BlockEditor*>(w->tabs()->currentWidget()); }
+        }
+    };
+    static QString outDir() {
+        QByteArray d = qgetenv("ACIDE_TEST_OUT");
+        return d.isEmpty() ? QDir::tempPath() : QString::fromLocal8Bit(d);
+    }
+    static int distinctColors(const QImage& img) {
+        QSet<QRgb> s;
+        for (int y = 0; y < img.height(); y += 2) for (int x = 0; x < img.width(); x += 2) s.insert(img.pixel(x, y));
+        return s.size();
+    }
+private slots:
+    void aBlockFileOpensInItsOwnTab() {
+        Rig r;
+        QVERIFY(r.ed);
+        QCOMPARE(r.w->tabs()->tabText(r.w->tabs()->currentIndex()), QString("Blocks: prog.acblk"));
+        QCOMPARE(r.ed->page(), BlockEditor::Page::Blocks);
+        QVERIFY(r.ed->errorText().isEmpty());
+        QCOMPARE((int)r.ed->scene().layout().stacks.size(), 3);              // definitions, main, peri
+        QVERIFY(r.ed->infoText().contains("block"));
+        // opening again does not make a second tab
+        const int n = r.w->tabs()->count();
+        r.w->openFile("/w/prog.acblk");
+        QCOMPARE(r.w->tabs()->count(), n);
+        // the file is offered by the Open dialog and the registry knows the extension
+        QVERIFY(TabRegistry::instance().find("/x/y.acblk"));
+        QVERIFY(TabRegistry::instance().find("/x/y.achw"));
+        QVERIFY(!TabRegistry::instance().find("/x/y.asm"));
+    }
+    void aRadioSwitchChoosesBetweenBlocksAndAssemblyCode() {
+        Rig r;
+        auto* blocks = r.ed->findChild<QRadioButton*>("pageBlocks");
+        auto* code = r.ed->findChild<QRadioButton*>("pageCode");
+        QVERIFY(blocks && code && blocks->isChecked());
+        code->click();
+        QCOMPARE(r.ed->page(), BlockEditor::Page::Code);
+        QVERIFY(!blocks->isChecked());
+        QCOMPARE(r.ed->codePane().toPlainText().toStdString(), r.ed->session().generated().text);
+        QVERIFY(r.ed->codePane().toPlainText().contains("start:"));
+        QVERIFY(r.ed->codePane().isReadOnly());
+        blocks->click();
+        QCOMPARE(r.ed->page(), BlockEditor::Page::Blocks);
+        r.ed->setPage(BlockEditor::Page::Code);
+        QVERIFY(code->isChecked());                                              // setPage keeps the buttons in step
+    }
+    void selectionIsTheSameOnBothPages() {
+        Rig r;
+        const auto& doc = r.ed->session().document();
+        const std::string movId = doc.sections[1].blocks[1].id;                  // main: label, mov ...
+        r.ed->scene().blockClicked.fire(movId, Qt::NoModifier);                  // a click on the canvas
+        QVERIFY(r.ed->session().isSelected(movId));
+        r.ed->setPage(BlockEditor::Page::Code);
+        QCOMPARE(r.ed->codePane().extraSelections().size(), 1);
+        const int line = r.ed->session().generated().linesOf(movId)[0];
+        QCOMPARE(r.ed->codePane().textCursor().blockNumber() + 1, line);        // scrolled to it
+        // a click on another line of the text selects that block
+        const std::string jmpId = doc.sections[1].blocks[3].id;
+        const int jl = r.ed->session().generated().linesOf(jmpId)[0];
+        QTextCursor c(r.ed->codePane().document()->findBlockByNumber(jl - 1));
+        r.ed->codePane().setTextCursor(c);
+        Q_EMIT r.ed->codePane().lineClicked(jl);
+        QVERIFY(r.ed->session().isSelected(jmpId) && !r.ed->session().isSelected(movId));
+        // ctrl-click adds, a click on the empty canvas clears
+        r.ed->scene().blockClicked.fire(movId, Qt::ControlModifier);
+        QCOMPARE((int)r.ed->session().selection().size(), 2);
+        r.ed->scene().emptyClicked.fire(Qt::NoModifier);
+        QVERIFY(r.ed->session().selection().empty());
+        QCOMPARE(r.ed->codePane().extraSelections().size(), 0);
+        QVERIFY(r.ed->infoText().contains("block"));
+    }
+    void zoomAndFit() {
+        Rig r;
+        BlockView& v = r.ed->view();
+        QCOMPARE(v.zoom(), 1.0);
+        v.zoomIn();
+        QVERIFY(v.zoom() > 1.0);
+        v.setZoom(100);
+        QCOMPARE(v.zoom(), BlockView::kMaxZoom);
+        v.setZoom(0.001);
+        QCOMPARE(v.zoom(), BlockView::kMinZoom);
+        v.resetZoom();
+        QCOMPARE(v.zoom(), 1.0);
+        v.fitAll();
+        QVERIFY(v.zoom() <= 1.0);
+        r.ed->findChild<QToolButton*>("zoomIn")->click();
+        QVERIFY(v.zoom() > 0);
+        QCOMPARE(r.ed->findChild<QToolButton*>("zoomReset") != nullptr, true);
+    }
+    void aDamagedFileShowsWhyAndDoesNotCrash() {
+        Rig r("", false);
+        r.f.fs->write("/w/bad.acblk", "{ this is not json");
+        r.w->openProject("/w/p.acproj");
+        r.w->openFile("/w/bad.acblk");
+        auto* ed = qobject_cast<BlockEditor*>(r.w->tabs()->currentWidget());
+        QVERIFY(ed);
+        QVERIFY(!ed->errorText().isEmpty());
+        QCOMPARE((int)ed->scene().layout().stacks.size(), 0);
+        // fix the file on disk: the page recovers
+        r.f.ws.setText("/w/bad.acblk", asmcore::blocks::serializeDocument(asmcore::blocks::importAsm(kBlockProg)));
+        QVERIFY2(ed->errorText().isEmpty(), qPrintable(ed->errorText()));
+        QCOMPARE((int)ed->scene().layout().stacks.size(), 3);
+    }
+    void followsChangesToTheFile() {
+        Rig r;
+        const std::string text = asmcore::blocks::serializeDocument(asmcore::blocks::importAsm(".main\n JMP x\n"));
+        r.f.ws.setText("/w/prog.acblk", text);
+        QCOMPARE((int)r.ed->scene().layout().stacks.size(), 1);
+        QVERIFY(r.ed->codePane().toPlainText().contains("JMP x"));
+    }
+    void theTabIsClosedLikeTheOthersAndComesBackWithTheSession() {
+        Rig r;
+        const int n = r.w->tabs()->count();
+        r.w->endProject();
+        QVERIFY(r.w->tabs()->count() < n || n == 0);
+        r.w->openProject("/w/p.acproj");
+        QVERIFY(r.ed != nullptr);
+        r.w->openFile("/w/prog.acblk");
+        QVERIFY(qobject_cast<BlockEditor*>(r.w->tabs()->currentWidget()));
+        r.w->closeEditorAt(r.w->tabs()->currentIndex());
+        QVERIFY(!r.f.ws.find("/w/prog.acblk"));
+    }
+    void everySampleProgramShowsAsBlocks() {
+        namespace fs = std::filesystem;
+        int shown = 0;
+        Rig r(kBlockProg, false);
+        r.w->openProject("/w/p.acproj");
+        for (auto& e : fs::recursive_directory_iterator(ACIDE_SAMPLE_DIR)) {
+            if (!e.is_regular_file() || e.path().extension() != ".asm") continue;
+            if (e.path().generic_string().find("/out/") != std::string::npos) continue;
+            std::ifstream in(e.path(), std::ios::binary);
+            std::ostringstream ss;
+            ss << in.rdbuf();
+            r.f.fs->write("/w/s.acblk", asmcore::blocks::serializeDocument(asmcore::blocks::importAsm(ss.str(), "s")));
+            auto* ed = qobject_cast<BlockEditor*>(r.w->openTab("/w/s.acblk"));
+            QVERIFY(ed);
+            QVERIFY2(ed->errorText().isEmpty(), qPrintable(QString::fromStdString(e.path().string())));
+            const QImage img = ed->view().grab().toImage();
+            QVERIFY2(distinctColors(img) > 8, qPrintable(QString::fromStdString(e.path().string())));
+            ed->setPage(BlockEditor::Page::Code);
+            QVERIFY(!ed->codePane().toPlainText().isEmpty());
+            QVERIFY(r.w->closeEditorAt(r.w->tabs()->currentIndex()));
+            shown++;
+        }
+        QVERIFY(shown >= 10);
+    }
+    void paintsEveryLookWithoutTrouble() {
+        Rig r;
+        auto& s = r.ed->session();
+        const auto& d = s.document();
+        const std::string mov = d.sections[1].blocks[1].id, alu = d.sections[1].blocks[2].id, jmp = d.sections[1].blocks[3].id;
+        s.apply([&](asmcore::blocks::Editor& e) { return e.setDisabled(alu, true); });
+        s.apply([&](asmcore::blocks::Editor& e) { return e.setCollapsed(d.sections[1].blocks[4].id, true); });
+        s.apply([&](asmcore::blocks::Editor& e) { return e.splitAt(jmp, 520, 40); });          // a floating stack
+        QCOMPARE(s.stats().floatingStacks, (size_t)1);
+        r.ed->scene().setHatched({mov});
+        s.select({mov});
+        r.ed->resize(900, 600);
+        r.ed->show();
+        r.ed->view().fitAll();
+        const QImage img = r.ed->grab().toImage();
+        QVERIFY(distinctColors(img) > 20);
+        img.save(outDir() + "/blocks_looks.png");
+        // the same in the dark theme
+        r.f.settings.set("theme.base", "dark");
+        auto* dark = qobject_cast<BlockEditor*>(r.w->openTab("/w/prog.acblk"));
+        QVERIFY(dark);
+        dark->grab().save(outDir() + "/blocks_dark.png");
+        dark->setPage(BlockEditor::Page::Code);
+        dark->grab().save(outDir() + "/blocks_code.png");
+    }
+};
+
 int runAll(int argc, char** argv) {
     int rc = 0;
     rc |= runClass<UiTests>(argc, argv);
     rc |= runClass<WindowTests>(argc, argv);
     rc |= runClass<HardwareTests>(argc, argv);
     rc |= runClass<DebugTests>(argc, argv);
+    rc |= runClass<BlockTests>(argc, argv);
     rc |= runClass<LanguageTests>(argc, argv);
     return rc;
 }
