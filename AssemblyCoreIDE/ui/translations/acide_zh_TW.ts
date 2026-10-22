@@ -1651,5 +1651,45 @@ An IDE for the Sensor Micro-Sequencer ISA, built on the AssemblyCore assembler.<
         <source>Assembly (*.asm *.inc *.s);;Block programs (*.acblk);;All files (*)</source>
         <translation>Assembly (*.asm *.inc *.s);;積木程式 (*.acblk);;所有檔案 (*)</translation>
     </message>
+    <message>
+        <source>&amp;Block Program</source>
+        <translation>積木程式(&amp;B)</translation>
+    </message>
+    <message>
+        <source>Show Current File as &amp;Blocks</source>
+        <translation>將目前檔案以積木顯示(&amp;B)</translation>
+    </message>
+    <message>
+        <source>&amp;Open Block Program...</source>
+        <translation>開啟積木程式(&amp;O)...</translation>
+    </message>
+    <message>
+        <source>Open block program</source>
+        <translation>開啟積木程式</translation>
+    </message>
+    <message>
+        <source>Block programs (*.acblk)</source>
+        <translation>積木程式 (*.acblk)</translation>
+    </message>
+    <message>
+        <source>&amp;New Empty Block Program...</source>
+        <translation>新增空白積木程式(&amp;N)...</translation>
+    </message>
+    <message>
+        <source>New block program</source>
+        <translation>新增積木程式</translation>
+    </message>
+    <message>
+        <source>Blocks</source>
+        <translation>積木</translation>
+    </message>
+    <message>
+        <source>Open an assembler file first (or use File &gt; Block Program &gt; Open Block Program).</source>
+        <translation>請先開啟一個組譯器檔案(或用 檔案 &gt; 積木程式 &gt; 開啟積木程式)。</translation>
+    </message>
+    <message>
+        <source>Created %1 from %2: %3 blocks, %4 lines kept as text</source>
+        <translation>已由 %2 建立 %1：%3 個積木，%4 行保留為文字</translation>
+    </message>
 </context>
 </TS>

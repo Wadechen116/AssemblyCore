@@ -35,6 +35,8 @@ public:
     CodeEditor* currentEditor() const;
     HardwareDesigner* openHardware(const std::string& achwPath);       // the Hardware Designer tab of a description (created if needed)
     HardwareDesigner* currentDesigner() const;
+    BlockEditor* openAsBlocks();                                        // the current assembler file shown as blocks (creates NAME.acblk beside it)
+    bool newBlocks(const QString& file);
     BlockEditor* openBlocks(const std::string& acblkPath);             // the block editor tab of a .acblk file
     QWidget* openTab(const std::string& path);                         // any non-text tab kind registered in TabRegistry (by extension)
     bool newHardware(const QString& achwPath);                         // File -> Hardware -> New: create, attach to the project, open
@@ -103,6 +105,7 @@ private:
     std::map<std::string, QWidget*> docTabs_;                // the tabs made by TabRegistry, by path
     bool closeDocTab(int index);
     QAction* openHardwareAct_ = nullptr;
+    QAction* blockFromAsmAct_ = nullptr;
     QAction *actStart_ = nullptr, *actPause_ = nullptr, *actStop_ = nullptr, *actRestart_ = nullptr, *actInto_ = nullptr, *actOver_ = nullptr,
             *actOut_ = nullptr, *actToCursor_ = nullptr, *actToggleBp_ = nullptr;
     QLabel* debugLabel_ = nullptr;

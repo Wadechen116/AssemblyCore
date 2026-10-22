@@ -932,6 +932,30 @@ private slots:
         QVERIFY(TabRegistry::instance().find("/x/y.achw"));
         QVERIFY(!TabRegistry::instance().find("/x/y.asm"));
     }
+    void theMenuShowsTheCurrentAssemblyFileAsBlocks() {
+        Rig r;
+        while (r.w->tabs()->count()) QVERIFY(r.w->closeEditorAt(0));
+        QVERIFY(r.w->openAsBlocks() == nullptr);                                       // no assembler file open: a warning, nothing else
+        QVERIFY(!r.w->warnings().isEmpty());
+        r.w->openFile("/w/main.asm");
+        QVERIFY(r.w->currentEditor());
+        BlockEditor* b = r.w->openAsBlocks();
+        QVERIFY(b);
+        QVERIFY(r.f.fs->exists("/w/main.acblk"));
+        QCOMPARE(r.w->tabs()->tabText(r.w->tabs()->currentIndex()), QString("Blocks: main.acblk"));
+        QVERIFY(b->session().generated().text.find("EXEC_CSR") != std::string::npos);
+        QVERIFY(r.w->findChild<QAction*>() != nullptr);
+        QVERIFY(r.w->findChild<QToolBar*>("blocksToolbar") != nullptr);
+        // asking again opens the same blocks (never overwritten by the text)
+        r.f.ws.setText("/w/main.acblk", asmcore::blocks::serializeDocument(asmcore::blocks::importAsm(".main\n JMP x\n")));
+        r.w->openFile("/w/main.asm");
+        BlockEditor* again = r.w->openAsBlocks();
+        QCOMPARE(again, b);
+        QVERIFY(again->session().generated().text.find("JMP x") != std::string::npos);
+        // a new empty block program
+        QVERIFY(r.w->newBlocks("/w/empty.acblk"));
+        QVERIFY(r.f.fs->exists("/w/empty.acblk"));
+    }
     void aRadioSwitchChoosesBetweenBlocksAndAssemblyCode() {
         Rig r;
         auto* blocks = r.ed->findChild<QRadioButton*>("pageBlocks");

@@ -15,6 +15,7 @@
 #include <QVBoxLayout>
 
 #include "artifacts.h"
+#include "asmcore/blocks.h"
 #include "block_editor.h"
 #include "document_tab.h"
 #include "hardware_designer.h"
@@ -125,6 +126,23 @@ void MainWindow::createActions() {
     recentMenu_ = file->addMenu(tr("Recent Projects"));
     closeProjectAct_ = act(file, tr("Close &Project"), QKeySequence("Ctrl+Shift+W"), [this] { endProject(); });
     closeProjectAct_->setEnabled(ctx_.workspace.hasProject());
+    QMenu* blk = file->addMenu(tr("&Block Program"));
+    blockFromAsmAct_ = act(blk, tr("Show Current File as &Blocks"), QKeySequence("Ctrl+Alt+B"), [this] { openAsBlocks(); });
+    act(blk, tr("&Open Block Program..."), QKeySequence(), [this] {
+        QString f = QFileDialog::getOpenFileName(this, tr("Open block program"), fromStd(ctx_.workspace.hasProject() ? ctx_.workspace.project().baseDir() : std::string()), tr("Block programs (*.acblk)"));
+        if (!f.isEmpty()) openBlocks(norm(f));
+    });
+    act(blk, tr("&New Empty Block Program..."), QKeySequence(), [this] {
+        QString f = QFileDialog::getSaveFileName(this, tr("New block program"), fromStd(ctx_.workspace.hasProject() ? ctx_.workspace.project().baseDir() : std::string()), tr("Block programs (*.acblk)"));
+        if (f.isEmpty()) return;
+        if (!f.endsWith(".acblk")) f += ".acblk";
+        newBlocks(f);
+    });
+    {
+        QToolBar* bt = addToolBar(tr("Blocks"));                          // always visible: this is how a program is shown as blocks
+        bt->setObjectName("blocksToolbar");
+        bt->addAction(blockFromAsmAct_);
+    }
     QMenu* hw = file->addMenu(tr("&Hardware"));
     act(hw, tr("&New Hardware Description..."), QKeySequence(), [this] {
         if (!ctx_.workspace.hasProject()) { warn(tr("Hardware"), tr("Open or create a project first.")); return; }
@@ -354,6 +372,40 @@ QWidget* MainWindow::openTab(const std::string& path) {
 HardwareDesigner* MainWindow::openHardware(const std::string& path) { return qobject_cast<HardwareDesigner*>(openTab(path)); }
 
 BlockEditor* MainWindow::openBlocks(const std::string& path) { return qobject_cast<BlockEditor*>(openTab(path)); }
+
+// Turns the assembler text of an editor into a block program (importAsm never fails: lines it does not know become text blocks) saved next to it
+// as NAME.acblk, and shows it. If NAME.acblk already exists it is opened as it is -- the blocks are never overwritten by the text.
+BlockEditor* MainWindow::openAsBlocks() {
+    CodeEditor* e = currentEditor();
+    if (!e) {
+        warn(tr("Blocks"), tr("Open an assembler file first (or use File > Block Program > Open Block Program)."));
+        return nullptr;
+    }
+    const std::string asmPath = e->path();
+    const size_t dot = asmPath.find_last_of('.');
+    const size_t slash = asmPath.find_last_of('/');
+    const std::string base = dot != std::string::npos && (slash == std::string::npos || dot > slash) ? asmPath.substr(0, dot) : asmPath;
+    const std::string blkPath = base + ".acblk";
+    if (!ctx_.workspace.fileSystem()->exists(blkPath) && !ctx_.workspace.find(blkPath)) {
+        asmcore::blocks::ImportStats st;
+        asmcore::blocks::Document d = asmcore::blocks::importAsm(e->toPlainText().toStdString(), QFileInfo(fromStd(base)).fileName().toStdString(), &st);
+        ctx_.workspace.setText(blkPath, asmcore::blocks::serializeDocument(d));
+        std::string err;
+        if (!ctx_.workspace.save(blkPath, err)) { warn(tr("Blocks"), fromStd(err)); return nullptr; }
+        ctx_.log.fire(tr("Created %1 from %2: %3 blocks, %4 lines kept as text").arg(fromStd(blkPath)).arg(QFileInfo(fromStd(asmPath)).fileName()).arg(st.blocks).arg(st.raw));
+    }
+    return openBlocks(blkPath);
+}
+
+bool MainWindow::newBlocks(const QString& file) {
+    const std::string path = norm(file);
+    asmcore::blocks::Document d = asmcore::blocks::importAsm(".main\n", QFileInfo(file).completeBaseName().toStdString());
+    ctx_.workspace.setText(path, asmcore::blocks::serializeDocument(d));
+    std::string err;
+    if (!ctx_.workspace.save(path, err)) { warn(tr("Blocks"), fromStd(err)); return false; }
+    updateTitle();
+    return openBlocks(path) != nullptr;
+}
 
 bool MainWindow::newHardware(const QString& file) {
     std::string err;
