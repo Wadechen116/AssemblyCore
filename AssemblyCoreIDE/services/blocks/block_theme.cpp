@@ -78,6 +78,8 @@ BlockTheme BlockTheme::light() {
     t.note = rgb(0xff, 0xf6, 0xc8);
     t.noteText = rgb(0x5f, 0x4b, 0x00);
     t.shadow = rgb(0x00, 0x00, 0x00, 0x30);
+    t.hole = rgb(0x0a, 0x0a, 0x0e, 0xe6);
+    t.holeBorder = rgb(0xff, 0xff, 0xff, 0x38);
     t.category = {{"Data", rgb(0x58, 0xa5, 0xe8)},       {"Math", rgb(0x7e, 0xc8, 0x6b)},      {"CSR", rgb(0xe8, 0xa2, 0x4a)},
                   {"Control", rgb(0xd9, 0x7a, 0xb8)},    {"Peripheral", rgb(0x4d, 0xc1, 0xb0)}, {"Structure", rgb(0x9a, 0x86, 0xe0)},
                   {"Definitions", rgb(0xb4, 0xb9, 0xc4)}, {"Text", rgb(0xd3, 0xd6, 0xdc)},
@@ -108,6 +110,8 @@ BlockTheme BlockTheme::dark_() {
     t.note = rgb(0x4d, 0x44, 0x1c);
     t.noteText = rgb(0xf3, 0xe3, 0x9c);
     t.shadow = rgb(0x00, 0x00, 0x00, 0x60);
+    t.hole = rgb(0x00, 0x00, 0x00, 0xf0);
+    t.holeBorder = rgb(0xff, 0xff, 0xff, 0x30);
     t.category = {{"Data", rgb(0x3a, 0x78, 0xb8)},       {"Math", rgb(0x4e, 0x96, 0x41)},      {"CSR", rgb(0xb8, 0x7c, 0x2c)},
                   {"Control", rgb(0xa8, 0x55, 0x8a)},    {"Peripheral", rgb(0x2c, 0x95, 0x88)}, {"Structure", rgb(0x70, 0x5f, 0xb4)},
                   {"Definitions", rgb(0x6c, 0x71, 0x7d)}, {"Text", rgb(0x55, 0x59, 0x62)},
@@ -122,7 +126,7 @@ BlockTheme BlockTheme::fromSettings(const Settings& s, bool dark) {
                                  {"blockTextOnDark", &BlockTheme::blockTextOnDark}, {"chip", &BlockTheme::chip}, {"chipText", &BlockTheme::chipText}, {"chipBorder", &BlockTheme::chipBorder},
                                  {"selection", &BlockTheme::selection}, {"hover", &BlockTheme::hover}, {"error", &BlockTheme::error}, {"warning", &BlockTheme::warning},
                                  {"hatch", &BlockTheme::hatch}, {"floatingOutline", &BlockTheme::floatingOutline}, {"hatFill", &BlockTheme::hatFill}, {"hatText", &BlockTheme::hatText},
-                                 {"note", &BlockTheme::note}, {"noteText", &BlockTheme::noteText}, {"shadow", &BlockTheme::shadow}};
+                                 {"note", &BlockTheme::note}, {"noteText", &BlockTheme::noteText}, {"shadow", &BlockTheme::shadow}, {"hole", &BlockTheme::hole}, {"holeBorder", &BlockTheme::holeBorder}};
     for (const Role& r : roles) {
         Rgba c;
         if (parseColor(s.get(std::string("blocks.") + r.key), c)) t.*(r.field) = c;

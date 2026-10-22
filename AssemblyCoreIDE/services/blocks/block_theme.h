@@ -35,6 +35,7 @@ struct BlockTheme {
     Rgba hatFill, hatText;                          // the section start (.main / .peri / definitions)
     Rgba note, noteText;                            // comment blocks
     Rgba shadow;
+    Rgba hole, holeBorder;                          // the black hollow where a component was taken out (an empty socket, an empty slot)
     std::map<std::string, Rgba> category;           // by BlockDef.category
 
     Rgba categoryColor(const std::string& cat) const;

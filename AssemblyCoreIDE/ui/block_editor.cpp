@@ -1,5 +1,7 @@
 #include "block_editor.h"
 
+#include <functional>
+
 #include <QButtonGroup>
 #include <QFileInfo>
 #include <QHBoxLayout>
@@ -99,7 +101,13 @@ BlockEditor::BlockEditor(AppContext& ctx, const std::string& path, QWidget* pare
     connect(selectAll, &QShortcut::activated, this, [this] { scene_->selectAll(); });
     auto* escape = new QShortcut(QKeySequence(Qt::Key_Escape), view_);
     escape->setContext(Qt::WidgetWithChildrenShortcut);
-    connect(escape, &QShortcut::activated, this, [this] { session_.clearSelection(); });
+    connect(escape, &QShortcut::activated, this, [this] { if (scene_->dragging()) scene_->cancelDrag(); else session_.clearSelection(); });
+    auto shortcut = [&](const QKeySequence& k, std::function<void()> fn) {
+        auto* sc = new QShortcut(k, view_);
+        sc->setContext(Qt::WidgetWithChildrenShortcut);
+        connect(sc, &QShortcut::activated, this, [fn] { fn(); });
+    };
+    shortcut(QKeySequence::Delete, [this] { if (!scene_->dragging()) session_.deleteSelection(); });
     connect(blocksRadio_, &QRadioButton::toggled, this, [this](bool on) { if (on) setPage(Page::Blocks); });
     connect(codeRadio_, &QRadioButton::toggled, this, [this](bool on) { if (on) setPage(Page::Code); });
     connect(zout, &QToolButton::clicked, view_, &BlockView::zoomOut);

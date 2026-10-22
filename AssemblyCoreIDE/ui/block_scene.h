@@ -12,9 +12,11 @@
 #include <QGraphicsItem>
 #include <QGraphicsRectItem>
 #include <QGraphicsScene>
+#include <QKeyEvent>
 #include <vector>
 
 #include "block_painter.h"
+#include "blocks/block_drop.h"
 #include "blocks/block_layout.h"
 #include "blocks/block_session.h"
 #include "blocks/block_theme.h"
@@ -91,7 +93,13 @@ public:
     std::string blockAt(const QPointF& scenePos) const;                 // innermost block, "" if none
     std::vector<std::string> blocksIn(const QRectF& r) const;           // blocks touched by a rectangle; a block inside a block that is also there is left out
     void selectAll();
-    bool dragging() const { return mode_ == Mode::MoveStacks; }
+    bool dragging() const { return mode_ == Mode::MoveStacks || mode_ == Mode::DragPayload; }
+    // A drag that lifts a block out of its place (a component out of a socket, instructions out of a stack) and drops it somewhere: the stack being
+    // dragged, and where it would go if the mouse were released now.
+    bool draggingPayload() const { return mode_ == Mode::DragPayload; }
+    size_t payload() const { return payload_; }
+    const blocks::DropTarget& dropTarget() const { return dropTarget_; }
+    void cancelDrag();                                                   // Esc: put everything back
     // Where the stacks being moved would end up; used by the drag and by tests.
     void moveSelectedStacksBy(const QPointF& delta, bool commit);
 
@@ -109,6 +117,7 @@ public:
     const std::set<std::string>& warningIds() const { return warningIds_; }
 
 protected:
+    void keyPressEvent(QKeyEvent* e) override;
     void mousePressEvent(QGraphicsSceneMouseEvent* e) override;
     void mouseMoveEvent(QGraphicsSceneMouseEvent* e) override;
     void mouseReleaseEvent(QGraphicsSceneMouseEvent* e) override;
@@ -119,7 +128,13 @@ private:
     std::set<size_t> selectedStacks() const;
     QRectF canvasArea() const;
 
-    enum class Mode { Idle, PressedBlock, MoveStacks, Band };
+    bool beginPayloadDrag(const QPointF& scenePos, bool single);
+    void updatePayloadPreview(const QPointF& scenePos, const QPoint& screenPos);
+    void endPayloadDrag(bool drop);
+    void showMarker();
+    QPointF payloadOrigin(const QPointF& scenePos) const;
+
+    enum class Mode { Idle, PressedBlock, PressedHeader, MoveStacks, Band, DragPayload };
     Mode mode_ = Mode::Idle;
     QPointF pressPos_;
     std::string pressedId_;
@@ -128,6 +143,14 @@ private:
     QGraphicsRectItem* band_ = nullptr;
     std::set<std::string> bandBase_;
     std::map<size_t, QPointF> dragOrigin_;                              // stack index -> its position when the drag began
+    size_t payload_ = 0;
+    size_t headerStack_ = 0;                                            // the stack whose hat / tag strip was pressed
+    std::set<size_t> movingStacks_;                                     // the stacks a MoveStacks drag moves
+    QPointF grab_;                                                      // where inside the dragged block the pointer holds it
+    unsigned dragSerial_ = 0;
+    bool lifted_ = false;                                               // the drag changed the document (lifted something out)
+    blocks::DropTarget dropTarget_;
+    QGraphicsItem* marker_ = nullptr;
 
     blocks::BlockSession& session_;
     QtTextMetrics metrics_;

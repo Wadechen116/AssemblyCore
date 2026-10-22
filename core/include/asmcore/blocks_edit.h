@@ -3,6 +3,7 @@
 //
 // Everything here works on the model of blocks.h and has no UI. The canvas only asks "may this go there?" (a dry run that returns the reasons,
 // which it shows as hatching and a tooltip) and "do it" (which either applies the whole change or changes nothing).
+#include <set>
 #include <string>
 #include <vector>
 
@@ -120,7 +121,17 @@ public:
     Outcome setDisabled(const std::string& id, bool disabled);
     Outcome setCollapsed(const std::string& id, bool collapsed);
     Outcome plugValue(const std::string& blockId, const std::string& socket, Block child, bool dryRun = false);
-    Outcome unplugValue(const std::string& blockId, const std::string& socket, double x, double y);       // it becomes a floating block at (x, y)
+    // The component becomes a floating block at (x, y). The socket it leaves is a HOLE (its text mirror is emptied too, so the instruction is incomplete
+    // until something else is plugged in); keepText leaves the text where it was.
+    Outcome unplugValue(const std::string& blockId, const std::string& socket, double x, double y, bool keepText = false);
+    // Drag support. liftBlocks takes a block (and, with takeBelow, everything after it in its stack) out onto the canvas as a new floating stack at (x, y);
+    // plugSection plugs the lone component of a floating stack into a socket (the stack goes away). Both can run as a dry run for feedback.
+    Outcome liftBlocks(const std::string& id, bool takeBelow, double x, double y, bool dryRun = false);
+    Outcome plugSection(size_t source, const std::string& blockId, const std::string& socket, bool dryRun = false);
+    // While a group is open, everything the editor records in the history is one step (a drag: lift, move, drop).
+    void beginGroup(const std::string& key) { group_ = key; }
+    void endGroup() { group_.clear(); }
+    const std::string& groupKey() const { return group_; }
     Outcome setSectionComment(size_t section, const std::string& comment);
     Outcome removeSection(size_t section);                                                                  // a floating stack, with everything on it
 
@@ -133,6 +144,8 @@ private:
     const Registry& reg_;
     RuleOptions opt_;
     EditHistory* history_;
+    std::string group_;
+    bool plugInto(std::vector<Section>& work, std::set<size_t>& touched, Outcome& out, const std::string& blockId, const std::string& socket, Block child);
     struct Impl;
 };
 

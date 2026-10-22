@@ -11,6 +11,7 @@
 
 #include "asmcore/blocks.h"
 #include "asmcore/blocks_edit.h"
+#include "blocks/block_drop.h"
 #include "blocks/block_layout.h"
 #include "blocks/block_session.h"
 #include "blocks/block_shapes.h"
@@ -423,6 +424,93 @@ static void t_layout_values() {
     check(std::fabs(host.titleRect.center().y - host.head.center().y) < 0.51, "the title stays vertically centred in the row");
 }
 
+// where to put the payload's origin so that its first block's attachment point lies at q
+static Pt originFor(const StackLayout& payload, Pt q, bool value) {
+    const BlockBox& f = payload.blocks[(size_t)payload.top[0]];
+    return value ? Pt{q.x - f.rect.x, q.y - f.rect.center().y} : Pt{q.x - f.rect.x, q.y - f.rect.y};
+}
+
+static void t_drop() {
+    section("dropping a dragged stack: where it fits, and what happens");
+    FakeMetrics m;
+    BlockSession s;
+    s.setDocument(docOf(".main\nstart: MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]\n ALU ADD unsigned\n JMP start\n.peri\np: JMP p\n"));
+    LayoutEngine eng(m);
+    const std::string movId = s.document().sections[0].blocks[1].id, aluId = s.document().sections[0].blocks[2].id;
+    const std::string numId = s.document().sections[0].blocks[1].value("src")->id;
+    const std::string original = s.generated().text;
+
+    // ---- a component, lifted out of its socket
+    s.beginGroup("drag:1");
+    Outcome u = s.apply([&](Editor& e) { return e.unplugValue(movId, "src", 400, 100); });
+    check(u.ok && s.document().sections.size() == 3, "(the number is lifted out: it floats)");
+    DocumentLayout lay = eng.layoutDocument(s.document());
+    const size_t payload = s.document().sections.size() - 1;
+    // the hole it left
+    const StackLayout& host = lay.stacks[0];
+    const BlockBox* movBox = host.find(movId);
+    check(movBox && movBox->sockets[0].child < 0 && movBox->sockets[0].empty && movBox->sockets[0].plug == PlugShape::Any, "its socket is now an empty hole");
+    Pt hole{0, 0};
+    for (const ConnectionPoint& cp : host.points) if (cp.kind == ConnectionPoint::Socket && cp.blockId == movId && cp.slot == "src") hole = {host.origin.x + cp.pos.x, host.origin.y + cp.pos.y};
+    DropTarget t = findDropTarget(s, lay, payload, originFor(lay.stacks[payload], hole, true));
+    check(t.kind == DropTarget::Socket && t.fits() && t.hostId == movId && t.socket == "src", "brought back to the hole it fits (a Socket target that fits)", t.reason);
+    t = findDropTarget(s, lay, payload, originFor(lay.stacks[payload], {hole.x + 12, hole.y + 6}, true));
+    check(t.kind == DropTarget::Socket && t.fits(), "a little off still snaps");
+    t = findDropTarget(s, lay, payload, originFor(lay.stacks[payload], {hole.x + 200, hole.y + 200}, true));
+    check(t.kind == DropTarget::None, "far from everything: nothing");
+    Pt dstHole{0, 0};
+    for (const ConnectionPoint& cp : host.points) if (cp.kind == ConnectionPoint::Socket && cp.blockId == movId && cp.slot == "dst") dstHole = {host.origin.x + cp.pos.x, host.origin.y + cp.pos.y};
+    t = findDropTarget(s, lay, payload, originFor(lay.stacks[payload], dstHole, true));
+    check(t.kind == DropTarget::Socket && !t.fits() && !t.reason.empty(), "over the destination hole a number does not fit (a region is needed): reported, with the reason", t.reason);
+    Pt nextPoint{0, 0};
+    for (const ConnectionPoint& cp : host.points) if (cp.kind == ConnectionPoint::Next && cp.blockId == movId) nextPoint = {host.origin.x + cp.pos.x, host.origin.y + cp.pos.y};
+    t = findDropTarget(s, lay, payload, originFor(lay.stacks[payload], nextPoint, true));
+    check(t.kind != DropTarget::Insert, "a component is never offered a place between instructions");
+    Outcome dropped = performDrop(s, payload, findDropTarget(s, lay, payload, originFor(lay.stacks[payload], hole, true)));
+    s.endGroup();
+    check(dropped.ok && s.document().sections.size() == 2 && s.generated().text == original, "dropped: plugged again, and the program is as it was", s.generated().text);
+    check(s.document().find(numId) != nullptr, "(the same block)");
+    check(s.undo() && s.generated().text == original && s.document().sections.size() == 2, "lift + drop is one undo step");
+
+    // ---- instructions, lifted out of a stack
+    s.setDocument(docOf(".main\nstart: MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]\n ALU ADD unsigned\n JMP start\n.peri\np: JMP p\n"));
+    const std::string alu2 = s.document().sections[0].blocks[2].id, mov2 = s.document().sections[0].blocks[1].id;
+    const std::string text0 = s.generated().text;
+    s.beginGroup("drag:2");
+    s.apply([&](Editor& e) { return e.liftBlocks(alu2, true, 600, 300); });
+    lay = eng.layoutDocument(s.document());
+    const size_t pl = s.document().sections.size() - 1;
+    check(s.document().sections[pl].blocks.size() == 2 && s.generated().text.find("ALU") == std::string::npos, "(the ALU block and the jump below it are lifted out)");
+    Pt under{0, 0};
+    for (const ConnectionPoint& cp : lay.stacks[0].points) if (cp.kind == ConnectionPoint::Next && cp.blockId == mov2) under = {lay.stacks[0].origin.x + cp.pos.x, lay.stacks[0].origin.y + cp.pos.y};
+    t = findDropTarget(s, lay, pl, originFor(lay.stacks[pl], under, false));
+    check(t.kind == DropTarget::Insert && t.fits() && t.where.section == 0 && t.where.before.empty() && t.where.container.empty(), "brought under the move block: insert at the end of Main", t.reason);
+    Pt peri{0, 0};
+    for (const ConnectionPoint& cp : lay.stacks[1].points) if (cp.kind == ConnectionPoint::Next && cp.blockId.empty()) peri = {lay.stacks[1].origin.x + cp.pos.x, lay.stacks[1].origin.y + cp.pos.y};
+    t = findDropTarget(s, lay, pl, originFor(lay.stacks[pl], peri, false));
+    check(t.kind == DropTarget::Insert && !t.fits() && (t.reason.find("Peri") != std::string::npos || t.reason.find("Main") != std::string::npos), "under the Peri hat a Main-only block does not fit (H1): reported", t.reason);
+    t = findDropTarget(s, lay, pl, originFor(lay.stacks[pl], {5000, 5000}, false));
+    check(t.kind == DropTarget::None, "nothing near: nothing");
+    dropped = performDrop(s, pl, findDropTarget(s, lay, pl, originFor(lay.stacks[pl], under, false)));
+    s.endGroup();
+    check(dropped.ok && s.generated().text == text0 && s.document().sections.size() == 2, "dropped: the stack is part of the program again", s.generated().text);
+    check(s.undo() && s.generated().text == text0, "one undo");
+
+    // ---- into the slot of a procedure, above a floating stack
+    s.setDocument(docOf(".main\n.proc f\n.endp\n JMP x\n"));
+    s.apply([&](Editor& e) { return e.liftBlocks(s.document().sections[0].blocks[1].id, true, 700, 20); });
+    lay = eng.layoutDocument(s.document());
+    const size_t jp = s.document().sections.size() - 1;
+    const std::string procId = s.document().sections[0].blocks[0].id;
+    Pt slot{0, 0};
+    for (const ConnectionPoint& cp : lay.stacks[0].points) if (cp.kind == ConnectionPoint::Slot && cp.blockId == procId) slot = {lay.stacks[0].origin.x + cp.pos.x, lay.stacks[0].origin.y + cp.pos.y};
+    t = findDropTarget(s, lay, jp, originFor(lay.stacks[jp], slot, false));
+    check(t.kind == DropTarget::Insert && t.where.container == procId && t.where.slot == "BODY" && t.fits(), "into the body of a procedure", t.reason);
+    performDrop(s, jp, t);
+    const std::vector<Block>* body = s.document().sections[0].blocks[0].stack("BODY");
+    check(body && body->size() == 1 && s.generated().text.find(".proc f\n    JMP x\n.endp") != std::string::npos, "...and it is there", s.generated().text);
+}
+
 static void t_session() {
     section("session");
     BlockSession s;
@@ -494,6 +582,20 @@ static void t_session() {
         sym.setDocument(docOf(".equ LOCAL = 1\n.main\n EXEC_CSR WRITE8 LOCAL, 1\n"));
         check(sym.symbols().find("LOCAL", "int") && sym.symbols().find("EXT_CTRL", "csr"), "the document's own symbols and the outside ones together");
     }
+    // deleting the selection
+    {
+        BlockSession del;
+        del.setDocument(docOf(".main\nstart: MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]\n ALU ADD unsigned\n JMP start\n"));
+        const Block& mv = del.document().sections[0].blocks[1];
+        const std::string numId = mv.value("src")->id, aluId = del.document().sections[0].blocks[2].id;
+        const std::string before = del.generated().text;
+        del.select({numId, aluId});
+        const size_t n = del.deleteSelection();
+        check(n == 2 && !del.document().find(aluId) && !del.document().find(numId) && del.document().sections.size() == 1, "deleting a component and an instruction removes both (the component leaves no floating copy)");
+        check(!del.document().sections[0].blocks[1].value("src") && del.generated().text.find("(incomplete)") != std::string::npos && del.generated().text.find("ALU") == std::string::npos, "the component's place is a hole; the instruction is gone");
+        check(del.selection().empty(), "the selection is empty afterwards");
+        check(del.undo() && del.generated().text == before, "one undo brings both back");
+    }
     // header option
     GenerateOptions go;
     go.header = "Generated from x.acblk";
@@ -552,6 +654,7 @@ int main() {
     t_layout_document();
     t_layout_text();
     t_layout_values();
+    t_drop();
     t_session();
     t_samples();
     std::printf("\n%s  %d passed, %d failed\n", g_fail ? "FAILED" : "OK    ", g_pass, g_fail);

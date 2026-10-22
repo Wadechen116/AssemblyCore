@@ -14,6 +14,7 @@ set(ACIDE_SERVICE_SOURCES
   ${CMAKE_CURRENT_LIST_DIR}/services/blocks/block_shapes.cpp
   ${CMAKE_CURRENT_LIST_DIR}/services/blocks/block_layout.cpp
   ${CMAKE_CURRENT_LIST_DIR}/services/blocks/block_session.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/services/blocks/block_drop.cpp
 )
 
 set(ACIDE_UI_SOURCES

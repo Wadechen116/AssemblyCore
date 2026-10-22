@@ -314,6 +314,12 @@ struct Gen {
             indent = 0;
         } else {
             stmt = render(d->tmpl, b, reg);
+            if (d->cls == "instruction") {                                        // an instruction with a hole (an operand taken out, or never filled in) is not written as code
+                bool missing = false;
+                for (const FieldDef& f : d->fields)
+                    if (f.kind != FieldKind::Flag && !f.optional && partVisible(f.when, b) && partText(b, *d, f.name, reg).empty()) missing = true;
+                if (missing) { emit("; (incomplete) " + stmt, b.id); return; }
+            }
             if (b.type == "label" || b.type == "directive" || b.type == "vector" || b.type == "wcet" || b.type == "assume") indent = 0;
         }
         if (b.disabled) { emit("; " + stmt, b.id); return; }

@@ -203,8 +203,15 @@ void MainWindow::createActions() {
 
     QMenu* edit = menuBar()->addMenu(tr("&Edit"));
     auto ed = [this](auto fn) { return [this, fn] { if (CodeEditor* e = currentEditor()) fn(e); }; };
-    act(edit, tr("&Undo"), QKeySequence::Undo, ed([](CodeEditor* e) { e->undo(); }));
-    act(edit, tr("&Redo"), QKeySequence::Redo, ed([](CodeEditor* e) { e->redo(); }));
+    // undo / redo go to the tab in front: the block editor has its own history
+    act(edit, tr("&Undo"), QKeySequence::Undo, [this] {
+        if (auto* b = qobject_cast<BlockEditor*>(tabs_->currentWidget())) b->undo();
+        else if (CodeEditor* e = currentEditor()) e->undo();
+    });
+    act(edit, tr("&Redo"), QKeySequence::Redo, [this] {
+        if (auto* b = qobject_cast<BlockEditor*>(tabs_->currentWidget())) b->redo();
+        else if (CodeEditor* e = currentEditor()) e->redo();
+    });
     edit->addSeparator();
     act(edit, tr("Cu&t"), QKeySequence::Cut, ed([](CodeEditor* e) { e->cut(); }));
     act(edit, tr("&Copy"), QKeySequence::Copy, ed([](CodeEditor* e) { e->copy(); }));

@@ -143,12 +143,15 @@ void paintRow(PaintContext& c, const BlockBox& b, const QColor& text) {
             QColor tc = toQColor(c.theme.chipText);
             if (b.disabled) tc.setAlphaF(0.55f);
             drawText(c, qr(s.rect).adjusted(6, 0, -6, 0), QString::fromUtf8(s.text.c_str()), c.mono, tc, b.disabled);
-        } else if (s.child < 0) {                                // an empty socket: a dent
-            c.p.setPen(QPen(toQColor(c.theme.chipBorder), 1, Qt::DashLine));
-            QColor dent = toQColor(c.theme.chip);
-            dent.setAlphaF(0.35f);
-            c.p.setBrush(dent);
-            c.p.drawPath(plugPath(qr(s.rect), s.plug, s.plugDepth));
+        } else if (s.child < 0) {                                // an empty socket: a black hole in the shape of what fits
+            c.p.setPen(QPen(toQColor(c.theme.holeBorder), 1));
+            c.p.setBrush(toQColor(c.theme.hole));
+            const QPainterPath hole = plugPath(qr(s.rect), s.plug, s.plugDepth);
+            c.p.drawPath(hole);
+            c.p.setPen(QPen(QColor(0, 0, 0, 120), 2));               // a little depth: a shadow along the inside of the top and left edges
+            c.p.setClipPath(hole);
+            c.p.drawLine(qr(s.rect).topLeft() + QPointF(-s.plugDepth, 1), qr(s.rect).topRight() + QPointF(0, 1));
+            c.p.setClipping(false);
         }
     }
     if (!b.comment.empty() && !b.commentRect.empty()) {
@@ -204,6 +207,12 @@ public:
         c.p.setBrush(fill);
         c.p.drawPath(path);
         paintRow(c, b, toQColor(c.theme.textOn(Rgba{(uint8_t)fill.red(), (uint8_t)fill.green(), (uint8_t)fill.blue(), 255})));
+        for (const SlotBox& sl : b.slotBoxes) {                              // an empty slot of a container is a black hole too: instructions can be dropped into it
+            if (!sl.items.empty()) continue;
+            c.p.setPen(QPen(toQColor(c.theme.holeBorder), 1));
+            c.p.setBrush(toQColor(c.theme.hole));
+            c.p.drawRoundedRect(qr(sl.rect).adjusted(1, 1, -1, -1), 3, 3);
+        }
         finishBlock(c, b, path, st);
     }
 };

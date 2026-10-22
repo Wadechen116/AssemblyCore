@@ -425,7 +425,75 @@ static void t_rules() {
     o = et.setField(t.sections[0].blocks[0].id, "src", "MAIN_CONST_POOL[@c]");
     check(o.ok && !t.sections[0].blocks[0].value("src") && genText(t).find("MAIN_CONST_POOL[@c] -> MAIN_SCRATCHPAD[0..1]") != std::string::npos, "typing in an operand replaces its component", genText(t));
     o = et.unplugValue(t.sections[0].blocks[0].id, "dst", 400, 40);
-    check(o.ok && t.sections[0].blocks[0].get("dst") == "MAIN_SCRATCHPAD[0..1]" && genText(t).find("-> MAIN_SCRATCHPAD[0..1]") != std::string::npos, "unplugging a component leaves its text where it was", genText(t));
+    check(o.ok && !t.sections[0].blocks[0].value("dst") && t.sections[0].blocks[0].get("dst").empty() && t.sections.back().domain == "floating", "taking a component out leaves a HOLE (no text) and the component floats", genText(t));
+    check(genText(t).find("; (incomplete) MOV MAIN_CONST_POOL[@c] ->") != std::string::npos && genText(t).find("\n    MOV") == std::string::npos, "an instruction with a hole is written as a comment, never as half an instruction", genText(t));
+    check(hasProblem(t, "'to' is empty"), "...and the block says what is missing", problemsOf(t));
+    // keepText leaves the text
+    Document t2 = importAsm(".main\n MOV CONST(1, 2) -> MAIN_SCRATCHPAD[0..1]\n");
+    Editor et2(t2);
+    o = et2.unplugValue(t2.sections[0].blocks[0].id, "dst", 400, 40, true);
+    check(o.ok && t2.sections[0].blocks[0].get("dst") == "MAIN_SCRATCHPAD[0..1]" && genText(t2).find("\n    MOV CONST(1, 2) -> MAIN_SCRATCHPAD[0..1]") != std::string::npos, "(keepText leaves the text where it was)", genText(t2));
+    // a window taken out empties ptr and len
+    Document t3 = importAsm(".main\n EXEC_CSR WRITE_SP AE_CTRL, len=4, ptr=4\n");
+    Editor et3(t3);
+    o = et3.unplugValue(t3.sections[0].blocks[0].id, "window", 0, 0);
+    check(o.ok && t3.sections[0].blocks[0].get("len").empty() && t3.sections[0].blocks[0].get("ptr").empty() && genText(t3).find("(incomplete)") != std::string::npos, "a window taken out leaves a hole: ptr and len are empty", genText(t3));
+}
+
+static void t_drag_ops() {
+    section("drag support: lift blocks out, plug a floating component back, one undo step");
+    Document d = importAsm(".main\nstart: MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]\n ALU ADD unsigned\n JMP start\n.proc f\n CALL g\n RET\n.endp\n");
+    EditHistory hist(d);
+    Editor ed(d, Registry::defaults(), RuleOptions(), &hist);
+    const std::string movId = d.sections[0].blocks[1].id, jmpId = d.sections[0].blocks[3].id;
+    // take a block and everything below it
+    Outcome o = ed.liftBlocks(d.sections[0].blocks[2].id, true, 300, 40);
+    check(o.ok && d.sections.size() == 2 && d.sections[1].domain == "floating" && d.sections[1].blocks.size() == 3 && d.sections[0].blocks.size() == 2 && d.sections[1].x == 300, "lifting a block takes it and the blocks below it onto the canvas");
+    check(genText(d).find("ALU ADD") == std::string::npos, "...so they are no longer part of the program");
+    // a single block
+    Outcome o2 = ed.liftBlocks(d.sections[1].blocks[1].id, false, 10, 10);
+    check(o2.ok && d.sections.size() == 3 && d.sections[2].blocks.size() == 1 && d.sections[1].blocks.size() == 2, "with takeBelow off only that block is taken");
+    // lifting the first block of a floating stack changes nothing (it already is one)
+    const size_t n = d.sections.size();
+    Outcome o3 = ed.liftBlocks(d.sections[2].blocks[0].id, true, 0, 0);
+    check(o3.ok && d.sections.size() == n && o3.section == 2, "the first block of a floating stack is already a stack of its own");
+    // dry run changes nothing
+    const std::string before = serializeDocument(d);
+    Outcome dry = ed.liftBlocks(d.sections[0].blocks[1].id, true, 5, 5, true);
+    check(dry.ok && serializeDocument(d) == before, "a dry run lifts nothing");
+    // components: lift one out of a socket, plug a floating one back
+    Document e = importAsm(".main\n MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]\n");
+    EditHistory h2(e);
+    Editor ee(e, Registry::defaults(), RuleOptions(), &h2);
+    const std::string host = e.sections[0].blocks[0].id;
+    const std::string numId = e.sections[0].blocks[0].value("src")->id;
+    ee.beginGroup("drag:1");
+    Outcome u = ee.unplugValue(host, "src", 200, 60);
+    check(u.ok && e.sections.size() == 2, "the number leaves the socket and floats");
+    Outcome bad = ee.plugSection(1, host, "dst", true);
+    check(!bad.ok || bad.fit == Fit::No, "a number does not fit the destination (a region is needed)", bad.error);
+    Outcome good = ee.plugSection(1, host, "src");
+    check(good.ok && e.sections.size() == 1 && e.sections[0].blocks[0].value("src") && e.sections[0].blocks[0].value("src")->id == numId, "dropped back into the source socket it is plugged again (same block)");
+    ee.endGroup();
+    check(genText(e).find("MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]") != std::string::npos, "and the program is whole again", genText(e));
+    check(h2.size() == 2 && h2.undoLabel() != "", "lift and drop with one group key are ONE undo step", std::to_string(h2.size()));
+    check(h2.undo() && e.sections.size() == 1 && genText(e).find("MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]") != std::string::npos, "undoing it restores the start");
+    // plugSection refuses what is not a lone component
+    Document g = importAsm(".main\n MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]\n JMP x\n");
+    Editor eg(g);
+    eg.liftBlocks(g.sections[0].blocks[1].id, true, 50, 50);
+    Outcome notComp = eg.plugSection(1, g.sections[0].blocks[0].id, "src", true);
+    check(!notComp.ok && !notComp.error.empty(), "a stack of instructions cannot be plugged into a socket", notComp.error);
+    // the occupant is not lost when something is dropped on an occupied socket
+    Document h;
+    h = importAsm(".main\n MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]\n");
+    Editor eh(h);
+    Block other = h.make("num");
+    other.set("value", "9");
+    other.set("width", "16");
+    eh.newFloating({other}, 100, 100);
+    Outcome swap = eh.plugSection(1, h.sections[0].blocks[0].id, "src");
+    check(swap.ok && h.sections.size() == 2 && h.sections[1].blocks[0].get("value") == "5" && genText(h).find("CONST(9, 2)") != std::string::npos, "dropping on an occupied socket: the old number floats, the new one is in", genText(h));
 }
 
 // ---- compatibility --------------------------------------------------------------------------------------------------------------------
@@ -740,6 +808,7 @@ int main() {
     t_windows();
     t_rules();
     t_compat();
+    t_drag_ops();
     t_classes();
     t_symbols();
     t_xfer();

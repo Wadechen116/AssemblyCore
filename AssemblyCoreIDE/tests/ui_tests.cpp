@@ -907,6 +907,38 @@ class BlockTests : public QObject {
             if (open) { w->openProject("/w/p.acproj"); w->openFile("/w/prog.acblk"); ed = qobject_cast<BlockEditor*>(w->tabs()->currentWidget()); }
         }
     };
+    struct DragRig : Rig {
+        explicit DragRig(const std::string& text) : Rig(text) {
+            w->resize(1000, 700);
+            ed->resize(900, 600);
+            ed->show();
+            ed->view().resetZoom();
+            ed->view().showContent();
+            QApplication::processEvents();
+        }
+        BlockView& v() { return ed->view(); }
+        BlockScene& sc() { return ed->scene(); }
+        QPoint at(const QPointF& scenePos) { return v().mapFromScene(scenePos); }
+        QPointF center(const std::string& id) { return sc().blockRect(id).center(); }
+        // press on a block, move in steps to `to` (scene coordinates), without releasing
+        void pressAndMove(const std::string& id, QPointF to, Qt::KeyboardModifiers mods = Qt::NoModifier) {
+            const QPoint from = at(center(id));
+            QTest::mousePress(v().viewport(), Qt::LeftButton, mods, from);
+            const QPoint target = at(to);
+            QTest::mouseMove(v().viewport(), from + (target - from) / 3);
+            QTest::mouseMove(v().viewport(), from + (target - from) * 2 / 3);
+            QTest::mouseMove(v().viewport(), target);
+        }
+        void release(QPointF to, Qt::KeyboardModifiers mods = Qt::NoModifier) { QTest::mouseRelease(v().viewport(), Qt::LeftButton, mods, at(to)); }
+        QPointF socketPoint(const std::string& host, const std::string& socket) {
+            const auto& lay = sc().layout();
+            for (const auto& st : lay.stacks)
+                for (const auto& cp : st.points)
+                    if (cp.kind == acide::blocks::ConnectionPoint::Socket && cp.blockId == host && cp.slot == socket) return QPointF(st.origin.x + cp.pos.x, st.origin.y + cp.pos.y);
+            return QPointF();
+        }
+    };
+
     static QString outDir() {
         QByteArray d = qgetenv("ACIDE_TEST_OUT");
         return d.isEmpty() ? QDir::tempPath() : QString::fromLocal8Bit(d);
@@ -1057,7 +1089,7 @@ private slots:
         QCOMPARE(r.ed->session().selection().size(), top);
         QTest::keyClick(v.viewport(), Qt::Key_Escape);
     }
-    void draggingASelectedBlockMovesItsWholeStack() {
+    void draggingTheHatMovesTheWholeStack() {
         Rig r;
         r.ed->resize(900, 600);
         r.ed->show();
@@ -1070,8 +1102,8 @@ private slots:
         const double x0 = doc.sections[1].x, y0 = doc.sections[1].y;
         const std::string peri = doc.sections[2].blocks[0].id;
         const double px0 = doc.sections[2].x, py0 = doc.sections[2].y;
-        const QRectF br = r.ed->scene().blockRect(doc.sections[1].blocks[2].id);
-        const QPoint from = v.mapFromScene(br.center());
+        const auto& st1 = r.ed->scene().layout().stacks[1];
+        const QPoint from = v.mapFromScene(QPointF(st1.origin.x + st1.header.rect.center().x, st1.origin.y + st1.header.rect.center().y));     // the hat of Main
         QTest::mousePress(v.viewport(), Qt::LeftButton, Qt::NoModifier, from);
         QTest::mouseMove(v.viewport(), from + QPoint(40, 30));
         QVERIFY(r.ed->scene().dragging());
@@ -1083,7 +1115,6 @@ private slots:
         QCOMPARE(doc.sections[1].y, y0 + 60);
         QCOMPARE(doc.sections[2].x, px0);                                    // other stacks stay
         QCOMPARE(doc.sections[2].y, py0);
-        QVERIFY(s.isSelected(doc.sections[1].blocks[2].id));
         // one undo takes it back
         QVERIFY(s.undo());
         QCOMPARE(s.document().sections[1].x, x0);
@@ -1110,6 +1141,159 @@ private slots:
         r.ed->scene().moveSelectedStacksBy(QPointF(-1e7, -1e7), true);
         for (const auto& sec : s.document().sections) QVERIFY(sec.x >= area.left() - 1 && sec.y >= area.top() - 1);
     }
+    void aComponentCanBeTakenOutLeavesABlackHoleAndGoesBack() {
+        DragRig r(".main\n MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]\n");
+        auto& s = r.ed->session();
+        const std::string mov = s.document().sections[0].blocks[0].id;
+        const std::string num = s.document().sections[0].blocks[0].value("src")->id;
+        const std::string original = s.generated().text;
+        const QPointF hole = r.socketPoint(mov, "src");
+        // take the number out and let it go in the empty space
+        const QPointF far = r.center(num) + QPointF(260, 150);
+        r.pressAndMove(num, far);
+        QVERIFY(r.sc().draggingPayload());
+        QCOMPARE((int)s.document().sections.size(), 2);                                      // it floats already while dragged
+        QVERIFY(!s.document().sections[0].blocks[0].value("src"));                          // and its socket is a hole
+        r.release(far);
+        QVERIFY(!r.sc().dragging());
+        QCOMPARE((int)s.document().sections.size(), 2);
+        QCOMPARE(s.document().sections[1].domain, std::string("floating"));
+        QVERIFY(s.document().sections[1].blocks[0].id == num);
+        QVERIFY(s.generated().text.find("(incomplete)") != std::string::npos);              // a half instruction is never code
+        // the hole is black on the canvas
+        r.ed->view().viewport()->repaint();
+        const QImage img = r.v().viewport()->grab().toImage();
+        const QPoint hp = r.at(r.sc().blockRect(mov).center() - QPointF(0, 0));
+        (void)hp;
+        const auto* hostBox = r.sc().layout().stackOf(mov);
+        QVERIFY(hostBox);
+        const QRectF holeRect = [&] { for (const auto& b : hostBox->blocks) if (b.id == mov) return QRectF(hostBox->origin.x + b.sockets[0].rect.x, hostBox->origin.y + b.sockets[0].rect.y, b.sockets[0].rect.w, b.sockets[0].rect.h); return QRectF(); }();
+        const QPoint hc = r.at(holeRect.center());
+        const QColor px = img.pixelColor(hc);
+        QVERIFY2(px.red() < 45 && px.green() < 45 && px.blue() < 50, qPrintable(QString("the hole is black, not %1,%2,%3").arg(px.red()).arg(px.green()).arg(px.blue())));
+        img.save(outDir() + "/blocks_hole.png");
+        // bring it back: while it is near the hole the target says "fits"
+        const QPointF hold = QPointF(r.sc().blockRect(num).width() / 2 + 6, 0);          // held by its middle: its left edge (the plug) is then 6 right of the pointer's offset
+        r.pressAndMove(num, hole + hold);
+        QVERIFY(r.sc().draggingPayload());
+        QPointF itemPos;
+        for (QGraphicsItem* it : r.sc().items()) if (auto* si = dynamic_cast<acide::StackItem*>(it)) if (si->index() == r.sc().payload()) itemPos = si->pos();
+        const auto& pl = r.sc().layout().stacks[r.sc().payload()];
+        QVERIFY2(r.sc().dropTarget().kind == acide::blocks::DropTarget::Socket && r.sc().dropTarget().fits(),
+                 qPrintable(QString("kind %1 fit %2 reason %3 hole %4,%5 itemPos %6,%7 firstRect %8,%9 payload %10 stacks %11").arg((int)r.sc().dropTarget().kind).arg((int)r.sc().dropTarget().fit)
+                            .arg(QString::fromStdString(r.sc().dropTarget().reason)).arg(hole.x()).arg(hole.y()).arg(itemPos.x()).arg(itemPos.y()).arg(pl.blocks[(size_t)pl.top[0]].rect.x).arg(pl.blocks[(size_t)pl.top[0]].rect.y).arg((int)r.sc().payload()).arg((int)r.sc().layout().stacks.size())));
+        QCOMPARE(r.sc().dropTarget().socket, std::string("src"));
+        r.release(hole + hold);
+        QCOMPARE((int)s.document().sections.size(), 1);
+        QVERIFY(s.document().sections[0].blocks[0].value("src") && s.document().sections[0].blocks[0].value("src")->id == num);
+        QCOMPARE(s.generated().text, original);
+        // two drags are two undo steps; the first undo puts the number back where it floated
+        QVERIFY(s.undo());
+        QCOMPARE((int)s.document().sections.size(), 2);
+        QVERIFY(s.undo());
+        QCOMPARE(s.generated().text, original);
+        QVERIFY(s.document().sections[0].blocks[0].value("src"));
+    }
+
+    void aBlockThatDoesNotFitIsShownHatchedAndRefused() {
+        DragRig r(".main\n MOV MAIN_SCRATCHPAD[0..1] -> ALU_OPA\n");
+        auto& s = r.ed->session();
+        const std::string mov = s.document().sections[0].blocks[0].id;
+        const std::string opa = s.document().sections[0].blocks[0].value("dst")->id;       // ALU A can only be written
+        const QPointF src = r.socketPoint(mov, "src");                                     // ...so it does not fit where something is read from
+        const QPointF hold = QPointF(r.sc().blockRect(opa).width() / 2 + 6, 0);
+        r.pressAndMove(opa, src + hold);
+        QVERIFY(r.sc().draggingPayload());
+        QVERIFY(r.sc().dropTarget().kind == acide::blocks::DropTarget::Socket);
+        QVERIFY(!r.sc().dropTarget().fits());
+        QVERIFY(!r.sc().dropTarget().reason.empty());
+        r.ed->grab().save(outDir() + "/blocks_refused.png");
+        r.release(src + hold);
+        // it stays floating where it was let go; the source is untouched, the destination is a hole
+        QCOMPARE((int)s.document().sections.size(), 2);
+        QVERIFY(s.document().sections[0].blocks[0].value("src") && s.document().sections[0].blocks[0].value("src")->type == "region_main_scratchpad");
+        QVERIFY(!s.document().sections[0].blocks[0].value("dst"));
+    }
+
+    void escapePutsEverythingBack() {
+        DragRig r(".main\n MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]\n ALU ADD unsigned\n JMP x\n");
+        auto& s = r.ed->session();
+        const std::string original = s.generated().text;
+        const std::string num = s.document().sections[0].blocks[0].value("src")->id;
+        r.pressAndMove(num, r.center(num) + QPointF(200, 120));
+        QVERIFY(r.sc().draggingPayload());
+        QTest::keyClick(&r.v(), Qt::Key_Escape);
+        QVERIFY(!r.sc().dragging());
+        QCOMPARE((int)s.document().sections.size(), 1);
+        QCOMPARE(s.generated().text, original);
+        // the same for an instruction lifted out of its stack
+        const std::string alu = s.document().sections[0].blocks[1].id;
+        r.pressAndMove(alu, r.center(alu) + QPointF(220, 60));
+        QCOMPARE((int)s.document().sections.size(), 2);
+        QTest::keyClick(&r.v(), Qt::Key_Escape);
+        QCOMPARE((int)s.document().sections.size(), 1);
+        QCOMPARE(s.generated().text, original);
+    }
+
+    void deleteAndUndoWorkFromTheKeyboard() {
+        DragRig r(".main\n MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]\n ALU ADD unsigned\n");
+        auto& s = r.ed->session();
+        const std::string original = s.generated().text;
+        const std::string num = s.document().sections[0].blocks[0].value("src")->id;
+        r.v().setFocus();
+        QApplication::setActiveWindow(r.w.get());
+        s.select({num});
+        QTest::keyClick(&r.v(), Qt::Key_Delete);
+        QVERIFY(!s.document().sections[0].blocks[0].value("src"));                          // the number is gone and its socket is a hole
+        QVERIFY(s.generated().text.find("(incomplete)") != std::string::npos);
+        QTest::keyClick(&r.v(), Qt::Key_Z, Qt::ControlModifier);
+        QCOMPARE(s.generated().text, original);
+        const QList<QKeySequence> redoKeys = QKeySequence::keyBindings(QKeySequence::Redo);   // Ctrl+Y or Ctrl+Shift+Z, as the platform has it
+        QVERIFY(!redoKeys.isEmpty());
+        QTest::keyClick(&r.v(), Qt::Key(redoKeys.first()[0] & 0xFFFFFF), Qt::KeyboardModifiers(redoKeys.first()[0] & Qt::KeyboardModifierMask));
+        QVERIFY(s.generated().text.find("(incomplete)") != std::string::npos);
+    }
+
+    void instructionsCanBeLiftedOutAndPutBack() {
+        DragRig r(".main\nstart: MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]\n ALU ADD unsigned\n JMP start\n.peri\np: JMP p\n");
+        auto& s = r.ed->session();
+        const std::string original = s.generated().text;
+        const std::string mov = s.document().sections[0].blocks[1].id, alu = s.document().sections[0].blocks[2].id;
+        // drag the ALU block: it takes the jump below it
+        r.pressAndMove(alu, r.center(alu) + QPointF(330, 40));
+        QVERIFY(r.sc().draggingPayload());
+        QCOMPARE((int)s.document().sections.size(), 3);
+        QCOMPARE((int)s.document().sections.back().blocks.size(), 2);
+        r.release(r.center(alu) + QPointF(330, 40));
+        QCOMPARE((int)s.document().sections[0].blocks.size(), 2);
+        QVERIFY(s.generated().text.find("ALU") == std::string::npos);
+        // drag it back under the move block
+        const auto& lay = r.sc().layout();
+        QPointF under;
+        for (const auto& cp : lay.stacks[0].points) if (cp.kind == acide::blocks::ConnectionPoint::Next && cp.blockId == mov) under = QPointF(lay.stacks[0].origin.x + cp.pos.x, lay.stacks[0].origin.y + cp.pos.y);
+        const size_t floating = s.document().sections.size() - 1;
+        const std::string movedAlu = s.document().sections[floating].blocks[0].id;
+        const QRectF br = r.sc().blockRect(movedAlu);
+        // hold it by its top left corner area so the attachment point follows the pointer predictably
+        const QPointF grab = br.topLeft() + QPointF(6, 6);
+        const QPoint from = r.at(grab);
+        QTest::mousePress(r.v().viewport(), Qt::LeftButton, Qt::NoModifier, from);
+        QTest::mouseMove(r.v().viewport(), from + QPoint(10, 10));
+        const QPointF to = under + QPointF(6, 6) + QPointF(3, 2);
+        QTest::mouseMove(r.v().viewport(), r.at(to));
+        QVERIFY(r.sc().draggingPayload());
+        QVERIFY(r.sc().dropTarget().kind == acide::blocks::DropTarget::Insert && r.sc().dropTarget().fits());
+        QTest::mouseRelease(r.v().viewport(), Qt::LeftButton, Qt::NoModifier, r.at(to));
+        QCOMPARE((int)s.document().sections.size(), 2);
+        QCOMPARE(s.generated().text, original);
+        // Alt takes only that block
+        const std::string alu2 = s.document().sections[0].blocks[2].id;
+        r.pressAndMove(alu2, r.center(alu2) + QPointF(330, 40), Qt::AltModifier);
+        QCOMPARE((int)s.document().sections.back().blocks.size(), 1);
+        r.release(r.center(alu2) + QPointF(330, 40), Qt::AltModifier);
+        QCOMPARE((int)s.document().sections[0].blocks.size(), 3);                          // label, mov, jmp: the jump stayed
+    }
+
     void namesFromTheHardwareDescriptionAreKnown() {
         Rig r(".main\n EXEC_CSR WRITE8 BOARD_CTRL, 1\n");
         auto flagged = [&](const QString& name) {

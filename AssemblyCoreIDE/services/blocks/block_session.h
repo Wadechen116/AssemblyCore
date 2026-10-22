@@ -29,9 +29,17 @@ public:
     const asmcore::blocks::Registry& registry() const { return reg_; }
 
     // ---- editing
+    // A drag is one undo step however many edits it makes (lift, move, drop): everything between beginGroup and endGroup is merged in the history.
+    void beginGroup(const std::string& key) { editor_.beginGroup(key); }
+    void endGroup() { editor_.endGroup(); }
+    // What an operation WOULD do (pass dryRun = true to it): never changes anything, never fires a signal. For the feedback while dragging.
+    asmcore::blocks::Outcome probe(const std::function<asmcore::blocks::Outcome(asmcore::blocks::Editor&)>& op) { return op(editor_); }
     // Runs an edit operation on the document; if it was done (ok) the caches are dropped, the selection is pruned of blocks that no longer exist
     // and `changed` fires. A refused operation changes nothing and fires nothing.
     asmcore::blocks::Outcome apply(const std::function<asmcore::blocks::Outcome(asmcore::blocks::Editor&)>& op);
+    // Deletes the selected blocks: an instruction (with what it holds) is removed from its stack; a component is taken out of its socket and thrown away,
+    // which leaves a hole. One undo step. Returns how many were deleted.
+    size_t deleteSelection();
     bool undo();
     bool redo();
     std::string undoLabel() const { return history_.undoLabel(); }
@@ -76,6 +84,7 @@ private:
     asmcore::blocks::RuleOptions rules_;
     asmcore::blocks::GenerateOptions genOptions_;
     std::set<std::string> selection_;
+    unsigned groupSerial_ = 0;
     asmcore::blocks::SymbolTable external_;
     mutable asmcore::blocks::SymbolTable symbols_;
     mutable bool haveGenerated_ = false, haveProblems_ = false, haveSymbols_ = false;

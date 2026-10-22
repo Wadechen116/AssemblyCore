@@ -357,8 +357,7 @@ Outcome run(Editor& ed, Document& doc, const Registry& reg, const RuleOptions& o
     out.ok = true;
     if (dryRun) { doc.nextId = savedNextId; return out; }
     doc.sections = work;
-    if (history) history->record(label, mergeKey);
-    (void)ed;
+    if (history) history->record(label, ed.groupKey().empty() ? mergeKey : ed.groupKey());
     return out;
 }
 
@@ -458,6 +457,28 @@ Outcome Editor::splitAt(const std::string& id, double x, double y, bool dryRun) 
         std::vector<Block> list = *f.list;
         std::vector<Block> moved(list.begin() + (long)f.index, list.end());
         f.list->erase(f.list->begin() + (long)f.index, f.list->end());
+        touched.insert(f.section);
+        Section s;
+        s.domain = "floating";
+        s.x = x; s.y = y;
+        s.blocks = moved;
+        work.push_back(s);
+        touched.insert(work.size() - 1);
+        for (const Block& b : moved) out.ids.push_back(b.id);
+        out.section = work.size() - 1;
+        return true;
+    });
+}
+
+Outcome Editor::liftBlocks(const std::string& id, bool takeBelow, double x, double y, bool dryRun) {
+    return run(*this, doc_, reg_, opt_, history_, "Lift blocks", "", dryRun, [&](Work& work, std::set<size_t>& touched, Outcome& out) {
+        Found f;
+        if (!findBlock(work, id, f)) { out.error = "the block " + id + " does not exist"; return false; }
+        if (!f.container && f.index == 0 && work[f.section].domain == "floating" && (takeBelow || f.list->size() == 1)) { out.section = f.section; out.ids.push_back(id); return true; }       // already a stack of its own
+        std::vector<Block>& list = *f.list;
+        const size_t end = takeBelow ? list.size() : f.index + 1;
+        std::vector<Block> moved(list.begin() + (long)f.index, list.begin() + (long)end);
+        list.erase(list.begin() + (long)f.index, list.begin() + (long)end);
         touched.insert(f.section);
         Section s;
         s.domain = "floating";
@@ -631,8 +652,7 @@ Outcome Editor::setCollapsed(const std::string& id, bool collapsed) {
     });
 }
 
-Outcome Editor::plugValue(const std::string& blockId, const std::string& socket, Block child, bool dryRun) {
-    return run(*this, doc_, reg_, opt_, history_, "Plug value", "", dryRun, [&](Work& work, std::set<size_t>& touched, Outcome& out) {
+bool Editor::plugInto(Work& work, std::set<size_t>& touched, Outcome& out, const std::string& blockId, const std::string& socket, Block child) {
         size_t sec = 0;
         Block* host = findAnyIn(work, blockId, &sec);
         if (!host) { out.error = "the block " + blockId + " does not exist"; return false; }
@@ -695,11 +715,28 @@ Outcome Editor::plugValue(const std::string& blockId, const std::string& socket,
         }
         touched.insert(sec);
         out.ids.push_back(child.id);
-        return true;
+    return true;
+}
+
+Outcome Editor::plugValue(const std::string& blockId, const std::string& socket, Block child, bool dryRun) {
+    return run(*this, doc_, reg_, opt_, history_, "Plug value", "", dryRun, [&](Work& work, std::set<size_t>& touched, Outcome& out) {
+        return plugInto(work, touched, out, blockId, socket, std::move(child));
     });
 }
 
-Outcome Editor::unplugValue(const std::string& blockId, const std::string& socket, double x, double y) {
+Outcome Editor::plugSection(size_t source, const std::string& blockId, const std::string& socket, bool dryRun) {
+    return run(*this, doc_, reg_, opt_, history_, "Plug value", "", dryRun, [&](Work& work, std::set<size_t>& touched, Outcome& out) {
+        if (source >= work.size()) { out.error = "there is no such stack"; return false; }
+        if (work[source].domain != "floating" || work[source].blocks.size() != 1) { out.error = "only a lone component lying on the canvas can be plugged into a socket"; return false; }
+        Block child = work[source].blocks[0];
+        const BlockDef* cd = reg_.find(child.type);
+        if (!cd || cd->valueType.empty()) { out.error = "that block is not a component"; return false; }
+        work.erase(work.begin() + (long)source);
+        return plugInto(work, touched, out, blockId, socket, std::move(child));
+    });
+}
+
+Outcome Editor::unplugValue(const std::string& blockId, const std::string& socket, double x, double y, bool keepText) {
     return run(*this, doc_, reg_, opt_, history_, "Unplug value", "", false, [&](Work& work, std::set<size_t>& touched, Outcome& out) {
         size_t sec = 0;
         Block* host = findAnyIn(work, blockId, &sec);
@@ -711,12 +748,25 @@ Outcome Editor::unplugValue(const std::string& blockId, const std::string& socke
         s.domain = "floating";
         s.x = x; s.y = y;
         s.blocks.push_back(*v);
-        if (host->field(socket)) host->set(socket, valueText(*v, reg_, d ? [&]() -> const InputDef* { for (const InputDef& i : d->inputs) if (i.name == socket) return &i; return nullptr; }() : nullptr));   // the text stays where the component was
+        const InputDef* in = nullptr;
+        if (d) for (const InputDef& i : d->inputs) if (i.name == socket) in = &i;
+        const std::string text = valueText(*v, reg_, in);
         host->clearValue(socket);
+        if (host->field(socket)) host->set(socket, keepText ? text : std::string());      // a hole (or the text, if asked)
+        if (in && d) {                                                                      // the fields a window / a composite derived from it
+            if (in->derive.compare(0, 6, "range:") == 0) {
+                const std::string spec = in->derive.substr(6);
+                const size_t comma = spec.find(',');
+                for (const std::string& f : {spec.substr(0, comma), spec.substr(comma + 1)}) host->set(f, keepText ? text : std::string());
+            } else if (in->derive.compare(0, 4, "arg:") == 0) {
+                host->set(in->derive.substr(4), partText(*host, *d, in->derive.substr(4), reg_));
+            }
+        }
         work.push_back(s);
         touched.insert(sec);
         touched.insert(work.size() - 1);
         out.ids.push_back(s.blocks[0].id);
+        out.section = work.size() - 1;                                                       // the floating stack the component is now
         return true;
     });
 }

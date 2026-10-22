@@ -44,6 +44,8 @@ public:
     QString errorText() const;                       // why the file could not be shown ("" if fine)
     QString infoText() const;                        // the summary line
     void selectBlock(const std::string& id, bool reveal = true);
+    void undo() { if (scene_->dragging()) scene_->cancelDrag(); else session_.undo(); }       // (the Edit menu calls these)
+    void redo() { session_.redo(); }
 
 private:
     void reload();

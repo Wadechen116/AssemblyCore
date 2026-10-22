@@ -18,7 +18,8 @@ SERVICE_SOURCES = \
     $$IDE_DIR/services/blocks/block_theme.cpp \
     $$IDE_DIR/services/blocks/block_shapes.cpp \
     $$IDE_DIR/services/blocks/block_layout.cpp \
-    $$IDE_DIR/services/blocks/block_session.cpp
+    $$IDE_DIR/services/blocks/block_session.cpp \
+    $$IDE_DIR/services/blocks/block_drop.cpp
 
 UI_SOURCES = \
     $$IDE_DIR/ui/qt_dispatcher.cpp \

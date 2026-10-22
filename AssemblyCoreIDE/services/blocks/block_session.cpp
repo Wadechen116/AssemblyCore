@@ -91,6 +91,44 @@ Outcome BlockSession::apply(const std::function<Outcome(Editor&)>& op) {
     return o;
 }
 
+namespace {
+// the block and the socket a component is plugged into
+bool findHost(const std::vector<Block>& v, const std::string& id, std::string& host, std::string& socket) {
+    for (const Block& b : v) {
+        for (const auto& vl : b.values)
+            for (const Block& c : vl.second) {
+                if (c.id == id) { host = b.id; socket = vl.first; return true; }
+                std::vector<Block> one{c};
+                if (findHost(one, id, host, socket)) return true;
+            }
+        for (const auto& st : b.stacks) if (findHost(st.second, id, host, socket)) return true;
+    }
+    return false;
+}
+}  // namespace
+
+size_t BlockSession::deleteSelection() {
+    const std::vector<std::string> ids(selection_.begin(), selection_.end());
+    size_t n = 0;
+    beginGroup("delete:" + std::to_string(++groupSerial_));
+    for (const std::string& id : ids) {
+        if (!doc_.find(id)) continue;                                     // gone already with the block that held it
+        std::string host, socket;
+        bool nested = false;
+        for (const Section& s : doc_.sections) if (!nested && findHost(s.blocks, id, host, socket)) nested = true;
+        asmcore::blocks::Outcome o;
+        if (nested) {
+            o = apply([&](Editor& e) { return e.unplugValue(host, socket, 0, 0); });
+            if (o.ok) o = apply([&](Editor& e) { return e.removeSection(o.section); });
+        } else {
+            o = apply([&](Editor& e) { return e.removeBlocks({id}, false); });
+        }
+        if (o.ok) n++;
+    }
+    endGroup();
+    return n;
+}
+
 bool BlockSession::undo() {
     if (!history_.undo()) return false;
     invalidate();
