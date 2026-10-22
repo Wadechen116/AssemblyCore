@@ -13,10 +13,12 @@
 #include <QGraphicsRectItem>
 #include <QGraphicsScene>
 #include <QKeyEvent>
+#include <QTimer>
 #include <vector>
 
 #include "block_painter.h"
 #include "blocks/block_drop.h"
+#include "blocks/block_spring.h"
 #include "blocks/block_layout.h"
 #include "blocks/block_session.h"
 #include "blocks/block_theme.h"
@@ -100,6 +102,16 @@ public:
     size_t payload() const { return payload_; }
     const blocks::DropTarget& dropTarget() const { return dropTarget_; }
     void cancelDrag();                                                   // Esc: put everything back
+
+    // ---- soft effects (visual only: the document and the layout never change). Springs, stepped by a timer; setAnimationsEnabled(false) switches them off.
+    void setAnimationsEnabled(bool on);
+    bool animationsEnabled() const { return animate_; }
+    // The scale a block is drawn with right now (1, 1 if it has no effect), and how many effects are running. advanceEffects steps them (the timer calls it; tests too).
+    void effectScale(const std::string& id, double& sx, double& sy) const;
+    size_t effectsRunning() const { return fx_.size() + (tiltActive_ ? 1 : 0); }
+    void advanceEffects(double dt);
+    void popEffect(const std::string& blockId);                          // a block "pops" (squashes in / out with a wobble)
+    void stretchEffect(const std::string& blockId, double fromScaleX);   // a block that was wider / narrower springs to its size, anchored at its left edge
     // Where the stacks being moved would end up; used by the drag and by tests.
     void moveSelectedStacksBy(const QPointF& delta, bool commit);
 
@@ -134,6 +146,13 @@ private:
     void showMarker();
     QPointF payloadOrigin(const QPointF& scenePos) const;
 
+    struct Fx {
+        blocks::Spring sx, sy;
+        int anchor = 0;                                                 // 0 centre, 1 left edge
+    };
+    void startFxTimer();
+    void applyTilt();
+
     enum class Mode { Idle, PressedBlock, PressedHeader, MoveStacks, Band, DragPayload };
     Mode mode_ = Mode::Idle;
     QPointF pressPos_;
@@ -151,6 +170,13 @@ private:
     bool lifted_ = false;                                               // the drag changed the document (lifted something out)
     blocks::DropTarget dropTarget_;
     QGraphicsItem* marker_ = nullptr;
+    bool animate_ = true;
+    std::map<std::string, Fx> fx_;
+    QTimer fxTimer_;
+    qint64 fxLast_ = 0;
+    blocks::Spring tilt_;                                               // the jelly lean of the stack being dragged (degrees), follows the pointer's speed
+    bool tiltActive_ = false;
+    QPointF lastPointer_;
 
     blocks::BlockSession& session_;
     QtTextMetrics metrics_;

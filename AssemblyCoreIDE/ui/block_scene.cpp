@@ -4,6 +4,7 @@
 #include <QGraphicsSceneHoverEvent>
 #include <QGraphicsRectItem>
 #include <QGraphicsSceneMouseEvent>
+#include <QDateTime>
 #include <QToolTip>
 #include <QPainter>
 
@@ -45,7 +46,7 @@ void StackItem::relayout() {
 
 QRectF StackItem::boundingRect() const {
     const Rect& b = scene_.layout_.stacks[index_].bounds;
-    return QRectF(b.x - 12, b.y - 12, b.w + 24, b.h + 28);               // room for the badges, the selection outline and the tab
+    return QRectF(b.x - 40, b.y - 40, b.w + 80, b.h + 84);               // room for the badges, the selection outline, the tab and a block that swells while it wobbles
 }
 
 void StackItem::paint(QPainter* p, const QStyleOptionGraphicsItem*, QWidget*) {
@@ -57,6 +58,12 @@ void StackItem::paint(QPainter* p, const QStyleOptionGraphicsItem*, QWidget*) {
     info.errors = &scene_.errorIds_;
     info.warnings = &scene_.warningIds_;
     info.floating = s.domain == "floating";
+    info.fx = [this](const std::string& id, double& sx, double& sy, int& anchor) {
+        auto it = scene_.fx_.find(id);
+        if (it == scene_.fx_.end()) return false;
+        sx = it->second.sx.x; sy = it->second.sy.x; anchor = it->second.anchor;
+        return true;
+    };
     scene_.painter_.paintStack(*p, s, info);
 }
 
@@ -82,6 +89,13 @@ void StackItem::hoverLeaveEvent(QGraphicsSceneHoverEvent*) { scene_.setHovered(s
 // ---- BlockScene
 BlockScene::BlockScene(BlockSession& session, const BlockTheme& theme, const QFont& ui, const QFont& mono, QObject* parent)
     : QGraphicsScene(parent), session_(session), metrics_(ui, mono), painter_(theme, ui, mono) {
+    fxTimer_.setInterval(16);
+    connect(&fxTimer_, &QTimer::timeout, this, [this] {
+        const qint64 now = QDateTime::currentMSecsSinceEpoch();
+        const double dt = fxLast_ ? std::min(0.05, (now - fxLast_) / 1000.0) : 0.016;
+        fxLast_ = now;
+        advanceEffects(dt);
+    });
     conns_.add(session_.changed, [this] { rebuild(); });
     conns_.add(session_.selectionChanged, [this] { update(); });
     rebuild();
@@ -252,6 +266,79 @@ void BlockScene::mousePressEvent(QGraphicsSceneMouseEvent* e) {
     e->accept();
 }
 
+// ---- soft effects --------------------------------------------------------------------------------------------------------------------
+void BlockScene::setAnimationsEnabled(bool on) {
+    animate_ = on;
+    if (!on) { fx_.clear(); tiltActive_ = false; fxTimer_.stop(); update(); }
+}
+
+void BlockScene::effectScale(const std::string& id, double& sx, double& sy) const {
+    sx = sy = 1;
+    auto it = fx_.find(id);
+    if (it != fx_.end()) { sx = it->second.sx.x; sy = it->second.sy.x; }
+}
+
+void BlockScene::startFxTimer() {
+    if (!fxTimer_.isActive()) { fxLast_ = 0; fxTimer_.start(); }
+}
+
+// A block pops: it starts squashed and swells past its size, then wobbles to rest -- like something soft being pressed in or let go.
+void BlockScene::popEffect(const std::string& id) {
+    if (!animate_ || id.empty()) return;
+    Fx f;
+    f.sx.kick(0.82);
+    f.sy.kick(1.14);                                                     // squash and stretch: narrower while taller; the volume stays about the same
+    f.sx.stiffness = f.sy.stiffness = 420;
+    f.sx.damping = f.sy.damping = 12;
+    f.anchor = 0;
+    fx_[id] = f;
+    startFxTimer();
+    update();
+}
+
+// A row that was wider (a block was taken out of it) or narrower (a block was put into its hole) than it is now springs to its size with a wobble.
+void BlockScene::stretchEffect(const std::string& id, double from) {
+    if (!animate_ || id.empty() || std::fabs(from - 1) < 0.01) return;
+    Fx f;
+    f.sx.kick(from);
+    f.sy.kick(1 + (1 - from) * 0.35);                                    // wider -> a little flatter, narrower -> a little taller
+    f.sx.stiffness = f.sy.stiffness = 340;
+    f.sx.damping = f.sy.damping = 10;
+    f.anchor = 1;
+    fx_[id] = f;
+    startFxTimer();
+    update();
+}
+
+void BlockScene::advanceEffects(double dt) {
+    for (auto it = fx_.begin(); it != fx_.end();) {
+        it->second.sx.step(dt);
+        it->second.sy.step(dt);
+        if (it->second.sx.settled() && it->second.sy.settled()) it = fx_.erase(it);
+        else ++it;
+    }
+    if (tiltActive_) {
+        if (mode_ == Mode::DragPayload) tilt_.target *= std::pow(0.03, dt);        // the lean relaxes while the pointer rests
+        tilt_.step(dt);
+        applyTilt();
+        if (mode_ != Mode::DragPayload && tilt_.settled(0.05)) tiltActive_ = false;
+    }
+    if (fx_.empty() && !tiltActive_) fxTimer_.stop();
+    update();
+}
+
+// the stack being dragged leans with the pointer's speed (around the point it is held by) and swings back when the pointer stops
+void BlockScene::applyTilt() {
+    if (payload_ >= layout_.stacks.size()) return;
+    for (QGraphicsItem* it : items())
+        if (auto* si = dynamic_cast<StackItem*>(it))
+            if (si->index() == payload_) {
+                const blocks::BlockBox& first = layout_.stacks[payload_].blocks[(size_t)layout_.stacks[payload_].top[0]];
+                si->setTransformOriginPoint(grab_ + QPointF(first.rect.x, first.rect.y));
+                si->setRotation(tilt_.x);
+            }
+}
+
 // ---- the marker that shows where a drop would go
 namespace {
 class DropMarkerItem : public QGraphicsItem {
@@ -337,9 +424,12 @@ bool BlockScene::beginPayloadDrag(const QPointF& scenePos, bool single) {
     session_.beginGroup("drag:" + std::to_string(++dragSerial_));       // one undo step per drag (a different key for each)
     asmcore::blocks::Outcome o;
     bool nested = false;
+    std::string hostId;
+    double hostWidthBefore = 0;
     if (box->parent >= 0) {                                                           // a component in a socket of its parent
         const blocks::BlockBox& parent = st->blocks[(size_t)box->parent];
         for (const blocks::SocketBox& sb : parent.sockets) if (sb.child == (int)index) nested = true;
+        if (nested) { hostId = parent.id; hostWidthBefore = parent.rect.w; }
         if (nested) o = session_.apply([&](asmcore::blocks::Editor& ed) { return ed.unplugValue(parent.id, box->parentSlot, origin.x(), origin.y()); });
     }
     if (!nested) o = session_.apply([&](asmcore::blocks::Editor& ed) { return ed.liftBlocks(pressedId_, !single, origin.x(), origin.y()); });
@@ -347,6 +437,13 @@ bool BlockScene::beginPayloadDrag(const QPointF& scenePos, bool single) {
     payload_ = o.section;
     if (payload_ >= layout_.stacks.size() || layout_.stacks[payload_].top.empty()) { session_.endGroup(); return false; }
     lifted_ = true;
+    // soft effects: the block pops out, the row it left springs shut around the hole, and the stack leans with the pointer
+    popEffect(pressedId_);
+    if (!hostId.empty()) {
+        const blocks::BlockBox* hb = nullptr;
+        if (layout_.stackOf(hostId, &hb) && hb && hb->rect.w > 0) stretchEffect(hostId, hostWidthBefore / hb->rect.w);
+    }
+    if (animate_) { tilt_ = blocks::Spring(); tilt_.x = 0; tilt_.target = 0; tilt_.stiffness = 200; tilt_.damping = 9; tiltActive_ = true; lastPointer_ = pressPos_; startFxTimer(); }
     (void)scenePos;
     grab_ = pressPos_ - at;                                                         // where the block was held when the pointer went down
     return true;
@@ -355,9 +452,14 @@ bool BlockScene::beginPayloadDrag(const QPointF& scenePos, bool single) {
 void BlockScene::updatePayloadPreview(const QPointF& scenePos, const QPoint& screenPos) {
     if (payload_ >= layout_.stacks.size()) return;
     const QPointF o = payloadOrigin(scenePos);
+    if (tiltActive_) {                                                  // lean into the direction of travel
+        tilt_.target = std::max(-12.0, std::min(12.0, (scenePos.x() - lastPointer_.x()) * 1.4));
+        lastPointer_ = scenePos;
+    }
     for (QGraphicsItem* it : items())
         if (auto* si = dynamic_cast<StackItem*>(it))
             if (si->index() == payload_) { si->setPos(o); si->setZValue(500); }
+    applyTilt();
     blocks::DropOptions opt;
     dropTarget_ = blocks::findDropTarget(session_, layout_, payload_, {o.x(), o.y()}, opt);
     showMarker();
@@ -373,8 +475,24 @@ void BlockScene::endPayloadDrag(bool drop) {
     const size_t payload = payload_;
     QPointF where;
     for (QGraphicsItem* it : items()) if (auto* si = dynamic_cast<StackItem*>(it)) if (si->index() == payload) where = si->pos();
+    tiltActive_ = false;
+    std::string poppedId;
+    if (payload < layout_.stacks.size() && !layout_.stacks[payload].top.empty()) poppedId = layout_.stacks[payload].blocks[(size_t)layout_.stacks[payload].top[0]].id;
+    double hostBefore = 0;
+    if (target.fits() && target.kind == blocks::DropTarget::Socket) {
+        const blocks::BlockBox* hb = nullptr;
+        if (layout_.stackOf(target.hostId, &hb) && hb) hostBefore = hb->rect.w;
+    }
     if (drop) {
-        if (target.fits()) blocks::performDrop(session_, payload, target);
+        if (target.fits()) {
+            blocks::performDrop(session_, payload, target);
+            // soft effects: what was dropped squashes into place; the row with the hole springs open to take it
+            popEffect(poppedId);
+            if (target.kind == blocks::DropTarget::Socket && hostBefore > 0) {
+                const blocks::BlockBox* hb = nullptr;
+                if (layout_.stackOf(target.hostId, &hb) && hb && hb->rect.w > 0) stretchEffect(target.hostId, hostBefore / hb->rect.w);
+            }
+        }
         else session_.apply([&](asmcore::blocks::Editor& ed) { return ed.moveSection(payload, where.x(), where.y()); });          // stays where it was put, floating
     }
     session_.endGroup();

@@ -387,7 +387,25 @@ void BlockPainter::paintStack(QPainter& p, const StackLayout& s, const StackPain
         p.setPen(line);
         p.drawText(QPointF(fr.left() + 6, fr.top() - 3), QString::fromUtf8(r.label.c_str()));
     }
-    for (const BlockBox& b : s.blocks) paintBlock(p, b, info.stateOf(b.id));
+    for (const BlockBox& b : s.blocks) {
+        // an effect on this block or on a block it stands in applies to it (the whole subtree wobbles together)
+        double sx = 1, sy = 1;
+        int anchor = 0;
+        const BlockBox* owner = nullptr;
+        if (info.fx)
+            for (const BlockBox* c = &b;; c = &s.blocks[(size_t)c->parent]) {
+                if (info.fx(c->id, sx, sy, anchor)) { owner = c; break; }
+                if (c->parent < 0) break;
+            }
+        if (!owner) { paintBlock(p, b, info.stateOf(b.id)); continue; }
+        const QPointF a = anchor == 1 ? QPointF(owner->rect.x, owner->rect.y + owner->rect.h / 2) : QPointF(owner->rect.x + owner->rect.w / 2, owner->rect.y + owner->rect.h / 2);
+        p.save();
+        p.translate(a);
+        p.scale(sx, sy);
+        p.translate(-a);
+        paintBlock(p, b, info.stateOf(b.id));
+        p.restore();
+    }
 }
 
 }  // namespace acide

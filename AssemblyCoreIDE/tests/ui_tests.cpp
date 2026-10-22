@@ -1255,6 +1255,66 @@ private slots:
         QVERIFY(s.generated().text.find("(incomplete)") != std::string::npos);
     }
 
+    void blocksWobbleSoftlyWhenTakenOutAndPutBack() {
+        DragRig r(".main\n MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]\n");
+        auto& s = r.ed->session();
+        auto& sc = r.sc();
+        QVERIFY(sc.animationsEnabled());
+        const std::string mov = s.document().sections[0].blocks[0].id;
+        const std::string num = s.document().sections[0].blocks[0].value("src")->id;
+        const QPointF hole = r.socketPoint(mov, "src");
+        double sx = 1, sy = 1;
+        // taking the number out: it pops (squashed at first), and the row it leaves starts at its old, wider width and springs shut around the hole
+        r.pressAndMove(num, r.center(num) + QPointF(240, 140));
+        QVERIFY(sc.draggingPayload());
+        sc.effectScale(num, sx, sy);
+        QVERIFY2(sx < 1.0 && sy > 1.0, qPrintable(QString("the lifted number is squashed (%1, %2)").arg(sx).arg(sy)));
+        sc.effectScale(mov, sx, sy);
+        QVERIFY2(sx > 1.0, qPrintable(QString("the row starts wider than the hole it leaves (%1)").arg(sx)));
+        QVERIFY(sc.effectsRunning() >= 2);
+        r.v().viewport()->grab().save(outDir() + "/blocks_squish_0.png");                  // the first frame of the effect
+        for (int i = 0; i < 4; i++) sc.advanceEffects(1.0 / 60);
+        r.v().viewport()->grab().save(outDir() + "/blocks_squish_1.png");
+        // run the springs: they overshoot (the bounce) and come to rest
+        double maxPop = 0, minPop = 10;
+        int frames = 0;
+        while (sc.effectsRunning() > 1 && frames < 600) {                       // (one is the lean of the dragged stack)
+            sc.advanceEffects(1.0 / 60);
+            sc.effectScale(num, sx, sy);
+            maxPop = std::max(maxPop, sx);
+            minPop = std::min(minPop, sx);
+            frames++;
+        }
+        QVERIFY2(maxPop > 1.02, qPrintable(QString("the pop overshoots its size (%1)").arg(maxPop)));
+        QVERIFY(frames < 600);
+        // painting with an effect running does not trouble the canvas
+        sc.popEffect(mov);
+        const QImage img = r.v().viewport()->grab().toImage();
+        QVERIFY(!img.isNull());
+        r.release(r.center(num) + QPointF(240, 140));
+        while (sc.effectsRunning() > 0) sc.advanceEffects(1.0 / 60);
+        // putting it back: the row with the hole starts narrower and springs OPEN to take the number
+        const QPointF hold = QPointF(sc.blockRect(num).width() / 2 + 6, 0);
+        r.pressAndMove(num, hole + hold);
+        QVERIFY(sc.dropTarget().fits());
+        while (sc.effectsRunning() > 1) sc.advanceEffects(1.0 / 60);            // (the lift effects of this drag first)
+        r.release(hole + hold);
+        QCOMPARE((int)s.document().sections.size(), 1);
+        sc.effectScale(mov, sx, sy);
+        QVERIFY2(sx < 1.0, qPrintable(QString("the row starts narrower than the number it must hold (%1)").arg(sx)));
+        double maxOpen = 0;
+        int n = 0;
+        while (sc.effectsRunning() > 0 && n < 600) { sc.advanceEffects(1.0 / 60); sc.effectScale(mov, sx, sy); maxOpen = std::max(maxOpen, sx); n++; }
+        QVERIFY2(maxOpen > 1.0, qPrintable(QString("it springs open past its width and settles back (%1)").arg(maxOpen)));
+        QCOMPARE((int)sc.effectsRunning(), 0);
+        // switched off: no effects at all
+        sc.setAnimationsEnabled(false);
+        r.pressAndMove(num, r.center(num) + QPointF(240, 140));
+        QVERIFY(sc.draggingPayload());
+        QCOMPARE((int)sc.effectsRunning(), 0);
+        r.release(r.center(num) + QPointF(240, 140));
+    }
+
     void instructionsCanBeLiftedOutAndPutBack() {
         DragRig r(".main\nstart: MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]\n ALU ADD unsigned\n JMP start\n.peri\np: JMP p\n");
         auto& s = r.ed->session();

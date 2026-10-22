@@ -15,6 +15,7 @@
 #include "blocks/block_layout.h"
 #include "blocks/block_session.h"
 #include "blocks/block_shapes.h"
+#include "blocks/block_spring.h"
 #include "blocks/block_theme.h"
 
 using namespace acide;
@@ -99,6 +100,33 @@ static StackLayout layoutOf(const std::string& asmText, size_t section = 0, cons
     Document d = docOf(asmText);
     LayoutEngine e(m, style);
     return e.layoutStack(d.sections[section], section);
+}
+
+static void t_spring() {
+    section("the spring behind the soft effects");
+    Spring s;
+    s.kick(0.8);
+    double maxX = 0, minX = 10;
+    int steps = 0;
+    while (!s.settled() && steps < 2000) { s.step(1.0 / 60); maxX = std::max(maxX, s.x); minX = std::min(minX, s.x); steps++; }
+    check(s.settled() && steps < 400, "it settles (in well under 7 s of frames)", std::to_string(steps));
+    check(maxX > 1.02, "an under-damped spring overshoots its rest (that is the bounce)", std::to_string(maxX));
+    check(minX >= 0.79 && std::fabs(s.x - 1) < 0.01, "and comes to rest at the target without leaving the starting side by much");
+    Spring stiff;
+    stiff.damping = 2 * std::sqrt(stiff.stiffness) * 1.2;                      // over-damped: no wobble
+    stiff.kick(0.8);
+    double over = 0;
+    for (int i = 0; i < 400; i++) { stiff.step(1.0 / 60); over = std::max(over, stiff.x); }
+    check(over <= 1.0 + 1e-6, "an over-damped spring does not overshoot (the damping decides how bouncy)", std::to_string(over));
+    Spring big;
+    big.kick(1.5);
+    big.step(5.0);                                                              // a frame that took seconds: capped and stepped finely
+    check(std::isfinite(big.x) && std::isfinite(big.v) && std::fabs(big.x) < 10, "a very long frame cannot blow it up");
+    Spring a, b;
+    a.kick(0.9); b.kick(0.9);
+    for (int i = 0; i < 60; i++) a.step(1.0 / 60);
+    for (int i = 0; i < 120; i++) b.step(1.0 / 120);
+    check(std::fabs(a.x - b.x) < 0.01, "the result hardly depends on the frame rate");
 }
 
 static void t_plug_shapes() {
@@ -659,6 +687,7 @@ int main() {
     std::printf("AssemblyCoreIDE block canvas services tests\n");
     t_theme();
     t_shapes();
+    t_spring();
     t_plug_shapes();
     t_layout_regions();
     t_layout_rows();

@@ -2,6 +2,7 @@
 // Draws the geometry that LayoutEngine computed. Stateless apart from the theme and the fonts: what to draw comes in as a StackLayout and a
 // BlockPaintState per block. Each shape (Statement, Container ...) and each kind of field is painted by a small strategy object kept in a
 // table, so a new shape or a different look for a kind of field is one class and one registration -- nothing else changes.
+#include <functional>
 #include <map>
 #include <memory>
 #include <set>
@@ -31,6 +32,8 @@ struct StackPaintInfo {
     const std::set<std::string>* errors = nullptr;
     const std::set<std::string>* warnings = nullptr;
     bool floating = false;
+    // A soft effect on a block (and everything inside it): scale around an anchor. Returns false if the block has none. anchor: 0 = its centre, 1 = the left edge.
+    std::function<bool(const std::string& id, double& sx, double& sy, int& anchor)> fx;
     BlockPaintState stateOf(const std::string& id) const;
 };
 

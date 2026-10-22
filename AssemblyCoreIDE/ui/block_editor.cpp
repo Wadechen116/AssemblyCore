@@ -90,6 +90,7 @@ BlockEditor::BlockEditor(AppContext& ctx, const std::string& path, QWidget* pare
     scene_ = new BlockScene(session_, blockThemeFor(ctx.settings, theme), ui, mono, this);
     view_ = new BlockView(scene_, this);
     view_->setObjectName("blockView");
+    scene_->setAnimationsEnabled(ctx.settings.get("blocks.animate", "1") != "0");      // the soft, bouncy effects (blocks.animate = 0 switches them off)
     view_->setTheme(scene_->theme());
     code_ = new GeneratedCodePane(ctx.language, theme, mono, this);
     pages_->addWidget(view_);
