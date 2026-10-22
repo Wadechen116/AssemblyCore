@@ -2,6 +2,7 @@
 
 #include <QFontMetricsF>
 #include <QGraphicsSceneHoverEvent>
+#include <QGraphicsRectItem>
 #include <QGraphicsSceneMouseEvent>
 #include <QPainter>
 
@@ -76,13 +77,6 @@ void StackItem::hoverMoveEvent(QGraphicsSceneHoverEvent* e) {
 
 void StackItem::hoverLeaveEvent(QGraphicsSceneHoverEvent*) { scene_.setHovered(std::string()); }
 
-void StackItem::mousePressEvent(QGraphicsSceneMouseEvent* e) {
-    if (e->button() != Qt::LeftButton) { e->ignore(); return; }
-    const BlockBox* b = boxAt(e->pos());
-    if (b) scene_.blockClicked.fire(b->id, e->modifiers());
-    else scene_.emptyClicked.fire(e->modifiers());
-    e->accept();
-}
 
 // ---- BlockScene
 BlockScene::BlockScene(BlockSession& session, const BlockTheme& theme, const QFont& ui, const QFont& mono, QObject* parent)
@@ -132,6 +126,8 @@ void BlockScene::rebuild() {
     if (rebuilding_) return;
     rebuilding_ = true;
     hovered_.clear();
+    band_ = nullptr;                                              // deleted with the other items below
+    mode_ = Mode::Idle;
     const auto items = this->items();
     for (QGraphicsItem* it : items) { removeItem(it); delete it; }
     LayoutEngine eng(metrics_, style_, session_.registry(), ShapeRegistry::defaults(), &text_);
@@ -143,6 +139,133 @@ void BlockScene::rebuild() {
     setSceneRect(QRectF(b.x - m, b.y - m, b.w + 2 * m, b.h + 2 * m));
     rebuilding_ = false;
     rebuilt.fire();
+}
+
+std::string BlockScene::blockAt(const QPointF& p) const {
+    for (size_t i = layout_.stacks.size(); i-- > 0;) {                      // the stacks later in the list are drawn on top
+        const StackLayout& s = layout_.stacks[i];
+        if (const BlockBox* b = s.blockAt({p.x() - s.origin.x, p.y() - s.origin.y})) return b->id;
+    }
+    return std::string();
+}
+
+std::vector<std::string> BlockScene::blocksIn(const QRectF& r) const {
+    std::vector<std::string> out;
+    for (const StackLayout& s : layout_.stacks) {
+        const Rect local{r.x() - s.origin.x, r.y() - s.origin.y, r.width(), r.height()};
+        std::vector<char> in(s.blocks.size(), 0);
+        for (size_t i = 0; i < s.blocks.size(); i++) {
+            const BlockBox& b = s.blocks[i];
+            if (b.shape == Shape::Spacer) continue;
+            const bool hit = b.rect.intersects(local);
+            const bool parentIn = b.parent >= 0 && in[(size_t)b.parent];
+            if (hit && !parentIn) { in[i] = 1; out.push_back(b.id); }
+            else if (parentIn) in[i] = 1;                                    // covered by its parent
+        }
+    }
+    return out;
+}
+
+void BlockScene::selectAll() {
+    std::vector<std::string> ids;
+    for (const StackLayout& s : layout_.stacks) for (int i : s.top) ids.push_back(s.blocks[(size_t)i].id);
+    session_.select(ids);
+}
+
+std::set<size_t> BlockScene::selectedStacks() const {
+    std::set<size_t> out;
+    for (const std::string& id : session_.selection()) {
+        const StackLayout* s = layout_.stackOf(id);
+        if (s) out.insert(s->section);
+    }
+    return out;
+}
+
+// The part of the canvas a stack may be moved in: the area around the stacks that the scene reserves (the sceneRect), not beyond.
+QRectF BlockScene::canvasArea() const { return sceneRect(); }
+
+void BlockScene::moveSelectedStacksBy(const QPointF& delta, bool commit) {
+    if (dragOrigin_.empty()) for (size_t i : selectedStacks()) dragOrigin_[i] = QPointF(layout_.stacks[i].origin.x, layout_.stacks[i].origin.y);
+    const QRectF area = canvasArea();
+    // one common offset for all the stacks, limited so that none of them leaves the area
+    QPointF d = delta;
+    for (auto& kv : dragOrigin_) {
+        const Rect& b = layout_.stacks[kv.first].bounds;
+        const QRectF r(kv.second.x() + b.x, kv.second.y() + b.y, b.w, b.h);
+        d.setX(std::max(area.left() - r.left(), std::min(area.right() - r.right(), d.x())));
+        d.setY(std::max(area.top() - r.top(), std::min(area.bottom() - r.bottom(), d.y())));
+    }
+    if (!commit) {                                                           // only show it: the items move, the document does not change yet
+        for (QGraphicsItem* it : items())
+            if (auto* si = dynamic_cast<StackItem*>(it)) {
+                auto o = dragOrigin_.find(si->index());
+                if (o != dragOrigin_.end()) si->setPos(o->second + d);
+            }
+        return;
+    }
+    const auto origin = dragOrigin_;
+    dragOrigin_.clear();
+    if (d.isNull()) { for (QGraphicsItem* it : items()) if (auto* si = dynamic_cast<StackItem*>(it)) { auto o = origin.find(si->index()); if (o != origin.end()) si->setPos(o->second); } return; }
+    for (auto& kv : origin) {
+        const QPointF to = kv.second + d;
+        session_.apply([&](asmcore::blocks::Editor& ed) { return ed.moveSection(kv.first, to.x(), to.y()); });
+    }
+}
+
+void BlockScene::mousePressEvent(QGraphicsSceneMouseEvent* e) {
+    if (e->button() != Qt::LeftButton) { QGraphicsScene::mousePressEvent(e); return; }
+    pressPos_ = e->scenePos();
+    pressMods_ = e->modifiers();
+    pressedId_ = blockAt(pressPos_);
+    dragOrigin_.clear();
+    if (pressedId_.empty()) {
+        mode_ = Mode::Band;
+        bandBase_ = (pressMods_ & Qt::ControlModifier) ? session_.selection() : std::set<std::string>();
+        if (!(pressMods_ & Qt::ControlModifier)) emptyClicked.fire(pressMods_);
+        band_ = addRect(QRectF(pressPos_, QSizeF(0, 0)));
+        QColor c = toQColor(theme().selection);
+        band_->setPen(QPen(c, 1, Qt::DashLine));
+        c.setAlpha(40);
+        band_->setBrush(c);
+        band_->setZValue(1000);
+    } else {
+        mode_ = Mode::PressedBlock;
+        pressedWasSelected_ = session_.isSelected(pressedId_);
+        if (!pressedWasSelected_ || (pressMods_ & Qt::ControlModifier)) blockClicked.fire(pressedId_, pressMods_);
+    }
+    e->accept();
+}
+
+void BlockScene::mouseMoveEvent(QGraphicsSceneMouseEvent* e) {
+    if (mode_ == Mode::PressedBlock && (e->scenePos() - pressPos_).manhattanLength() > 4 && session_.isSelected(pressedId_)) {
+        mode_ = Mode::MoveStacks;
+        hovered_.clear();
+    }
+    if (mode_ == Mode::MoveStacks) {
+        moveSelectedStacksBy(e->scenePos() - pressPos_, false);
+        e->accept();
+        return;
+    }
+    if (mode_ == Mode::Band && band_) {
+        const QRectF r = QRectF(pressPos_, e->scenePos()).normalized();
+        band_->setRect(r);
+        std::vector<std::string> ids = blocksIn(r);
+        std::set<std::string> next = bandBase_;
+        next.insert(ids.begin(), ids.end());
+        session_.select(std::vector<std::string>(next.begin(), next.end()));
+        e->accept();
+        return;
+    }
+    QGraphicsScene::mouseMoveEvent(e);
+}
+
+void BlockScene::mouseReleaseEvent(QGraphicsSceneMouseEvent* e) {
+    if (e->button() != Qt::LeftButton) { QGraphicsScene::mouseReleaseEvent(e); return; }
+    if (mode_ == Mode::MoveStacks) moveSelectedStacksBy(e->scenePos() - pressPos_, true);
+    else if (mode_ == Mode::PressedBlock && pressedWasSelected_ && !(pressMods_ & Qt::ControlModifier)) blockClicked.fire(pressedId_, pressMods_);   // a click, not a drag: select just this one
+    if (band_) { removeItem(band_); delete band_; band_ = nullptr; }
+    mode_ = Mode::Idle;
+    e->accept();
 }
 
 QRectF BlockScene::blockRect(const std::string& id) const {

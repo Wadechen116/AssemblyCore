@@ -97,6 +97,8 @@
 
 **M2 架構**：`services/blocks/`（無 Qt：`block_theme`、`block_shapes`、`block_layout`＝版面引擎、`block_session`＝簽章觀察者的簡報層）→ `ui/`（`block_painter`＝依形狀／欄位種類的策略表、`block_scene`、`block_view`、`generated_code_pane`、`block_editor`）；主視窗以 `DocumentTab` 介面與 `TabRegistry`（依副檔名）管理非文字分頁，硬體設計器與積木編輯器共用同一套開啟／關閉／儲存／還原工作階段流程。
 
+**M2 後續（使用者回饋 2026-10-22）**：滾輪直接縮放（Shift＋滾輪橫向捲動、Alt＋滾輪縱向）；左鍵在空白處拖曳＝框選（Ctrl 加選）；拖曳已選積木＝整個堆疊移動（限制在畫布範圍內、一次復原）；Ctrl＋A 全選、Esc 取消選取。**左右組合（運算元插槽）的完整定義見 `BLOCKS_COMPOSITION.md`，待使用者確認後做 M2b。**
+
 **M2 完成時可展示**：在 IDE 開 `.acblk`，看到 `01_hello_csr` 變成彩色拼圖積木、左右兩欄、可縮放平移、旁邊是產生的文字，點積木會反白文字。（我會把畫面截圖給你看。）
 
 ### 里程碑 M3：編輯互動

@@ -50,14 +50,23 @@ void BlockView::fitAll() {
 
 void BlockView::showBlock(const QRectF& r) { ensureVisible(r, 40, 40); }
 
+void BlockView::showContent() {
+    if (!scene()) return;
+    QRectF r;
+    for (QGraphicsItem* it : scene()->items()) r |= it->sceneBoundingRect();
+    if (r.isEmpty()) return;
+    const QSizeF vp = mapToScene(viewport()->rect()).boundingRect().size();
+    if (r.width() <= vp.width() && r.height() <= vp.height()) centerOn(r.center());
+    else centerOn(r.left() + vp.width() / 2 - 20, r.top() + vp.height() / 2 - 20);
+}
+
 void BlockView::wheelEvent(QWheelEvent* e) {
-    if (e->modifiers() & Qt::ControlModifier) {
-        const double steps = e->angleDelta().y() / 120.0;
-        setZoom(zoom_ * std::pow(1.15, steps));
-        e->accept();
-        return;
-    }
-    QGraphicsView::wheelEvent(e);
+    // the wheel zooms (around the pointer); Shift + wheel scrolls sideways, Alt + wheel scrolls up and down; panning is the middle button / space + drag
+    if (e->modifiers() & Qt::ShiftModifier) { horizontalScrollBar()->setValue(horizontalScrollBar()->value() - e->angleDelta().y() / 2); e->accept(); return; }
+    if (e->modifiers() & Qt::AltModifier) { verticalScrollBar()->setValue(verticalScrollBar()->value() - e->angleDelta().y() / 2); e->accept(); return; }
+    const double steps = e->angleDelta().y() / 120.0;
+    if (steps != 0) setZoom(zoom_ * std::pow(1.15, steps));
+    e->accept();
 }
 
 void BlockView::mousePressEvent(QMouseEvent* e) {

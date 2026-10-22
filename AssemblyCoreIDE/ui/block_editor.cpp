@@ -5,6 +5,7 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QRadioButton>
+#include <QShortcut>
 #include <QStackedWidget>
 #include <QToolButton>
 #include <QVBoxLayout>
@@ -91,6 +92,12 @@ BlockEditor::BlockEditor(AppContext& ctx, const std::string& path, QWidget* pare
     pages_->addWidget(code_);
     root->addWidget(pages_, 1);
 
+    auto* selectAll = new QShortcut(QKeySequence::SelectAll, view_);
+    selectAll->setContext(Qt::WidgetWithChildrenShortcut);
+    connect(selectAll, &QShortcut::activated, this, [this] { scene_->selectAll(); });
+    auto* escape = new QShortcut(QKeySequence(Qt::Key_Escape), view_);
+    escape->setContext(Qt::WidgetWithChildrenShortcut);
+    connect(escape, &QShortcut::activated, this, [this] { session_.clearSelection(); });
     connect(blocksRadio_, &QRadioButton::toggled, this, [this](bool on) { if (on) setPage(Page::Blocks); });
     connect(codeRadio_, &QRadioButton::toggled, this, [this](bool on) { if (on) setPage(Page::Code); });
     connect(zout, &QToolButton::clicked, view_, &BlockView::zoomOut);
@@ -156,6 +163,7 @@ void BlockEditor::reload() {
         return;
     }
     banner_->hide();
+    view_->showContent();
     refreshCode();
     refreshInfo();
 }

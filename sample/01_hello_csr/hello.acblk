@@ -1,0 +1,150 @@
+{
+  "format": "acblk",
+  "version": 1,
+  "name": "hello",
+  "next_id": 26,
+  "sections": [
+    {
+      "domain": "",
+      "x": 0,
+      "y": 0,
+      "blocks": [
+        {
+          "id": "b1",
+          "type": "comment",
+          "fields": {"text": "01_hello_csr - the smallest useful Main program."}
+        },
+        {
+          "id": "b2",
+          "type": "comment",
+          "fields": {"text": "Counts a scratchpad counter up to 5 with the ALU, then writes the result to a CSR with EXEC_CSR WRITE_SP."}
+        },
+        {
+          "id": "b3",
+          "type": "directive",
+          "fields": {"name": ".include", "args": "\"defs.inc\""}
+        }
+      ]
+    },
+    {
+      "domain": "main",
+      "x": 0,
+      "y": 178,
+      "blocks": [
+        {
+          "id": "b5",
+          "type": "label",
+          "fields": {"name": "start"}
+        },
+        {
+          "id": "b6",
+          "type": "csr_write8",
+          "fields": {"csr": "AE_CTRL", "imm": "0x01"},
+          "comment": "one-byte CSR forms: WRITE8 / SET8 / CLR8"
+        },
+        {
+          "id": "b7",
+          "type": "csr_set8",
+          "fields": {"csr": "AE_CTRL", "imm": "0x10"}
+        },
+        {
+          "id": "b8",
+          "type": "csr_clr8",
+          "fields": {"csr": "AE_CTRL", "imm": "0x01"}
+        },
+        {
+          "id": "b9",
+          "type": "mov",
+          "fields": {"src": "CONST(0, 2)", "dst": "MAIN_SCRATCHPAD[0..1]"},
+          "comment": "counter = 0 (constants go to the scratchpad first)"
+        },
+        {
+          "id": "b10",
+          "type": "mov",
+          "fields": {"src": "CONST(1, 2)", "dst": "MAIN_SCRATCHPAD[2..3]"},
+          "comment": "step = 1"
+        },
+        {
+          "id": "b11",
+          "type": "mov",
+          "fields": {"src": "CONST(5, 2)", "dst": "MAIN_SCRATCHPAD[4..5]"},
+          "comment": "limit = 5"
+        },
+        {
+          "id": "b12",
+          "type": "label",
+          "fields": {"name": "loop"}
+        },
+        {
+          "id": "b13",
+          "type": "mov",
+          "fields": {"src": "MAIN_SCRATCHPAD[0..1]", "dst": "ALU_OPA"}
+        },
+        {
+          "id": "b14",
+          "type": "mov",
+          "fields": {"src": "MAIN_SCRATCHPAD[2..3]", "dst": "ALU_OPB"}
+        },
+        {
+          "id": "b15",
+          "type": "alu",
+          "fields": {"op": "ADD", "amount": "", "mode": "unsigned"}
+        },
+        {
+          "id": "b16",
+          "type": "mov",
+          "fields": {"src": "ALU_OUT[0..1]", "dst": "MAIN_SCRATCHPAD[0..1]"},
+          "comment": "counter += step"
+        },
+        {
+          "id": "b17",
+          "type": "mov",
+          "fields": {"src": "MAIN_SCRATCHPAD[0..1]", "dst": "ALU_OPA"}
+        },
+        {
+          "id": "b18",
+          "type": "mov",
+          "fields": {"src": "MAIN_SCRATCHPAD[4..5]", "dst": "ALU_OPB"}
+        },
+        {
+          "id": "b19",
+          "type": "alu",
+          "fields": {"op": "CMP.EQ", "amount": "", "mode": "unsigned"},
+          "comment": "counter == limit ?"
+        },
+        {
+          "id": "b20",
+          "type": "br_cond",
+          "fields": {"cond": "ALU_CMP_TRUE", "target": "finish", "safe": ""}
+        },
+        {
+          "id": "b21",
+          "type": "jmp",
+          "fields": {"target": "loop", "safe": ""}
+        },
+        {
+          "id": "b22",
+          "type": "label",
+          "fields": {"name": "finish"}
+        },
+        {
+          "id": "b23",
+          "type": "csr_write_sp",
+          "fields": {"csr": "GYRO_X_CORR_L", "len": "2", "ptr": "0"},
+          "comment": "v31: the CSR write reads the scratchpad directly"
+        },
+        {
+          "id": "b24",
+          "type": "label",
+          "fields": {"name": "done"}
+        },
+        {
+          "id": "b25",
+          "type": "jmp",
+          "fields": {"target": "done", "safe": ""},
+          "comment": "a branch to itself = the program has finished (Main halts)"
+        }
+      ]
+    }
+  ]
+}

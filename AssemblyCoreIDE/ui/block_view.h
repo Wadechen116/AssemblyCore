@@ -21,6 +21,7 @@ public slots:
     void resetZoom() { setZoom(1.0); }
     void fitAll();                               // all stacks in view (never above 100 %)
     void showBlock(const QRectF& r);             // scroll so that a rectangle is visible
+    void showContent();                          // at 100 %: the program centred if it fits, else its top left corner
 
 signals:
     void zoomChanged(double z);

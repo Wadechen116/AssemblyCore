@@ -18,6 +18,8 @@
 #include <QXmlStreamReader>
 
 #include <QRadioButton>
+#include <QScrollBar>
+#include <QWheelEvent>
 #include <QToolButton>
 #include <QImage>
 #include <filesystem>
@@ -996,6 +998,117 @@ private slots:
         QVERIFY(r.ed->session().selection().empty());
         QCOMPARE(r.ed->codePane().extraSelections().size(), 0);
         QVERIFY(r.ed->infoText().contains("block"));
+    }
+    void theWheelZoomsTheCanvas() {
+        Rig r;
+        BlockView& v = r.ed->view();
+        QCOMPARE(v.zoom(), 1.0);
+        const QPoint c = v.viewport()->rect().center();
+        auto wheel = [&](int dy, Qt::KeyboardModifiers m) {
+            QWheelEvent e(QPointF(c), QPointF(v.viewport()->mapToGlobal(c)), QPoint(), QPoint(0, dy), Qt::NoButton, m, Qt::NoScrollPhase, false);
+            QApplication::sendEvent(v.viewport(), &e);
+        };
+        wheel(120, Qt::NoModifier);                                          // the plain wheel zooms in
+        const double in = v.zoom();
+        QVERIFY(in > 1.0);
+        wheel(-240, Qt::NoModifier);
+        QVERIFY(v.zoom() < 1.0);
+        wheel(120, Qt::ControlModifier);                                     // Ctrl + wheel still does
+        QVERIFY(v.zoom() > 0.8 && v.zoom() < in);
+        const int h = v.horizontalScrollBar()->value();
+        wheel(120, Qt::ShiftModifier);                                       // Shift + wheel scrolls sideways, zoom unchanged
+        const double z = v.zoom();
+        QVERIFY(v.horizontalScrollBar()->value() != h || v.horizontalScrollBar()->maximum() == 0);
+        QCOMPARE(v.zoom(), z);
+        for (int i = 0; i < 40; i++) wheel(120, Qt::NoModifier);
+        QCOMPARE(v.zoom(), BlockView::kMaxZoom);
+    }
+    void aSelectionRectangleSelectsWholeStacks() {
+        Rig r;
+        r.ed->resize(900, 600);
+        r.ed->show();
+        BlockView& v = r.ed->view();
+        v.resetZoom();
+        v.showContent();
+        QApplication::processEvents();
+        const auto& lay = r.ed->scene().layout();
+        const auto& doc = r.ed->session().document();
+        // the whole "main" stack (section 1): from just above-left of its hat to below-right of its last block
+        const auto& st = lay.stacks[1];
+        const QPointF a(st.origin.x + st.bounds.x - 15, st.origin.y + st.bounds.y - 15), b(st.origin.x + st.bounds.right() + 15, st.origin.y + st.bounds.bottom() + 15);
+        QTest::mousePress(v.viewport(), Qt::LeftButton, Qt::NoModifier, v.mapFromScene(a));
+        QTest::mouseMove(v.viewport(), v.mapFromScene(b));
+        QVERIFY(r.ed->session().selection().size() >= 4);
+        QTest::mouseRelease(v.viewport(), Qt::LeftButton, Qt::NoModifier, v.mapFromScene(b));
+        // the top-level blocks of main are selected, the blocks inside the procedure are covered by it, other stacks are not
+        for (const auto& blk : doc.sections[1].blocks) QVERIFY2(r.ed->session().isSelected(blk.id), blk.type.c_str());
+        QVERIFY(!r.ed->session().isSelected((*doc.sections[1].blocks[4].stack("BODY"))[0].id));
+        for (const auto& blk : doc.sections[2].blocks) QVERIFY(!r.ed->session().isSelected(blk.id));
+        QCOMPARE((int)r.ed->session().selection().size(), (int)doc.sections[1].blocks.size());
+        // an empty rectangle clears the selection
+        const QPointF e1(st.origin.x + 700, st.origin.y + 400);
+        QTest::mousePress(v.viewport(), Qt::LeftButton, Qt::NoModifier, v.mapFromScene(e1));
+        QTest::mouseRelease(v.viewport(), Qt::LeftButton, Qt::NoModifier, v.mapFromScene(e1));
+        QVERIFY(r.ed->session().selection().empty());
+        // Ctrl + A selects the top-level blocks of every stack, Escape clears
+        r.ed->scene().selectAll();
+        size_t top = 0;
+        for (const auto& s : doc.sections) top += s.blocks.size();
+        QCOMPARE(r.ed->session().selection().size(), top);
+        QTest::keyClick(v.viewport(), Qt::Key_Escape);
+    }
+    void draggingASelectedBlockMovesItsWholeStack() {
+        Rig r;
+        r.ed->resize(900, 600);
+        r.ed->show();
+        BlockView& v = r.ed->view();
+        v.resetZoom();
+        v.showContent();
+        QApplication::processEvents();
+        auto& s = r.ed->session();
+        const auto& doc = s.document();
+        const double x0 = doc.sections[1].x, y0 = doc.sections[1].y;
+        const std::string peri = doc.sections[2].blocks[0].id;
+        const double px0 = doc.sections[2].x, py0 = doc.sections[2].y;
+        const QRectF br = r.ed->scene().blockRect(doc.sections[1].blocks[2].id);
+        const QPoint from = v.mapFromScene(br.center());
+        QTest::mousePress(v.viewport(), Qt::LeftButton, Qt::NoModifier, from);
+        QTest::mouseMove(v.viewport(), from + QPoint(40, 30));
+        QVERIFY(r.ed->scene().dragging());
+        QCOMPARE(doc.sections[1].x, x0);                                     // while dragging only the picture moves
+        QTest::mouseMove(v.viewport(), from + QPoint(100, 60));
+        QTest::mouseRelease(v.viewport(), Qt::LeftButton, Qt::NoModifier, from + QPoint(100, 60));
+        QVERIFY(!r.ed->scene().dragging());
+        QCOMPARE(doc.sections[1].x, x0 + 100);
+        QCOMPARE(doc.sections[1].y, y0 + 60);
+        QCOMPARE(doc.sections[2].x, px0);                                    // other stacks stay
+        QCOMPARE(doc.sections[2].y, py0);
+        QVERIFY(s.isSelected(doc.sections[1].blocks[2].id));
+        // one undo takes it back
+        QVERIFY(s.undo());
+        QCOMPARE(s.document().sections[1].x, x0);
+        // a click without moving only selects
+        const QPoint at = v.mapFromScene(r.ed->scene().blockRect(s.document().sections[1].blocks[1].id).center());
+        QTest::mouseClick(v.viewport(), Qt::LeftButton, Qt::NoModifier, at);
+        QCOMPARE((int)s.selection().size(), 1);
+        QCOMPARE(s.document().sections[1].x, x0);
+        // two stacks selected move together; a huge drag stays inside the canvas
+        r.ed->scene().selectAll();
+        const QRectF peri2 = r.ed->scene().blockRect(s.document().sections[2].blocks[0].id);
+        const QPoint f2 = v.mapFromScene(peri2.center());
+        QTest::mousePress(v.viewport(), Qt::LeftButton, Qt::NoModifier, f2);
+        QTest::mouseMove(v.viewport(), f2 + QPoint(20, 20));
+        QTest::mouseMove(v.viewport(), f2 + QPoint(60, 0));
+        QTest::mouseRelease(v.viewport(), Qt::LeftButton, Qt::NoModifier, f2 + QPoint(60, 0));
+        QCOMPARE(s.document().sections[1].x, x0 + 60);
+        QCOMPARE(s.document().sections[2].x, px0 + 60);
+        r.ed->scene().moveSelectedStacksBy(QPointF(1e7, 1e7), true);
+        const QRectF area = r.ed->scene().sceneRect();
+        for (const auto& sec : s.document().sections) {
+            QVERIFY(sec.x < area.right() && sec.y < area.bottom());
+        }
+        r.ed->scene().moveSelectedStacksBy(QPointF(-1e7, -1e7), true);
+        for (const auto& sec : s.document().sections) QVERIFY(sec.x >= area.left() - 1 && sec.y >= area.top() - 1);
     }
     void zoomAndFit() {
         Rig r;
