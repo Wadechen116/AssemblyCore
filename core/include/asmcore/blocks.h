@@ -31,13 +31,24 @@ struct FieldDef {
     std::string def;                         // value of a new block
     std::string help;
     long long lo = 0, hi = 0;                // Int: the range that makes sense (checked only for plain number literals; names and expressions are fine); lo == hi == 0: no range
+    std::string when;                        // shown only while the condition holds: "op=SHL,SHR" or "op!=AND,OR" (a field of the same block); "" = always
 };
 
 // A value socket: another block plugs into it (an expression). `accepts` are the value types the socket takes.
+//
+// An input is a *component socket*. If the block has a field of the same name, that field is the socket's text MIRROR: the text of what is
+// plugged in (or the text typed when nothing is plugged, which is also what a program from before components exists as). The text is what an
+// older tool reads; the components are an addition (see docs/BLOCKS_COMPOSITION.md, "compatibility").
+// `derive` makes a socket the source of other fields: "range:ptr,len" -- a plugged region range [first..last] gives ptr = first and
+// len = last - first + 1 (so ptr + len <= size holds by construction).
 struct InputDef {
     std::string name, label;
-    std::vector<std::string> accepts;
+    std::vector<std::string> accepts;        // value types: "int", "region:MAIN_SCRATCHPAD", "op.alu", "sign", "cond.main", "cond.peri", "label.flow", "label.proc"
     bool optional = false;
+    std::string derive;                      // "range:<ptr field>,<len field>" or ""
+    std::string when;                        // as FieldDef::when
+    InputDef() = default;
+    InputDef(std::string n, std::string l, std::vector<std::string> a = {}, bool opt = false) : name(std::move(n)), label(std::move(l)), accepts(std::move(a)), optional(opt) {}
 };
 
 constexpr int kMain = 1, kPeri = 2, kBoth = 3;       // same bits as lang::DomMask
@@ -50,6 +61,7 @@ struct BlockDef {
     std::vector<FieldDef> fields;
     std::vector<std::string> stacks;         // names of statement slots (".proc" has "BODY")
     std::vector<InputDef> inputs;            // value sockets
+    std::string semantic;                    // how a component block is read: "number", "binop", "unop", "paren", "region" ("" = by its template)
     std::string valueType;                   // non-empty: this block is a VALUE (it plugs into a socket and generates an expression, not a line)
     // Text this block generates. {field} is replaced by the field; {?flag:text} is text only when the Flag field is set;
     // [ ... ] is dropped unless every {field} inside it is non-empty.
@@ -62,6 +74,7 @@ class Registry {
 public:
     static const Registry& defaults();       // the Level 1 blocks, options taken from the language vocabulary
     const BlockDef* find(const std::string& type) const;
+    BlockDef* edit(const std::string& type);                  // for building a registry
     const std::vector<BlockDef>& all() const { return defs_; }
     void add(const BlockDef& d);
 private:
@@ -150,8 +163,8 @@ struct BlockProblem {
 std::vector<BlockProblem> validate(const Document& doc, const Registry& reg = Registry::defaults());
 
 // ---- the .acblk file -----------------------------------------------------------------------------------------------------------------
-bool parseDocument(const std::string& text, Document& out, std::string& error);
-std::string serializeDocument(const Document& doc);
+bool parseDocument(const std::string& text, Document& out, std::string& error, const Registry& reg = Registry::defaults());
+std::string serializeDocument(const Document& doc, const Registry& reg = Registry::defaults());
 
 // ---- helpers for editors: take an operand apart and put it together -----------------------------------------------------------------------
 // "MAIN_SCRATCHPAD[0..1]" -> region "MAIN_SCRATCHPAD", first "0", last "1";  "ALU_OPA" -> region only;  "CONST(5, 2)" is not a range (false).
@@ -161,6 +174,33 @@ struct Operand {
 };
 bool parseOperand(const std::string& text, Operand& out);
 std::string formatOperand(const Operand& op);
+
+// ---- components (stage M2b) ------------------------------------------------------------------------------------------------------------
+// Value types a socket can take and a value block gives (BlockDef::valueType, InputDef::accepts).
+constexpr const char* kTypeInt = "int";
+std::string regionType(const std::string& canonicalRegionName);         // "region:MAIN_SCRATCHPAD"
+bool isRegionType(const std::string& type);
+
+// Is a field / socket shown, given the other fields of the block ("when" conditions)?
+bool partVisible(const std::string& when, const Block& b);
+
+// The text of a field, or of the component plugged into the socket of the same name, or derived from a socket that has `derive`.
+std::string partText(const Block& b, const BlockDef& d, const std::string& name, const Registry& reg = Registry::defaults());
+
+// What a value block stands for in assembler text; `into` is the socket it is plugged into (it decides, e.g., that a number there is a constant).
+std::string valueText(const Block& v, const Registry& reg = Registry::defaults(), const InputDef* into = nullptr);
+
+// Text -> components. Splits the text of every operand that has a socket (numbers, expressions, regions with their ranges, constants)
+// into blocks, but only where the blocks give back exactly the same text (ignoring spaces); anything else stays as text in the mirror field.
+// Returns how many component blocks were made. A damaged / older file never fails: its text is what counts.
+int explodeBlock(Block& b, Document& doc, const Registry& reg = Registry::defaults());
+int explodeDocument(Document& doc, const Registry& reg = Registry::defaults());
+// Brings the components in line with the text mirrors after a file was read: a component whose text differs from its mirror is dropped
+// (the text wins -- an older tool may have edited it), then the text is split again.
+void reconcileDocument(Document& doc, const Registry& reg = Registry::defaults());
+
+// A number literal as the assembler reads it ("123", "0x7F", "7Fh", "0b101", "101b", "'A'"); false if the text is not one.
+bool parseNumberLiteral(const std::string& text, long long& out);
 
 }  // namespace blocks
 }  // namespace asmcore

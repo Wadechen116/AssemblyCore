@@ -81,6 +81,9 @@ struct SocketBox {
     std::string name, label;
     Rect rect, labelRect;
     int child = -1;                               // index into StackLayout::blocks of the block plugged in, -1: empty
+    std::string text, fullText;                   // nothing plugged in: the text typed (what the block says when it holds no component), shortened / whole
+    bool empty = true, elided = false;
+    std::vector<std::string> types;               // what the socket takes (value types): a renderer may shape the dent after it
 };
 struct SlotBox {
     std::string name;

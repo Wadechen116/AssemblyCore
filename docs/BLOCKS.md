@@ -130,6 +130,28 @@ asmblk blocks                              列出所有積木與欄位
 
 `copyBlocks`（JSON，格式名 `acblk-clip`；選到子孫又選到祖先只複製一次）、`pasteBlocks`（貼 JSON 會換新 id；貼組譯器文字會匯入；多個區段的標頭被丟掉）、`blocksToText`（純文字版）、`blocksFromText`（Typeblock 打一行：`start: MOV …` 得到標籤與指令兩個積木；看不懂的行回 Raw 並標記）、`checkFieldValue`（欄位即時提示：位移量 1 到 8、長度 1 到 32、未知區域名稱等；名稱與運算式不做範圍檢查）。
 
+## 元件（M2b-1）：運算元也是積木
+
+指令的運算元拆成**元件積木**，左右組合（設計見 `AssemblyCoreIDE/docs/BLOCKS_COMPOSITION.md`，逐指令分析見 `BLOCKS_INSTRUCTION_ANALYSIS.md`）：
+
+| 元件 | type | 型別 | 例 |
+|---|---|---|---|
+| 數字（有屬性 `kind`／`sign`／`width`） | `num` | `int` | `5`、`CONST(5, 2)`（插進 `mov` 的來源＝常數）、`CONST(LIMIT + 1, 2)` |
+| 名稱 | `name` | `int` | `LIMIT` |
+| 運算／一元／括號 | `expr_bin`／`expr_un`／`expr_paren` | `int` | `a + b * 3`（括號只在優先順序需要時才加，與組譯器相同） |
+| 區域（由 `isa::kRegions` 產生，每個區域一種） | `region_main_scratchpad` … `region_peri_rx_buf` | `region:<ID>` | `MAIN_SCRATCHPAD[0..1]`、`scratch[slot..+1]`、`MAIN_CONST_POOL[@k]`、`ALU_OPA` |
+| 選項 | `alu_op`／`sign_mode`／`cond_main_c`／`cond_peri_c`／`label_ref`／`proc_ref` | `op.alu`…`label.proc` | `ADD`、`unsigned`、`ALWAYS` |
+
+- **插槽與文字鏡像**：指令的運算元欄位（如 `mov.src`）有一個同名的插槽；插進元件時，欄位文字＝元件產生的文字（**鏡像**），沒有元件時就是打進去的文字。
+  所以拆不開的運算元只是留成文字，**什麼都不會丟**。`len`／`ptr`（`csr_write_sp`、`csr_read_buf`、`pub` 的 `src`／`len`）由**窗口**（區域範圍）推導：`ptr = first`、`len = last − first + 1`。
+- **檔案**：元件存在新的選用鍵 `parts`（M1 的 `values` 仍可讀）；格式版本仍是 1。舊版 IDE 不認得 `parts`、照文字欄位產生，結果相同；舊檔（只有文字）開啟時在記憶體中拆解，存檔才多寫 `parts`；
+  兩個版本交替編輯時，**文字為準**（元件與鏡像不一致就丟掉元件、由文字重新拆）。
+- **數字屬性**：`kind`＝`int`／`float`／`double`（浮點由產生器換成 IEEE-754 位元組，組譯器只有整數）、`sign`、`width`（8／16／24／32／64）；寬度＝`CONST` 的位元組數。超出範圍、
+  64 位元與 `double`（單一 `CONST` 最多 4 位元組）會在積木上報錯並說明原因。
+- **規則**（`validate`、`Editor::plugValue` 的 dry-run）：H7a 型別、方向（`ALU out` 不能當目的、`ALU A` 不能當來源、CSR 緩衝只能讀）、H7c 常數只能先進暫存區、H7d 範圍／長度相等、H7g 常數寬度、`alu` 依運算決定哪些插槽出現（EQ/NE 不可 signed、邏輯運算無正負、位移要有 1…8 的量）。
+  插進已佔用的插槽 → 原積木彈出成漂浮積木（H7f）。
+- 實際程式：範例與 examples 18 個檔 748 個元件；MOV 運算元 110/111、CSR 運算元 142/142、窗口 19/19 拆成元件，且產生的文字與位元組與原文字完全相同。
+
 ## 值插槽（為 B4 預留）
 
 `BlockDef.inputs`／`valueType`、`Block.values`、範本中的 `{插槽名}`、型別檢查（H7）、`.acblk` 的 `"values"`。目前沒有 Level 1 積木使用，測試用自訂定義驗證（巢狀運算式產生、拒絕錯誤型別、插入已佔用插槽）。

@@ -44,7 +44,7 @@ static std::string firstId(const Document& d, size_t sec, size_t i) { return d.s
 static Registry testRegistry() {
     Registry r = Registry::defaults();
     BlockDef num;
-    num.type = "num"; num.title = "number"; num.category = "Math"; num.domains = kBoth; num.valueType = "int";
+    num.type = "tnum"; num.title = "number"; num.category = "Math"; num.domains = kBoth; num.valueType = "int";
     FieldDef f; f.name = "v"; f.label = "value";
     num.fields = {f};
     num.tmpl = "{v}";
@@ -143,7 +143,7 @@ static void t_values() {
     section("value sockets");
     Registry reg = testRegistry();
     Document d;
-    Block num = mk(d, "num", {{"v", "5"}});
+    Block num = mk(d, "tnum", {{"v", "5"}});
     Block yes = mk(d, "yes");
     Block add = mk(d, "add");
     InputDef takesInt{"A", "left", {"int"}, false};
@@ -162,16 +162,16 @@ static void t_values() {
     s.domain = "main";
     Block setv = mk(doc, "setv", {{"name", "X"}});
     Block a = mk(doc, "add");
-    a.setValue("A", mk(doc, "num", {{"v", "2"}}));
+    a.setValue("A", mk(doc, "tnum", {{"v", "2"}}));
     Block inner = mk(doc, "add");
-    inner.setValue("A", mk(doc, "num", {{"v", "3"}}));
-    inner.setValue("B", mk(doc, "num", {{"v", "4"}}));
+    inner.setValue("A", mk(doc, "tnum", {{"v", "3"}}));
+    inner.setValue("B", mk(doc, "tnum", {{"v", "4"}}));
     a.setValue("B", inner);
     setv.setValue("V", a);
     s.blocks.push_back(setv);
     doc.sections.push_back(s);
     check(generate(doc, reg).text == ".main\n    .equ X = (2 + (3 + 4))\n", "an expression is generated from nested value blocks", generate(doc, reg).text);
-    check(validate(doc, reg).empty(), "...and validates", describe({}));
+    { std::string probs; for (auto& p : validate(doc, reg)) probs += p.message + "; "; check(validate(doc, reg).empty(), "...and validates", probs); }
     // file round trip
     Document back;
     std::string err;
@@ -197,9 +197,9 @@ static void t_values() {
     const std::string host = e.sections[0].blocks[0].id;
     Outcome o = ed.plugValue(host, "V", mk(e, "yes"));
     check(!o.ok && hasRule(o, "H7") && !e.sections[0].blocks[0].value("V"), "plugging a bool into an int socket is refused and nothing changes");
-    o = ed.plugValue(host, "V", mk(e, "num", {{"v", "1"}}));
+    o = ed.plugValue(host, "V", mk(e, "tnum", {{"v", "1"}}));
     check(o.ok && e.sections[0].blocks[0].value("V") && e.sections[0].blocks[0].value("V")->get("v") == "1", "plugging an int works");
-    o = ed.plugValue(host, "V", mk(e, "num", {{"v", "2"}}));
+    o = ed.plugValue(host, "V", mk(e, "tnum", {{"v", "2"}}));
     check(o.ok && e.sections[0].blocks[0].value("V")->get("v") == "2" && e.sections.size() == 2 && e.sections[1].domain == "floating" && e.sections[1].blocks[0].get("v") == "1", "plugging into an occupied socket floats the old block beside the host (nothing is lost)");
     o = ed.unplugValue(host, "V", 50, 60);
     check(o.ok && !e.sections[0].blocks[0].value("V") && e.sections.size() == 3 && e.sections[2].x == 50 && e.sections[2].y == 60, "unplugging puts the value on the canvas where asked");
@@ -286,7 +286,7 @@ static void t_editor() {
     dup.id = d.sections[0].blocks[0].id;
     o = ed.insertBlocks(Where{1, "", "", ""}, {dup});
     std::set<std::string> idset;
-    std::function<void(const std::vector<Block>&)> walk = [&](const std::vector<Block>& v) { for (auto& b : v) { idset.insert(b.id); for (auto& s : b.stacks) walk(s.second); } };
+    std::function<void(const std::vector<Block>&)> walk = [&](const std::vector<Block>& v) { for (auto& b : v) { idset.insert(b.id); for (auto& s : b.stacks) walk(s.second); for (auto& vl : b.values) walk(vl.second); } };
     for (auto& s : d.sections) walk(s.blocks);
     check(idset.size() == d.blockCount(), "an inserted block whose id is already taken gets a new one");
     // move

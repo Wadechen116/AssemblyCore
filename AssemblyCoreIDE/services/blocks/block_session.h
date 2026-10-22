@@ -25,7 +25,7 @@ public:
     bool load(const std::string& acblkText, std::string& error);
     void setDocument(const asmcore::blocks::Document& doc);         // e.g. after an import; resets the history and the selection
     const asmcore::blocks::Document& document() const { return doc_; }
-    std::string serialize() const { return asmcore::blocks::serializeDocument(doc_); }
+    std::string serialize() const { return asmcore::blocks::serializeDocument(doc_, reg_); }
     const asmcore::blocks::Registry& registry() const { return reg_; }
 
     // ---- editing

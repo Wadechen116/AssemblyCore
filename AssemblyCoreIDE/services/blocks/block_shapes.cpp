@@ -11,6 +11,8 @@ const ShapeRegistry& ShapeRegistry::defaults() {
         s.set("blank", {Shape::Spacer, false});
         s.set("raw", {Shape::Text, false});
         s.set("directive", {Shape::Statement, false});         // ".equ  A = 1": the fields say it all
+        for (const char* t : {"num", "name", "expr_bin", "expr_un", "expr_paren", "label_ref", "proc_ref", "alu_op", "sign_mode", "cond_main_c", "cond_peri_c"})
+            s.set(t, {Shape::Value, false});                   // components show only their parts
         return s;
     }();
     return r;

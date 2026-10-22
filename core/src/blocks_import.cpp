@@ -349,6 +349,7 @@ Document importAsm(const std::string& text, const std::string& name, ImportStats
             lastY = y;
         }
     }
+    explodeDocument(im.doc, reg);                                      // operands -> components, where they give back the same text
     if (stats) stats->blocks = (int)im.doc.blockCount();
     return im.doc;
 }

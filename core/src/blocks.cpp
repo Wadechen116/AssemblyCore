@@ -99,7 +99,14 @@ void Document::assignMissingIds() {
 }
 
 // ---- the definitions -----------------------------------------------------------------------------------------------------------------
-void Registry::add(const BlockDef& d) { defs_.push_back(d); }
+void Registry::add(const BlockDef& d) {
+    for (BlockDef& e : defs_) if (e.type == d.type) { e = d; return; }          // a definition with the same type replaces the old one
+    defs_.push_back(d);
+}
+BlockDef* Registry::edit(const std::string& type) {
+    for (BlockDef& d : defs_) if (d.type == type) return &d;
+    return nullptr;
+}
 const BlockDef* Registry::find(const std::string& type) const {
     for (const BlockDef& d : defs_) if (d.type == type) return &d;
     return nullptr;
@@ -201,7 +208,7 @@ const Registry& Registry::defaults() {
         def("comment", "comment", "Text", kBoth, {F("text", "text")}, "; {text}");
         def("blank", "blank line", "Text", kBoth, {}, "");
         def("raw", "assembler text", "Text", kBoth, {F("text", "text")}, "{text}", "", "A line the blocks do not cover (yet), kept exactly as written.");
-        for (const char* t : {"proc", "label", "comment", "blank", "raw"}) (void)t;
+        detail::addComponentDefs(r, L);
         return r;
     }();
     return reg;
@@ -212,11 +219,24 @@ namespace {
 
 // the text of a template for one block
 std::string render(const std::string& tmpl, const Block& b, const Registry& reg);
+}  // namespace
 
-// the expression a value block stands for
-std::string expression(const Block& v, const Registry& reg) {
-    const BlockDef* d = reg.find(v.type);
-    return d ? render(d->tmpl, v, reg) : std::string("?");
+namespace detail {
+std::string renderTemplate(const std::string& tmpl, const Block& b, const Registry& reg) { return render(tmpl, b, reg); }
+}  // namespace detail
+
+namespace {
+
+// the text of what a part of a block is: the component plugged in, the text of the mirror field, a field derived from a window
+std::string partOf(const Block& b, const std::string& name, const Registry& reg) {
+    const BlockDef* d = reg.find(b.type);
+    return d ? partText(b, *d, name, reg) : b.get(name);
+}
+bool hasPart(const Block& b, const std::string& name, const Registry& reg) {
+    if (b.value(name) || b.field(name)) return true;
+    const BlockDef* d = reg.find(b.type);
+    if (d) for (const InputDef& in : d->inputs) if (!in.derive.empty() && b.value(in.name)) return true;
+    return false;
 }
 
 std::string render(const std::string& tmpl, const Block& b, const Registry& reg) {
@@ -231,8 +251,7 @@ std::string render(const std::string& tmpl, const Block& b, const Registry& reg)
                 size_t colon = name.find(':');
                 std::string flag = name.substr(1, colon == std::string::npos ? std::string::npos : colon - 1);
                 if (colon != std::string::npos && b.get(flag) == "1") out += name.substr(colon + 1);
-            } else if (b.field(name)) out += b.get(name);
-            else if (const Block* in = b.value(name)) out += expression(*in, reg);
+            } else if (hasPart(b, name, reg)) out += partOf(b, name, reg);
             i = e;
         } else if (c == '[') {
             size_t e = tmpl.find(']', i);
@@ -244,7 +263,7 @@ std::string render(const std::string& tmpl, const Block& b, const Registry& reg)
                     size_t ke = inner.find('}', k);
                     if (ke == std::string::npos) break;
                     const std::string key = inner.substr(k + 1, ke - k - 1);
-                    if (b.get(key).empty() && !b.value(key)) all = false;
+                    if (partOf(b, key, reg).empty()) all = false;
                     k = ke;
                 }
             if (all) out += render(inner, b, reg);
@@ -360,10 +379,11 @@ void checkBlock(const Block& b, const std::string& domain, bool inProc, bool asV
         else if (domain == "main" && !(d->domains & kMain)) err("'" + d->title + "' is a Peri block; it cannot be in the Main section");
         else if (domain == "peri" && !(d->domains & kPeri)) err("'" + d->title + "' is a Main block; it cannot be in the Peri section");
     }
+    detail::componentProblems(b, *d, reg, out);
     for (const FieldDef& f : d->fields) {
-        const std::string* val = b.field(f.name);
-        const std::string v2 = val ? *val : std::string();
+        const std::string v2 = partText(b, *d, f.name, reg);
         if (f.kind == FieldKind::Flag) continue;
+        if (!partVisible(f.when, b)) { if (!v2.empty() && !f.optional) err("'" + f.label + "' is not used here", false); continue; }
         if (v2.empty() && !f.optional && b.type != "raw") err("'" + f.label + "' is empty");
         if (f.kind == FieldKind::Choice && !f.open && !v2.empty() && std::find(f.options.begin(), f.options.end(), v2) == f.options.end()) err("'" + v2 + "' is not one of the choices for '" + f.label + "'");
     }
@@ -379,13 +399,14 @@ void checkBlock(const Block& b, const std::string& domain, bool inProc, bool asV
     }
     for (const InputDef& in : d->inputs) {
         const Block* c = b.value(in.name);
-        if (!c) { if (!in.optional) err("'" + in.label + "' needs a block plugged in"); continue; }
+        if (!c) { if (!in.optional && !b.field(in.name)) err("'" + (in.label.empty() ? in.name : in.label) + "' needs a block plugged in"); continue; }
         const BlockDef* cd = reg.find(c->type);
         if (cd && !cd->valueType.empty() && !in.accepts.empty() && std::find(in.accepts.begin(), in.accepts.end(), cd->valueType) == in.accepts.end()) {
             std::string acc;
             for (const std::string& a2 : in.accepts) acc += (acc.empty() ? "" : ", ") + a2;
             out.push_back({true, c->id, "'" + cd->title + "' (" + cd->valueType + ") does not fit into '" + in.label + "', which takes " + acc});
         }
+        detail::plugProblems(b, *d, in, *c, reg, out);
         checkBlock(*c, domain, inProc, true, reg, out, ids);
     }
     for (const auto& kv : b.values) {
@@ -409,13 +430,28 @@ std::vector<BlockProblem> validate(const Document& doc, const Registry& reg) {
 // ---- the file ------------------------------------------------------------------------------------------------------------------------
 namespace {
 
-json::Value toJson(const Block& b) {
+// The text stored for a field: the text of the component plugged into the socket of the same name (or the window the field derives from), so an
+// older tool that knows nothing of components still reads the right text.
+std::string mirrorText(const Block& b, const BlockDef* d, const std::string& name, const std::string& stored, const Registry& reg) {
+    if (!d) return stored;
+    if (b.value(name)) return partText(b, *d, name, reg);
+    for (const InputDef& in : d->inputs) {
+        if (in.derive.empty() || !b.value(in.name)) continue;
+        const std::string spec = in.derive.substr(6);
+        const size_t comma = spec.find(',');
+        if (name == spec.substr(0, comma) || name == spec.substr(comma + 1)) return partText(b, *d, name, reg);
+    }
+    return stored;
+}
+
+json::Value toJson(const Block& b, const Registry& reg) {
     json::Value v = json::Value::makeObject();
     v.set("id", json::Value::makeString(b.id));
     v.set("type", json::Value::makeString(b.type));
+    const BlockDef* def = reg.find(b.type);
     if (!b.fields.empty()) {
         json::Value f = json::Value::makeObject();
-        for (const auto& kv : b.fields) f.set(kv.first, json::Value::makeString(kv.second));
+        for (const auto& kv : b.fields) f.set(kv.first, json::Value::makeString(mirrorText(b, def, kv.first, kv.second, reg)));
         v.set("fields", f);
     }
     if (!b.comment.empty()) v.set("comment", json::Value::makeString(b.comment));
@@ -424,9 +460,10 @@ json::Value toJson(const Block& b) {
     bool anyValue = false;
     for (const auto& vl : b.values) if (!vl.second.empty()) anyValue = true;
     if (anyValue) {
+        // "parts": the components. (Older tools ignore this key and use the field texts; "values" is what stage M1 wrote and is still read.)
         json::Value vs = json::Value::makeObject();
-        for (const auto& vl : b.values) if (!vl.second.empty()) vs.set(vl.first, toJson(vl.second[0]));
-        v.set("values", vs);
+        for (const auto& vl : b.values) if (!vl.second.empty()) vs.set(vl.first, toJson(vl.second[0], reg));
+        v.set("parts", vs);
     }
     bool anyStack = false;
     for (const auto& st : b.stacks) if (!st.second.empty() || b.type == "proc") anyStack = true;
@@ -434,7 +471,7 @@ json::Value toJson(const Block& b) {
         json::Value s = json::Value::makeObject();
         for (const auto& st : b.stacks) {
             json::Value arr = json::Value::makeArray();
-            for (const Block& c : st.second) arr.push(toJson(c));
+            for (const Block& c : st.second) arr.push(toJson(c, reg));
             s.set(st.first, arr);
         }
         v.set("stacks", s);
@@ -467,12 +504,14 @@ bool fromJson(const json::Value& v, Block& b, const std::string& where, std::str
             b.fields.emplace_back(kv.first, val);
         }
     }
-    if (const json::Value* vs = v.get("values")) {
-        if (vs->kind != json::Value::Object) { err = where + ": \"values\" must be an object"; return false; }
+    for (const char* key : {"values", "parts"}) {
+        const json::Value* vs = v.get(key);
+        if (!vs) continue;
+        if (vs->kind != json::Value::Object) { err = where + ": \"" + key + "\" must be an object"; return false; }
         for (const auto& kv : vs->obj) {
             Block c;
-            if (!fromJson(kv.second, c, where + ".values." + kv.first, err)) return false;
-            b.values.emplace_back(kv.first, std::vector<Block>(1, std::move(c)));
+            if (!fromJson(kv.second, c, where + "." + key + "." + kv.first, err)) return false;
+            b.setValue(kv.first, c);
         }
     }
     if (const json::Value* s = v.get("stacks")) {
@@ -503,7 +542,7 @@ unsigned maxNumericId(const std::vector<Block>& v) {
 
 }  // namespace
 
-std::string serializeDocument(const Document& doc) {
+std::string serializeDocument(const Document& doc, const Registry& reg) {
     json::Value root = json::Value::makeObject();
     root.set("format", json::Value::makeString("acblk"));
     root.set("version", json::Value::makeNumber(doc.version));
@@ -519,7 +558,7 @@ std::string serializeDocument(const Document& doc) {
         sv.set("x", json::Value::makeNumber(s.x));
         sv.set("y", json::Value::makeNumber(s.y));
         json::Value arr = json::Value::makeArray();
-        for (const Block& b : s.blocks) arr.push(toJson(b));
+        for (const Block& b : s.blocks) arr.push(toJson(b, reg));
         sv.set("blocks", arr);
         secs.push(sv);
     }
@@ -529,7 +568,7 @@ std::string serializeDocument(const Document& doc) {
     return out + "\n";
 }
 
-bool parseDocument(const std::string& text, Document& out, std::string& error) {
+bool parseDocument(const std::string& text, Document& out, std::string& error, const Registry& reg) {
     out = Document();
     json::Parser p(text);
     json::Value root;
@@ -568,11 +607,12 @@ bool parseDocument(const std::string& text, Document& out, std::string& error) {
     for (const Section& s : out.sections) maxId = std::max(maxId, maxNumericId(s.blocks));
     out.nextId = std::max<unsigned>(maxId + 1, root.get("next_id") && root.get("next_id")->kind == json::Value::Number ? (unsigned)root.get("next_id")->num : 1);
     out.assignMissingIds();
+    reconcileDocument(out, reg);                                                     // components agree with their text mirrors; text without components is split
     return true;
 }
 
 namespace detail {
-json::Value blockToJson(const Block& b) { return asmcore::blocks::toJson(b); }
+json::Value blockToJson(const Block& b) { return asmcore::blocks::toJson(b, Registry::defaults()); }
 bool blockFromJson(const json::Value& v, Block& b, const std::string& where, std::string& err) { return asmcore::blocks::fromJson(v, b, where, err); }
 void reid(Block& b, Document& doc) {
     b.id = doc.newId();

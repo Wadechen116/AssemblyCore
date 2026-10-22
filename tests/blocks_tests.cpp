@@ -69,8 +69,8 @@ static void t_coverage() {
     std::set<std::string> seen;
     for (const BlockDef& d : Registry::defaults().all()) {
         if (!seen.insert(d.type).second) ok = false;
-        if (d.title.empty() || d.category.empty()) ok = false;
-        for (const FieldDef& f : d.fields) if (f.name.empty() || f.label.empty()) ok = false;
+        if (d.category.empty() || (d.valueType.empty() && d.title.empty())) ok = false;                     // components (values) may be untitled: expressions show only their parts
+        for (const FieldDef& f : d.fields) if (f.name.empty() || (f.label.empty() && d.valueType.empty())) ok = false;
     }
     check(ok, "the definitions have unique types, titles, categories and field labels");
     const BlockDef* alu = Registry::defaults().find("alu");
@@ -124,7 +124,7 @@ static void t_import() {
     check(st.raw == 2 && st.rawLines.size() == 2, "the import reports how many lines stayed Raw", std::to_string(st.raw));
     std::set<std::string> ids;
     bool unique = true;
-    std::function<void(const std::vector<Block>&)> walk = [&](const std::vector<Block>& v) { for (const Block& b : v) { if (!ids.insert(b.id).second || b.id.empty()) unique = false; for (auto& s : b.stacks) walk(s.second); } };
+    std::function<void(const std::vector<Block>&)> walk = [&](const std::vector<Block>& v) { for (const Block& b : v) { if (!ids.insert(b.id).second || b.id.empty()) unique = false; for (auto& s : b.stacks) walk(s.second); for (auto& vl : b.values) walk(vl.second); } };
     for (const Section& s : d.sections) walk(s.blocks);
     check(unique && ids.size() == d.blockCount(), "every block has its own id");
 }
@@ -227,6 +227,7 @@ static void t_validate() {
     check(has(validate(bad), true, "unknown block type 'frobnicate'"), "unknown block type");
     bad = d;
     bad.sections[0].blocks[1].set("src", "");
+    bad.sections[0].blocks[1].values.clear();                                       // the text and the components it was split into
     check(has(validate(bad), true, "'from' is empty"), "an empty required field, named as the block shows it");
     bad = d;
     Block x = bad.make("xfer");

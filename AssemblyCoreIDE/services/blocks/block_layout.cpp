@@ -197,7 +197,7 @@ struct LayoutEngine::Run {
         double maxChildH = 0;
         if (def) {
             for (const InputDef& in : def->inputs) {
-                const Block* child = b.value(in.name);
+                const Block* child = asmcore::blocks::partVisible(in.when, b) ? b.value(in.name) : nullptr;
                 if (!child) { plugged.push_back(-1); continue; }
                 const int ci = block(*child, 0, 0, depth + 1, idx, in.name);
                 plugged.push_back(ci);
@@ -213,44 +213,83 @@ struct LayoutEngine::Run {
             cx += tw + S.gap;
         }
         if (def) {
-            for (const FieldDef& f : def->fields) {
-                const std::string value = b.get(f.name);
-                if (f.kind == FieldKind::Flag) {
-                    if (value != "1" && !S.showEmptyOptional) continue;
-                } else if (value.empty() && f.optional && !S.showEmptyOptional) continue;
-                FieldBox fb;
-                fb.name = f.name;
-                fb.kind = f.kind;
-                fb.fullText = value;
-                const std::string label = T.fieldLabel(*def, f);
-                if (f.kind == FieldKind::Flag) {
-                    fb.text = label;
-                    fb.checked = value == "1";
-                    fb.label = "";
-                    const double cw = w(label, false) + 2 * S.chipPadX + 18;           // the check mark
-                    fb.rect = {cx, centerY(chipHeight()), cw, chipHeight()};
-                    cx += cw + S.gap;
-                } else {
-                    if (S.showFieldLabels && !label.empty()) {
-                        fb.label = label;
-                        const double lw = w(label, false);
-                        fb.labelRect = {cx, centerY(lh), lw, lh};
-                        cx += lw + S.gap / 2;
-                    }
-                    fb.empty = value.empty();
-                    const std::string shown = fb.empty ? T.emptyValue() : elide(value, S.maxChipWidth - 2 * S.chipPadX, true, fb.elided);
-                    fb.text = shown;
-                    const double cw = std::max(w(shown, true) + 2 * S.chipPadX, 22.0);
-                    fb.rect = {cx, centerY(chipHeight()), cw, chipHeight()};
-                    cx += cw + S.gap;
+            // The parts of the row in the order the definition gives them. A field that has a socket of the same name (its text mirror) is drawn AS that
+            // socket -- the component plugged in, or, when nothing is, the text typed -- so an operand is one thing on the canvas, not two.
+            struct Part { bool socket; size_t index; };
+            std::vector<Part> parts;
+            auto socketNamed = [&](const std::string& n) -> int {
+                for (size_t i = 0; i < def->inputs.size(); i++) if (def->inputs[i].name == n) return (int)i;
+                return -1;
+            };
+            auto derivedAway = [&](const std::string& n) {                  // ptr / len while a window is plugged in: the window says it
+                for (const InputDef& in : def->inputs) {
+                    if (in.derive.compare(0, 6, "range:") != 0 || !b.value(in.name)) continue;
+                    const std::string spec = in.derive.substr(6);
+                    const size_t comma = spec.find(',');
+                    if (n == spec.substr(0, comma) || n == spec.substr(comma + 1)) return true;
                 }
-                self().fields.push_back(fb);
+                return false;
+            };
+            for (size_t fi = 0; fi < def->fields.size(); fi++) {
+                const FieldDef& f = def->fields[fi];
+                if (!asmcore::blocks::partVisible(f.when, b)) continue;
+                const int si = socketNamed(f.name);
+                if (si >= 0) { if (asmcore::blocks::partVisible(def->inputs[(size_t)si].when, b)) parts.push_back({true, (size_t)si}); continue; }
+                if (derivedAway(f.name)) continue;
+                parts.push_back({false, fi});
             }
             for (size_t i = 0; i < def->inputs.size(); i++) {
+                bool mirrored = false;
+                for (const FieldDef& f : def->fields) if (f.name == def->inputs[i].name) mirrored = true;
+                if (!mirrored && asmcore::blocks::partVisible(def->inputs[i].when, b)) parts.push_back({true, i});
+            }
+            auto fieldOf = [&](const std::string& n) -> const FieldDef* { for (const FieldDef& f : def->fields) if (f.name == n) return &f; return nullptr; };
+            for (const Part& part : parts) {
+                if (!part.socket) {
+                    const FieldDef& f = def->fields[part.index];
+                    const std::string value = b.get(f.name);
+                    if (f.kind == FieldKind::Flag) {
+                        if (value != "1" && (!S.showEmptyOptional || info.shape == Shape::Value)) continue;
+                    } else if (value.empty() && f.optional && (!S.showEmptyOptional || info.shape == Shape::Value)) continue;
+                    FieldBox fb;
+                    fb.name = f.name;
+                    fb.kind = f.kind;
+                    fb.fullText = value;
+                    const std::string label = T.fieldLabel(*def, f);
+                    if (f.kind == FieldKind::Flag) {
+                        fb.text = label;
+                        fb.checked = value == "1";
+                        fb.label = "";
+                        const double cw = w(label, false) + 2 * S.chipPadX + 18;           // the check mark
+                        fb.rect = {cx, centerY(chipHeight()), cw, chipHeight()};
+                        cx += cw + S.gap;
+                    } else {
+                        if (S.showFieldLabels && !label.empty()) {
+                            fb.label = label;
+                            const double lw = w(label, false);
+                            fb.labelRect = {cx, centerY(lh), lw, lh};
+                            cx += lw + S.gap / 2;
+                        }
+                        fb.empty = value.empty();
+                        const std::string shown = fb.empty ? T.emptyValue() : elide(value, S.maxChipWidth - 2 * S.chipPadX, true, fb.elided);
+                        fb.text = shown;
+                        const double cw = std::max(w(shown, true) + 2 * S.chipPadX, 22.0);
+                        fb.rect = {cx, centerY(chipHeight()), cw, chipHeight()};
+                        cx += cw + S.gap;
+                    }
+                    self().fields.push_back(fb);
+                    continue;
+                }
+                const size_t i = part.index;
                 const InputDef& in = def->inputs[i];
+                const FieldDef* mirror = fieldOf(in.name);
+                const std::string typed = mirror ? b.get(in.name) : std::string();
+                if (plugged[i] < 0 && typed.empty() && mirror && mirror->optional && (!S.showEmptyOptional || info.shape == Shape::Value)) continue;   // an optional operand left out
                 SocketBox sb;
                 sb.name = in.name;
                 sb.label = T.inputLabel(*def, in);
+                if (sb.label.empty() && mirror) sb.label = T.fieldLabel(*def, *mirror);
+                sb.types = in.accepts;
                 if (!sb.label.empty() && S.showFieldLabels) {
                     const double lw = w(sb.label, false);
                     sb.labelRect = {cx, centerY(lh), lw, lh};
@@ -263,8 +302,13 @@ struct LayoutEngine::Run {
                     sb.child = plugged[i];
                     cx = sb.rect.right() + S.gap;
                 } else {
-                    sb.rect = {cx, centerY(chipHeight()), S.socketMinWidth, chipHeight()};
-                    cx += S.socketMinWidth + S.gap;
+                    // nothing plugged in: the text typed (the mirror) stands in, or an empty dent
+                    sb.fullText = typed;
+                    sb.empty = typed.empty();
+                    sb.text = sb.empty ? std::string() : elide(typed, S.maxChipWidth - 2 * S.chipPadX, true, sb.elided);
+                    const double sw = sb.empty ? S.socketMinWidth : std::max(S.socketMinWidth, w(sb.text, true) + 2 * S.chipPadX);
+                    sb.rect = {cx, centerY(chipHeight()), sw, chipHeight()};
+                    cx += sw + S.gap;
                 }
                 ConnectionPoint sp;
                 sp.kind = ConnectionPoint::Socket; sp.pos = {sb.rect.x, sb.rect.center().y}; sp.blockId = b.id; sp.slot = in.name;

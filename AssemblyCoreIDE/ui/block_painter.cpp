@@ -107,7 +107,14 @@ void paintRow(PaintContext& c, const BlockBox& b, const QColor& text) {
     }
     for (const SocketBox& s : b.sockets) {
         if (!s.label.empty() && !s.labelRect.empty()) drawText(c, qr(s.labelRect), QString::fromUtf8(s.label.c_str()), c.ui, text, b.disabled);
-        if (s.child < 0) {                                       // an empty socket: a dent
+        if (s.child < 0 && !s.empty) {                           // nothing plugged in, but text typed: a chip (the same look as a field)
+            c.p.setPen(QPen(toQColor(c.theme.chipBorder), 1));
+            c.p.setBrush(toQColor(c.theme.chip));
+            c.p.drawRoundedRect(qr(s.rect), 4, 4);
+            QColor tc = toQColor(c.theme.chipText);
+            if (b.disabled) tc.setAlphaF(0.55f);
+            drawText(c, qr(s.rect).adjusted(6, 0, -6, 0), QString::fromUtf8(s.text.c_str()), c.mono, tc, b.disabled);
+        } else if (s.child < 0) {                                // an empty socket: a dent
             c.p.setPen(QPen(toQColor(c.theme.chipBorder), 1, Qt::DashLine));
             QColor dent = toQColor(c.theme.chip);
             dent.setAlphaF(0.35f);

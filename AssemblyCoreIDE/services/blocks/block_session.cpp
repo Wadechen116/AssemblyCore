@@ -12,7 +12,7 @@ BlockSession::BlockSession(const Registry& reg) : reg_(reg), history_(doc_), edi
 
 bool BlockSession::load(const std::string& text, std::string& error) {
     Document d;
-    if (!parseDocument(text, d, error)) return false;
+    if (!parseDocument(text, d, error, reg_)) return false;
     setDocument(d);
     return true;
 }
@@ -124,8 +124,7 @@ BlockSession::Stats BlockSession::stats() const {
             for (const Block& b : v) {
                 s.blocks++;
                 if (b.type == "raw") s.rawBlocks++;
-                for (const auto& st : b.stacks) walk(st.second);
-                for (const auto& vl : b.values) walk(vl.second);
+                for (const auto& st : b.stacks) walk(st.second);               // the blocks of the program; the components inside them are not counted
             }
         };
         walk(sec.blocks);

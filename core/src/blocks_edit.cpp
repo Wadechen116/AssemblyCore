@@ -580,6 +580,18 @@ Outcome Editor::setField(const std::string& id, const std::string& name, const s
         bool known = false;
         if (d) for (const FieldDef& f : d->fields) if (f.name == name) known = true;
         if (!known) { out.error = "'" + b->type + "' has no field '" + name + "'"; return false; }
+        // typed text replaces the component it was the mirror of (the text is the truth; the components are re-derived from it when the file is read)
+        b->clearValue(name);
+        if (d) for (const InputDef& in : d->inputs) {
+            if (in.derive.empty() || !b->value(in.name)) continue;
+            const std::string spec = in.derive.substr(6);
+            const size_t comma = spec.find(',');
+            if (name == spec.substr(0, comma) || name == spec.substr(comma + 1)) {
+                // the other field of the pair keeps the text the window gave it
+                for (const std::string& f : {spec.substr(0, comma), spec.substr(comma + 1)}) if (f != name) b->set(f, partText(*b, *d, f, reg_));
+                b->clearValue(in.name);
+            }
+        }
         b->set(name, value);
         touched.insert(sec);
         out.ids.push_back(id);
@@ -630,6 +642,27 @@ Outcome Editor::plugValue(const std::string& blockId, const std::string& socket,
         const Violation v = checkSocket(*in, child, reg_);
         if (v.fit == Fit::No) { out.violations.push_back(v); out.fit = Fit::No; return true; }
         if (child.id.empty()) child.id = doc_.newId();
+        // what the plug would break: the new problems of the host and the plugged blocks (a constant to anything but the scratchpad, a length that
+        // does not match, a 64-bit value in a CONST ...), found by plugging it into a copy
+        {
+            Block probe = *host;
+            probe.setValue(socket, child);
+            std::set<std::string> before;
+            for (const BlockProblem& p : detail::subtreeProblems(*host, reg_)) before.insert(p.message);
+            for (const BlockProblem& p : detail::subtreeProblems(probe, reg_)) {
+                if (before.count(p.message)) continue;
+                Violation pv;
+                pv.fit = p.error ? Fit::No : Fit::Warn;
+                const std::string& m = p.message;
+                pv.rule = m.find("constant can only") != std::string::npos ? "H7c" : (m.find("CONST") != std::string::npos || m.find("only be used as a constant") != std::string::npos) ? "H7g" : "H7d";
+                pv.blockId = p.blockId.empty() ? child.id : p.blockId;
+                pv.reason = m;
+                out.violations.push_back(pv);
+                if (pv.fit == Fit::No) out.fit = Fit::No;
+                else if (out.fit == Fit::Ok) out.fit = Fit::Warn;
+            }
+            if (out.fit == Fit::No) return true;
+        }
         if (const Block* old = host->value(socket)) {                       // the block that was plugged in is not lost: it floats beside the host
             Section s;
             s.domain = "floating";
@@ -640,6 +673,12 @@ Outcome Editor::plugValue(const std::string& blockId, const std::string& socket,
             touched.insert(work.size() - 1);
         }
         host->setValue(socket, child);
+        if (host->field(socket)) host->set(socket, valueText(child, reg_, in));        // the text mirror follows
+        if (!in->derive.empty() && d) {                                                // ... and the fields a window gives (ptr, len)
+            const std::string spec = in->derive.substr(6);
+            const size_t comma = spec.find(',');
+            for (const std::string& f : {spec.substr(0, comma), spec.substr(comma + 1)}) host->set(f, partText(*host, *d, f, reg_));
+        }
         touched.insert(sec);
         out.ids.push_back(child.id);
         return true;
@@ -653,10 +692,12 @@ Outcome Editor::unplugValue(const std::string& blockId, const std::string& socke
         if (!host) { out.error = "the block " + blockId + " does not exist"; return false; }
         const Block* v = host->value(socket);
         if (!v) { out.error = "nothing is plugged into '" + socket + "'"; return false; }
+        const BlockDef* d = reg_.find(host->type);
         Section s;
         s.domain = "floating";
         s.x = x; s.y = y;
         s.blocks.push_back(*v);
+        if (host->field(socket)) host->set(socket, valueText(*v, reg_, d ? [&]() -> const InputDef* { for (const InputDef& i : d->inputs) if (i.name == socket) return &i; return nullptr; }() : nullptr));   // the text stays where the component was
         host->clearValue(socket);
         work.push_back(s);
         touched.insert(sec);

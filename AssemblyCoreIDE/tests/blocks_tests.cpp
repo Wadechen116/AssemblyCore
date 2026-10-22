@@ -104,43 +104,53 @@ static void t_layout_rows() {
     section("layout: rows");
     StackLayout s = layoutOf(".main\nstart: MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]\n ALU ADD unsigned\n JMP start, safe\n");
     check(s.header.kind == HeaderBox::Hat && s.header.text == "Main" && s.header.rect.h == LayoutStyle().hatHeight, "a program section has a hat with its name");
-    check(s.blocks.size() == 4 && s.top.size() == 4, "four blocks, all on top level");
-    const BlockBox& mov = s.blocks[1];
-    check(mov.type == "mov" && mov.title == "move" && mov.shape == Shape::Statement && mov.fields.size() == 2, "the move block: title and two fields");
-    check(mov.fields[0].text == "CONST(5, 2)" && mov.fields[0].label == "from" && mov.fields[1].label == "to", "fields have their label and text");
-    check(mov.titleRect.x >= mov.head.x && mov.titleRect.right() <= mov.fields[0].labelRect.x + 0.01, "the title comes first, then the first label");
-    bool ordered = true;
-    for (size_t i = 1; i < mov.fields.size(); i++) ordered = ordered && mov.fields[i].labelRect.x >= mov.fields[i - 1].rect.right();
+    check(s.top.size() == 4 && s.blocks.size() > 4, "four blocks on the top level, and the components inside them");
+    auto topBox = [&](size_t i) -> const BlockBox& { return s.blocks[(size_t)s.top[i]]; };
+    const BlockBox& mov = topBox(1);
+    check(mov.type == "mov" && mov.title == "move" && mov.shape == Shape::Statement && mov.fields.empty() && mov.sockets.size() == 2, "the move block: a title and two sockets (its operands are components)");
+    check(mov.sockets[0].label == "from" && mov.sockets[1].label == "to" && mov.sockets[0].child >= 0 && mov.sockets[1].child >= 0, "the sockets have their labels and hold the components");
+    const BlockBox& src = s.blocks[(size_t)mov.sockets[0].child];
+    const BlockBox& dst = s.blocks[(size_t)mov.sockets[1].child];
+    check(src.type == "num" && src.parent >= 0 && src.sockets.size() == 1 && src.sockets[0].fullText == "5" && src.fields.size() == 1 && src.fields[0].fullText == "16", "CONST(5, 2) is a number block: the value, and the width (16 bits) as a further field");
+    check(dst.type == "region_main_scratchpad" && dst.sockets.size() == 2 && dst.sockets[0].child >= 0 && dst.sockets[1].child >= 0, "the scratchpad range is a region block with its first and last as numbers");
+    check(mov.titleRect.x >= mov.head.x && mov.titleRect.right() <= mov.sockets[0].labelRect.x + 0.01, "the title comes first, then the first label");
+    bool ordered = mov.sockets[1].labelRect.x >= mov.sockets[0].rect.right() && mov.sockets[0].rect.x >= mov.sockets[0].labelRect.right();
     check(ordered, "the parts of a row follow each other left to right without overlapping");
-    bool within = inside(mov.titleRect, mov.head);
-    for (const FieldBox& f : mov.fields) within = within && inside(f.rect, mov.head) && inside(f.labelRect, mov.head);
+    bool within = inside(mov.titleRect, mov.head) && inside(src.rect, mov.head) && inside(dst.rect, mov.head);
+    for (const SocketBox& sk : mov.sockets) within = within && inside(sk.rect, mov.head) && inside(sk.labelRect, mov.head);
     check(within && inside(mov.head, mov.rect), "everything lies inside its row, the row inside the block");
     check(mov.rect.h >= LayoutStyle().minRow, "a row is at least the minimum height");
-    // optional fields
-    const BlockBox& alu = s.blocks[2];
-    check(alu.fields.size() == 2 && alu.fields[0].fullText == "ADD" && alu.fields[1].fullText == "unsigned", "an empty optional field (the shift amount) is left out", std::to_string(alu.fields.size()));
+    // the sockets of the alu block depend on the operation
+    const BlockBox& alu = topBox(2);
+    check(alu.fields.empty() && alu.sockets.size() == 2 && alu.sockets[0].fullText == "ADD" && alu.sockets[1].fullText == "unsigned", "an alu row: the operation and the sign (typed text in sockets); no shift amount for ADD", std::to_string(alu.sockets.size()));
+    StackLayout shl = layoutOf(".main\n ALU SHL 3 signed\n");
+    check(shl.blocks[0].sockets.size() == 3 && shl.blocks[0].sockets[1].name == "amount" && shl.blocks[0].sockets[1].child >= 0, "a shift shows its amount (a number component)");
+    StackLayout logic = layoutOf(".main\n ALU AND\n");
+    check(logic.blocks[0].sockets.size() == 1, "a logic operation has no sign socket at all");
+    // optional operands
     LayoutStyle edit;
     edit.showEmptyOptional = true;
-    StackLayout e = layoutOf(".main\n ALU ADD unsigned\n", 0, edit);
-    check(e.blocks[0].fields.size() == 3 && e.blocks[0].fields[1].empty && e.blocks[0].fields[1].text == "...", "...but an editor shows it, as an empty chip", std::to_string(e.blocks[0].fields.size()));
+    StackLayout bare = layoutOf(".main\n ALU SHL\n");
+    StackLayout bareEdit = layoutOf(".main\n ALU SHL\n", 0, edit);
+    check(bare.blocks[0].sockets.size() == 1 && bareEdit.blocks[0].sockets.size() == 3 && bareEdit.blocks[0].sockets[1].empty, "an empty optional operand is left out in a viewer, shown as an empty socket in an editor");
     // flags
-    const BlockBox& jmp = s.blocks[3];
-    check(jmp.fields.size() == 2 && jmp.fields[1].kind == FieldKind::Flag && jmp.fields[1].checked && jmp.fields[1].text == "event checkpoint", "a set flag is shown with its label, checked");
+    const BlockBox& jmp = topBox(3);
+    check(jmp.fields.size() == 1 && jmp.fields[0].kind == FieldKind::Flag && jmp.fields[0].checked && jmp.fields[0].text == "event checkpoint" && jmp.sockets.size() == 1, "a set flag is shown with its label, checked; the target is a socket");
     StackLayout plain = layoutOf(".main\n JMP start\n");
-    check(plain.blocks[0].fields.size() == 1, "an unset flag is not shown in a viewer");
+    check(plain.blocks[0].fields.empty(), "an unset flag is not shown in a viewer");
     StackLayout ed2 = layoutOf(".main\n JMP start\n", 0, edit);
-    check(ed2.blocks[0].fields.size() == 2 && !ed2.blocks[0].fields[1].checked, "...but an editor shows it, unchecked");
+    check(ed2.blocks[0].fields.size() == 1 && !ed2.blocks[0].fields[0].checked, "...but an editor shows it, unchecked");
     // stacking
     bool stacked = true;
-    for (size_t i = 1; i < s.top.size(); i++) stacked = stacked && std::fabs(s.blocks[(size_t)s.top[i]].rect.y - s.blocks[(size_t)s.top[i - 1]].rect.bottom()) < 0.01;
-    check(stacked && std::fabs(s.blocks[0].rect.y - s.header.rect.bottom()) < 0.01, "blocks touch: each starts where the one above ends, the first right under the hat");
+    for (size_t i = 1; i < s.top.size(); i++) stacked = stacked && std::fabs(topBox(i).rect.y - topBox(i - 1).rect.bottom()) < 0.01;
+    check(stacked && std::fabs(topBox(0).rect.y - s.header.rect.bottom()) < 0.01, "blocks touch: each starts where the one above ends, the first right under the hat");
     // elision
     StackLayout longv = layoutOf(".main\n MOV CONST(1, 1) -> MAIN_SCRATCHPAD[0..0]   ; " + std::string(300, 'x') + "\n");
     check(longv.blocks[0].commentRect.w > 0 && longv.blocks[0].commentRect.w <= LayoutStyle().commentMaxWidth + 0.01, "a long comment is shortened to its maximum width");
     std::string big = "MAIN_SCRATCHPAD[0..1] " + std::string(80, 'z');
     StackLayout el = layoutOf(".main\n MOV " + big + " -> ALU_OPA\n");
-    const FieldBox& ef = el.blocks[0].fields[0];
-    check(ef.elided && ef.rect.w <= LayoutStyle().maxChipWidth + 0.01 && ef.text.size() < ef.fullText.size() && ef.text.find("\xE2\x80\xA6") != std::string::npos && ef.fullText == big, "a long value is shortened with an ellipsis; the full value is kept for the tooltip");
+    const SocketBox& ef = el.blocks[0].sockets[0];
+    check(ef.child < 0 && ef.elided && ef.rect.w <= LayoutStyle().maxChipWidth + 0.01 && ef.text.size() < ef.fullText.size() && ef.text.find("\xE2\x80\xA6") != std::string::npos && ef.fullText == big, "an operand that cannot be split stays text; a long one is shortened with an ellipsis, the full text is kept for the tooltip");
     // non-ASCII
     StackLayout cjk = layoutOf(".main\n MOV CONST(1, 1) -> MAIN_SCRATCHPAD[0..0]  ; \xE4\xB8\xAD\xE6\x96\x87\xE8\xA8\xBB\xE8\xA7\xA3\n");
     check(cjk.blocks[0].commentRect.w == 7.0 * (2 + 4), "text is measured by characters, not bytes");
@@ -229,7 +239,7 @@ static void t_layout_points() {
         for (const ConnectionPoint& p : s.points) if (p.kind == k && p.blockId == id && p.slot == slot) return &p;
         return nullptr;
     };
-    const BlockBox &a = s.blocks[0], &b = s.blocks[1];
+    const BlockBox &a = s.blocks[(size_t)s.top[0]], &b = s.blocks[(size_t)s.top[1]];
     const ConnectionPoint* an = find(ConnectionPoint::Next, a.id);
     const ConnectionPoint* bp = find(ConnectionPoint::Previous, b.id);
     check(an && bp && an->pos.x == bp->pos.x && an->pos.y == bp->pos.y, "the bottom of a block is where the next one's top is");
@@ -304,7 +314,7 @@ static void t_layout_text() {
 static Registry valueRegistry() {
     Registry r = Registry::defaults();
     BlockDef num;
-    num.type = "num"; num.title = "number"; num.category = "Math"; num.domains = kBoth; num.valueType = "int";
+    num.type = "tnum"; num.title = "number"; num.category = "Math"; num.domains = kBoth; num.valueType = "int";
     FieldDef f; f.name = "v"; f.label = "";
     num.fields = {f};
     num.tmpl = "{v}";
@@ -340,10 +350,10 @@ static void t_layout_values() {
     check(empty.blocks[0].sockets.size() == 1 && empty.blocks[0].sockets[0].child < 0 && empty.blocks[0].sockets[0].rect.w >= LayoutStyle().socketMinWidth, "an empty socket is a placeholder");
     // fill it with add(2, add(3, 4))
     Block add = d.make("add");
-    Block n2 = d.make("num");
+    Block n2 = d.make("tnum");
     n2.set("v", "2");
     Block inner = d.make("add");
-    Block n3 = d.make("num"), n4 = d.make("num");
+    Block n3 = d.make("tnum"), n4 = d.make("tnum");
     n3.set("v", "3");
     n4.set("v", "4");
     inner.setValue("A", n3);
