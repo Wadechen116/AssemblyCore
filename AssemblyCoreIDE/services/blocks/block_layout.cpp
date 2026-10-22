@@ -112,6 +112,23 @@ struct LayoutEngine::Run {
             if (std::find(ids.begin(), ids.end(), p.blockId) != ids.end()) { p.pos.x += dx; p.pos.y += dy; }
     }
 
+    // a cascade runs from its BEGIN to the last END before the next BEGIN (the numbering and the exits are checked by validate)
+    void markCascades(const std::vector<int>& items) {
+        for (size_t i = 0; i < items.size(); i++) {
+            if (out.blocks[(size_t)items[i]].type != "cascade_begin") continue;
+            size_t last = i;
+            bool any = false;
+            for (size_t j = i + 1; j < items.size(); j++) {
+                const std::string& t = out.blocks[(size_t)items[j]].type;
+                if (t == "cascade_begin") break;
+                if (t == "cascade_end") { last = j; any = true; }
+            }
+            if (!any) continue;
+            out.regions.push_back({"cascade", "cascade", unite(out.blocks[(size_t)items[i]].rect, out.blocks[(size_t)items[last]].rect)});
+            i = last;
+        }
+    }
+
     double list(const std::vector<Block>& v, double x, double y, int depth, int parent, const std::string& slot, std::vector<int>& items, double& width) {
         double cy = y;
         width = 0;
@@ -127,6 +144,7 @@ struct LayoutEngine::Run {
             cy += bb.rect.h;
             width = std::max(width, bb.rect.w);
         }
+        markCascades(items);
         return cy - y;
     }
 
@@ -421,6 +439,7 @@ StackLayout LayoutEngine::layoutStack(const Section& s, size_t index) const {
     run.list(s.blocks, 0, top, 0, -1, "", items, width);
     out.top = items;
     Rect b = out.header.rect;
+    for (const RegionBox& r : out.regions) b = unite(b, Rect{r.rect.x - 6, r.rect.y - 14, r.rect.w + 12, r.rect.h + 20});
     for (const BlockBox& bb : out.blocks) {
         Rect r = bb.rect;
         if (bb.parent < 0 && bb.plugDepth > 0) { r.x -= bb.plugDepth; r.w += bb.plugDepth; }      // a component standing alone: its tab is part of it

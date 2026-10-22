@@ -380,7 +380,57 @@ namespace {
 
 void checkBlock(const Block& b, const std::string& domain, bool inProc, bool asValue, const Registry& reg, std::vector<BlockProblem>& out, std::set<std::string>& ids);
 
+// The structure of one list of instructions that spans several blocks: a cascade (BEGIN ... END 0 ... END 1 ..., one common exit, the selector not above the last
+// block) and the branches that read the ALU flag (the block before should be the ALU operation).
+void checkSequenceHints(const std::vector<Block>& v, const Registry& reg, std::vector<BlockProblem>& out) {
+    auto text = [&](const Block& b, const char* name) { const BlockDef* d = reg.find(b.type); return trim(d ? partText(b, *d, name, reg) : b.get(name)); };
+    auto live = [](const Block& b) { return b.type != "comment" && b.type != "blank" && !b.disabled; };
+    for (size_t i = 0; i < v.size(); i++) {
+        const Block& b = v[i];
+        if (b.disabled) continue;
+        if (b.type == "br_cond") {
+            const std::string cond = upper(text(b, "cond"));
+            if (cond == "ALU_CMP_TRUE" || cond == "ALU_OUT_OV16") {
+                size_t k = i;
+                while (k > 0 && !live(v[k - 1])) k--;
+                const bool first = k == 0;
+                const Block* prev = first ? nullptr : &v[k - 1];
+                if (first) out.push_back({false, b.id, "this branch reads the ALU flag, but no ALU operation came before it in this stack (W506)", "hint"});
+                else if (prev->type != "alu" && prev->type != "label") out.push_back({false, b.id, "this branch reads the ALU flag, but the block before it is not an ALU operation (W506)", "hint"});
+            }
+        }
+        if (b.type != "cascade_begin") continue;
+        // the cascade: the ENDs that follow, numbered 0, 1, 2 ... until the next BEGIN
+        long long expect = 0, sel = -1;
+        const bool haveSel = parseNumberLiteral(text(b, "sel"), sel);
+        std::string exitLabel;
+        bool exitsDiffer = false, sawEnd = false;
+        for (size_t j = i + 1; j < v.size(); j++) {
+            if (v[j].disabled) continue;
+            if (v[j].type == "cascade_begin") break;
+            if (v[j].type != "cascade_end") continue;
+            long long idx = -1;
+            const bool haveIdx = parseNumberLiteral(text(v[j], "index"), idx);
+            if (haveIdx && idx != expect) {
+                out.push_back({true, v[j].id, "the blocks of a cascade end with CASCADE_END 0, 1, 2 ... in order; this is " + std::to_string(idx) + ", expected " + std::to_string(expect) + " (E304)", "structure"});
+                expect = idx;
+            }
+            expect++;
+            sawEnd = true;
+            const std::string ex = text(v[j], "exit");
+            if (exitLabel.empty()) exitLabel = ex;
+            else if (ex != exitLabel) exitsDiffer = true;
+        }
+        if (!sawEnd) out.push_back({true, b.id, "CASCADE_BEGIN without a CASCADE_END after it (E304)", "structure"});
+        else {
+            if (exitsDiffer) out.push_back({false, b.id, "the CASCADE_END blocks have different exit labels; use one common exit (W405)", "structure"});
+            if (haveSel && sel >= expect) out.push_back({true, b.id, "the selector " + std::to_string(sel) + " is above the last block index " + std::to_string(expect - 1) + " (E304)", "structure"});
+        }
+    }
+}
+
 void checkList(const std::vector<Block>& v, const std::string& domain, bool inProc, const Registry& reg, std::vector<BlockProblem>& out, std::set<std::string>& ids) {
+    checkSequenceHints(v, reg, out);
     for (const Block& b : v) checkBlock(b, domain, inProc, false, reg, out, ids);
 }
 

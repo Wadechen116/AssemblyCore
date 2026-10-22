@@ -136,6 +136,9 @@ void addComponentDefs(Registry& r, const lang::Language& L) {
     }
     value("name", "name", "Values", kBoth, kTypeInt, {field("name", "")}, {}, "{name}");
     r.edit("name")->semantic = "name";
+    // a single bit of a mask: (1 << n). "set bits [bit 3] | [bit 5]" is the mask (1 << 3) | (1 << 5)
+    value("bit_mask", "bit", "Values", kBoth, kTypeInt, {}, {input("n", "", intOnly)}, "(1 << {n})");
+    r.edit("bit_mask")->semantic = "bitmask";
     // references to what the definitions define (typed: a CSR is not a service)
     value("csr_ref", "CSR", "References", kBoth, "csr", {field("name", "")}, {}, "{name}");
     value("service_ref", "service", "References", kBoth, "service", {field("name", "")}, {}, "{name}");
@@ -400,6 +403,8 @@ std::string valueText(const Block& v, const Registry& reg, const InputDef* into)
         text = v.get("op") + operandText(v, *d, "x", 7, reg);
     } else if (sem == "paren") {
         text = "(" + operandText(v, *d, "x", 0, reg) + ")";
+    } else if (sem == "bitmask") {
+        text = "(1 << " + operandText(v, *d, "n", 0, reg) + ")";
     } else if (sem == "region") {
         text = renderRegion(v, *d, reg);
     } else {
@@ -499,6 +504,13 @@ struct Parse {
             ws();
             if (p >= s.size() || s[p] != ')') return false;
             p++;
+            // (1 << n) is a bit of a mask
+            if (inner.type == "expr_bin" && inner.get("op") == "<<" && inner.value("a") && inner.value("a")->type == "num" && !inner.value("a")->value("value") &&
+                trim(inner.value("a")->get("value")) == "1" && inner.value("a")->get("kind").empty() && inner.value("a")->get("sign").empty() && inner.value("a")->get("width").empty() && inner.value("b")) {
+                out = make("bit_mask");
+                plug(out, "n", *inner.value("b"));
+                return true;
+            }
             out = make("expr_paren");
             plug(out, "x", inner);
             return true;

@@ -124,6 +124,12 @@ struct HeaderBox {
     std::string text, domain;
 };
 
+// A group of blocks that belong together without being one block: a cascade (CASCADE_BEGIN ... CASCADE_END n). The canvas frames it.
+struct RegionBox {
+    std::string kind, label;
+    Rect rect;
+};
+
 struct StackLayout {
     size_t section = 0;
     std::string domain;
@@ -133,6 +139,7 @@ struct StackLayout {
     std::vector<BlockBox> blocks;                 // a block comes before everything inside it
     std::vector<int> top;                         // the top-level blocks in order
     std::vector<ConnectionPoint> points;
+    std::vector<RegionBox> regions;               // frames around cascades
 
     const BlockBox* find(const std::string& id) const;
     // The innermost block under a point (stack coordinates), or nullptr; parents are found only where their children are not.

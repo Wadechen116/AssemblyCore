@@ -136,6 +136,19 @@ static void t_plug_shapes() {
     check(alone.blocks[0].parent < 0 && alone.bounds.x <= alone.blocks[0].rect.x - LayoutStyle().plugDepth + 0.01, "a number lying alone: the bounds include its tab");
 }
 
+static void t_layout_regions() {
+    section("layout: a cascade is framed");
+    StackLayout s = layoutOf(".main\nstart: JMP start\n CASCADE_BEGIN 1, b0\nb0: JMP x\n CASCADE_END 0, done\nb1: JMP y\n CASCADE_END 1, done\ndone: JMP done\n");
+    check(s.regions.size() == 1 && s.regions[0].kind == "cascade", "one frame around the cascade");
+    const Rect& r = s.regions[0].rect;
+    const BlockBox *begin = nullptr, *last = nullptr;
+    for (const BlockBox& b : s.blocks) { if (b.type == "cascade_begin") begin = &b; if (b.type == "cascade_end") last = &b; }
+    check(begin && last && std::fabs(r.y - begin->rect.y) < 0.01 && std::fabs(r.bottom() - last->rect.bottom()) < 0.01, "from the BEGIN block to the last END block");
+    check(s.bounds.x <= r.x - 6 + 0.01 && s.bounds.bottom() >= r.bottom() + 20 - 0.01, "the stack's bounds include the frame and its label");
+    StackLayout none = layoutOf(".main\n CASCADE_BEGIN 0, b0\nb0: JMP x\n");
+    check(none.regions.empty(), "a BEGIN without END is not framed (validate reports it)");
+}
+
 static void t_layout_rows() {
     section("layout: rows");
     StackLayout s = layoutOf(".main\nstart: MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]\n ALU ADD unsigned\n JMP start, safe\n");
@@ -588,13 +601,13 @@ static void t_session() {
         del.setDocument(docOf(".main\nstart: MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]\n ALU ADD unsigned\n JMP start\n"));
         const Block& mv = del.document().sections[0].blocks[1];
         const std::string numId = mv.value("src")->id, aluId = del.document().sections[0].blocks[2].id;
-        const std::string before = del.generated().text;
+        const std::string beforeDelete = del.generated().text;
         del.select({numId, aluId});
         const size_t n = del.deleteSelection();
         check(n == 2 && !del.document().find(aluId) && !del.document().find(numId) && del.document().sections.size() == 1, "deleting a component and an instruction removes both (the component leaves no floating copy)");
         check(!del.document().sections[0].blocks[1].value("src") && del.generated().text.find("(incomplete)") != std::string::npos && del.generated().text.find("ALU") == std::string::npos, "the component's place is a hole; the instruction is gone");
         check(del.selection().empty(), "the selection is empty afterwards");
-        check(del.undo() && del.generated().text == before, "one undo brings both back");
+        check(del.undo() && del.generated().text == beforeDelete, "one undo brings both back");
     }
     // header option
     GenerateOptions go;
@@ -647,6 +660,7 @@ int main() {
     t_theme();
     t_shapes();
     t_plug_shapes();
+    t_layout_regions();
     t_layout_rows();
     t_layout_shapes();
     t_layout_containers();

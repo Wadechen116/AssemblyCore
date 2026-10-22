@@ -1241,7 +1241,7 @@ private slots:
         const std::string original = s.generated().text;
         const std::string num = s.document().sections[0].blocks[0].value("src")->id;
         r.v().setFocus();
-        QApplication::setActiveWindow(r.w.get());
+        r.w->activateWindow();
         s.select({num});
         QTest::keyClick(&r.v(), Qt::Key_Delete);
         QVERIFY(!s.document().sections[0].blocks[0].value("src"));                          // the number is gone and its socket is a hole
@@ -1250,7 +1250,8 @@ private slots:
         QCOMPARE(s.generated().text, original);
         const QList<QKeySequence> redoKeys = QKeySequence::keyBindings(QKeySequence::Redo);   // Ctrl+Y or Ctrl+Shift+Z, as the platform has it
         QVERIFY(!redoKeys.isEmpty());
-        QTest::keyClick(&r.v(), Qt::Key(redoKeys.first()[0] & 0xFFFFFF), Qt::KeyboardModifiers(redoKeys.first()[0] & Qt::KeyboardModifierMask));
+        const QKeyCombination redoKey = redoKeys.first()[0];
+        QTest::keyClick(&r.v(), redoKey.key(), redoKey.keyboardModifiers());
         QVERIFY(s.generated().text.find("(incomplete)") != std::string::npos);
     }
 

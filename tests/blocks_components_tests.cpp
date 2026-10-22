@@ -702,6 +702,70 @@ static void t_classes() {
     check(reg.ofClass("instruction").size() >= 16 && reg.ofClass("component").size() >= 24, "the counts", std::to_string(reg.ofClass("instruction").size()) + " / " + std::to_string(reg.ofClass("component").size()));
 }
 
+// ---- stage M2b-3: bit masks, cascades, flag branches --------------------------------------------------------------------------------------
+static bool hasHint(const Document& d, const std::string& needle, bool error, const char* kind) {
+    for (const BlockProblem& p : validate(d)) if (p.error == error && p.kind == kind && p.message.find(needle) != std::string::npos) return true;
+    return false;
+}
+
+static void t_m2b3() {
+    section("bit masks: (1 << n) is a bit");
+    Document d = importAsm(".equ N = 2\n.main\n EXEC_CSR SET8 5, (1 << 3) | (1 << 5)\n EXEC_CSR CLR8 5, (1<<N)\n EXEC_CSR SET8 5, (2 << 1)\n EXEC_CSR SET8 5, (1 << 3 + 1)\n");
+    const Block& a = d.sections[1].blocks[0];
+    check(a.value("imm") && a.value("imm")->type == "expr_bin" && a.value("imm")->get("op") == "|" && a.value("imm")->value("a")->type == "bit_mask" && a.value("imm")->value("b")->type == "bit_mask", "(1 << 3) | (1 << 5) is two bits or-ed");
+    check(a.value("imm")->value("a")->value("n") && a.value("imm")->value("a")->value("n")->get("value") == "3", "a bit holds the bit number");
+    const Block& b = d.sections[1].blocks[1];
+    check(b.value("imm") && b.value("imm")->type == "bit_mask" && b.value("imm")->value("n")->type == "name", "(1<<N) with a name");
+    check(d.sections[1].blocks[2].value("imm") && d.sections[1].blocks[2].value("imm")->type == "expr_paren", "(2 << 1) is not a bit: a parenthesised expression");
+    check(d.sections[1].blocks[3].value("imm") && d.sections[1].blocks[3].value("imm")->type == "bit_mask" && d.sections[1].blocks[3].value("imm")->value("n")->type == "expr_bin", "(1 << 3 + 1): the bit number is an expression");
+    const std::string g = genText(d);
+    check(g.find("SET8 5, (1 << 3) | (1 << 5)") != std::string::npos && g.find("CLR8 5, (1 << N)") != std::string::npos && g.find("SET8 5, (2 << 1)") != std::string::npos && g.find("(1 << 3 + 1)") != std::string::npos, "all give their text back (the assembler reads the same masks)", g);
+    Document built;
+    Section sec;
+    sec.domain = "main";
+    Block csr = built.make("csr_set8");
+    csr.set("csr", "5");
+    Block mask = built.make("expr_bin");
+    mask.set("op", "|");
+    for (const char* sock : {"a", "b"}) {
+        Block bit = built.make("bit_mask");
+        Block n = built.make("num");
+        n.set("value", sock[0] == 'a' ? "1" : "4");
+        bit.setValue("n", n);
+        mask.setValue(sock, bit);
+    }
+    csr.setValue("imm", mask);
+    sec.blocks.push_back(csr);
+    built.sections.push_back(sec);
+    check(genText(built).find("EXEC_CSR SET8 5, (1 << 1) | (1 << 4)") != std::string::npos, "bits built by hand: set bits 1 and 4", genText(built));
+
+    section("cascades: numbering, exits, selector");
+    Document ok = importAsm(".main\n CASCADE_BEGIN 1, b0\nb0: JMP x\n CASCADE_END 0, done\nb1: JMP y\n CASCADE_END 1, done\ndone: JMP done\n");
+    check(!hasHint(ok, "", true, "structure") && !hasHint(ok, "", false, "structure"), "a well-formed cascade has no problems", problemsOf(ok));
+    Document order = importAsm(".main\n CASCADE_BEGIN 0, b0\nb0: JMP x\n CASCADE_END 1, done\ndone: JMP done\n");
+    check(hasHint(order, "expected 0", true, "structure"), "END numbered out of order (E304)", problemsOf(order));
+    Document tooHigh = importAsm(".main\n CASCADE_BEGIN 5, b0\nb0: JMP x\n CASCADE_END 0, done\ndone: JMP done\n");
+    check(hasHint(tooHigh, "above the last block index", true, "structure"), "selector above the last block (E304)", problemsOf(tooHigh));
+    Document noEnd = importAsm(".main\n CASCADE_BEGIN 0, b0\nb0: JMP x\n");
+    check(hasHint(noEnd, "without a CASCADE_END", true, "structure"), "BEGIN without END", problemsOf(noEnd));
+    Document exits = importAsm(".main\n CASCADE_BEGIN 0, b0\nb0: JMP x\n CASCADE_END 0, e1\n CASCADE_END 1, e2\ne1: JMP e1\ne2: JMP e2\n");
+    check(hasHint(exits, "different exit labels", false, "structure"), "different exits: a warning (W405)", problemsOf(exits));
+
+    section("branches that read the ALU flag");
+    Document good = importAsm(".main\nl: JMP l\n ALU CMP.EQ\n ; a comment between\n BR.COND ALU_CMP_TRUE, l\n");
+    check(!hasHint(good, "ALU flag", false, "hint"), "the ALU operation right before (a comment in between is fine)", problemsOf(good));
+    Document stale = importAsm(".main\nl: MOV CONST(1, 1) -> MAIN_SCRATCHPAD[0..0]\n BR.COND ALU_CMP_TRUE, l\n");
+    check(hasHint(stale, "the block before it is not an ALU operation", false, "hint"), "something else before it: a hint (W506)", problemsOf(stale));
+    Document first = importAsm(".main\n BR.COND ALU_OUT_OV16, l\nl: JMP l\n");
+    check(hasHint(first, "no ALU operation came before", false, "hint"), "first in its stack: a hint", problemsOf(first));
+    Document afterLabel = importAsm(".main\nloop: BR.COND ALU_CMP_TRUE, loop\n");
+    Document lbl = importAsm(".main\nl: JMP l\nloop:\n BR.COND ALU_CMP_TRUE, loop\n");
+    check(!hasHint(lbl, "ALU flag", false, "hint"), "right after a label (a loop head) there is nothing to say", problemsOf(lbl));
+    (void)afterLabel;
+    Document other = importAsm(".main\nl: JMP l\n ALU CMP.EQ\n MOV CONST(1, 1) -> MAIN_SCRATCHPAD[0..0]\n BR.COND ALWAYS, l\n");
+    check(!hasHint(other, "ALU flag", false, "hint"), "other conditions are not asked for an ALU operation", problemsOf(other));
+}
+
 // ---- EXEC_XFER ----------------------------------------------------------------------------------------------------------------------------
 static void t_xfer() {
     section("EXEC_XFER: the three forms are split into parts");
@@ -809,6 +873,7 @@ int main() {
     t_rules();
     t_compat();
     t_drag_ops();
+    t_m2b3();
     t_classes();
     t_symbols();
     t_xfer();

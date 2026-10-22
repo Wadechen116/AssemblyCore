@@ -371,6 +371,22 @@ void BlockPainter::paintStack(QPainter& p, const StackLayout& s, const StackPain
         p.setPen(toQColor(th.floatingOutline));
         p.drawText(qr(s.header.rect).adjusted(2, 0, 0, 0), Qt::AlignVCenter | Qt::AlignLeft, QString::fromUtf8(s.header.text.c_str()));
     }
+    for (const RegionBox& r : s.regions) {                                   // a frame around a cascade, behind its blocks
+        const QRectF fr = qr(r.rect).adjusted(-5, -3, 5, 3);
+        QColor line = toQColor(th.selection);
+        line.setAlphaF(0.8f);
+        p.setPen(QPen(line, 1.4, Qt::DashDotLine));
+        QColor fill = line;
+        fill.setAlphaF(0.07f);
+        p.setBrush(fill);
+        p.drawRoundedRect(fr, 7, 7);
+        QFont f = ui_;
+        f.setItalic(true);
+        f.setPointSizeF(std::max(7.0, f.pointSizeF() - 1));
+        p.setFont(f);
+        p.setPen(line);
+        p.drawText(QPointF(fr.left() + 6, fr.top() - 3), QString::fromUtf8(r.label.c_str()));
+    }
     for (const BlockBox& b : s.blocks) paintBlock(p, b, info.stateOf(b.id));
 }
 
