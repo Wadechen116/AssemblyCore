@@ -423,10 +423,14 @@ static void t_rules() {
     Document t = importAsm(".main\n MOV CONST(1, 2) -> MAIN_SCRATCHPAD[0..1]\n");
     Editor et(t);
     o = et.setField(t.sections[0].blocks[0].id, "src", "MAIN_CONST_POOL[@c]");
-    check(o.ok && !t.sections[0].blocks[0].value("src") && genText(t).find("MAIN_CONST_POOL[@c] -> MAIN_SCRATCHPAD[0..1]") != std::string::npos, "typing in an operand replaces its component", genText(t));
+    check(o.ok && t.sections[0].blocks[0].value("src") && t.sections[0].blocks[0].value("src")->type == "region_main_const_pool" && genText(t).find("MAIN_CONST_POOL[@c] -> MAIN_SCRATCHPAD[0..1]") != std::string::npos, "typing in an operand replaces its component with the one the text stands for", genText(t));
+    o = et.setField(t.sections[0].blocks[0].id, "src", "CONST(1,");
+    check(o.ok && !t.sections[0].blocks[0].value("src") && t.sections[0].blocks[0].get("src") == "CONST(1,", "text that cannot be read stays text (nothing is refused: the block says what is wrong)");
+    o = et.setField(t.sections[0].blocks[0].id, "src", "CONST(7, 2)");
+    check(o.ok && t.sections[0].blocks[0].value("src") && t.sections[0].blocks[0].value("src")->type == "num", "...and when it can be read again it is split again");
     o = et.unplugValue(t.sections[0].blocks[0].id, "dst", 400, 40);
     check(o.ok && !t.sections[0].blocks[0].value("dst") && t.sections[0].blocks[0].get("dst").empty() && t.sections.back().domain == "floating", "taking a component out leaves a HOLE (no text) and the component floats", genText(t));
-    check(genText(t).find("; (incomplete) MOV MAIN_CONST_POOL[@c] ->") != std::string::npos && genText(t).find("\n    MOV") == std::string::npos, "an instruction with a hole is written as a comment, never as half an instruction", genText(t));
+    check(genText(t).find("; (incomplete) MOV CONST(7, 2) ->") != std::string::npos && genText(t).find("\n    MOV") == std::string::npos, "an instruction with a hole is written as a comment, never as half an instruction", genText(t));
     check(hasProblem(t, "'to' is empty"), "...and the block says what is missing", problemsOf(t));
     // keepText leaves the text
     Document t2 = importAsm(".main\n MOV CONST(1, 2) -> MAIN_SCRATCHPAD[0..1]\n");
@@ -673,6 +677,30 @@ static void t_symbols() {
     check(hasRef(cross, "belongs to the other domain", true), "Peri cannot call a Main procedure", refProblems(cross));
 }
 
+static void t_set_part() {
+    section("typing into a part of a block");
+    Document d = importAsm(".devmap 0, I2C, 0x50, sensor\n.peri\n EXEC_XFER WRITE dev=0, addr=1, addrlen=1, data=5\n");
+    Editor ed(d);
+    const std::string id = d.sections[1].blocks[0].id;
+    Outcome o = ed.setPart(id, "data", "9");
+    check(o.ok && d.sections[1].blocks[0].value("data")->get("value") == "9" && genText(d).find("data=9") != std::string::npos, "a number typed into a part of dev= addr= ... becomes the component (the text follows)", genText(d));
+    o = ed.setPart(id, "dev", "sensor");
+    check(o.ok && d.sections[1].blocks[0].value("dev")->type == "dev_ref" && genText(d).find("dev=sensor") != std::string::npos, "a device name becomes a device reference", genText(d));
+    o = ed.setPart(id, "addr", "1 +* 2");
+    check(!o.ok && !o.error.empty() && genText(d).find("addr=1,") != std::string::npos, "text that is not an expression is refused with a reason (nothing changes)", o.error);
+    o = ed.setPart(id, "addr", "");
+    check(o.ok && !d.sections[1].blocks[0].value("addr") && genText(d).find("addr=") == std::string::npos, "an empty text takes the component out and leaves a hole", genText(d));
+    o = ed.setPart(id, "nothing", "x");
+    check(!o.ok, "a part the block does not have is an error");
+    // a region range typed as one text
+    Document m = importAsm(".main\n MOV CONST(1, 2) -> MAIN_SCRATCHPAD[0..1]\n");
+    Editor em(m);
+    o = em.setPart(m.sections[0].blocks[0].id, "dst", "ALU_OPA");
+    check(o.ok && m.sections[0].blocks[0].value("dst")->type == "region_alu_opa", "an operand typed as text becomes the right region");
+    o = em.setPart(m.sections[0].blocks[0].id, "dst", "MAIN_SCRATCHPAD[n..n + 1]");
+    check(o.ok && m.sections[0].blocks[0].value("dst")->value("last") && m.sections[0].blocks[0].value("dst")->value("last")->type == "expr_bin", "with expressions in the range");
+}
+
 // ---- classes ------------------------------------------------------------------------------------------------------------------------------
 static void t_classes() {
     section("classes: instructions and components are different kinds of block");
@@ -902,6 +930,7 @@ int main() {
     t_drag_ops();
     t_comments();
     t_m2b3();
+    t_set_part();
     t_classes();
     t_symbols();
     t_xfer();

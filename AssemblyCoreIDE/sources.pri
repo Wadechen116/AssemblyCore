@@ -19,7 +19,8 @@ SERVICE_SOURCES = \
     $$IDE_DIR/services/blocks/block_shapes.cpp \
     $$IDE_DIR/services/blocks/block_layout.cpp \
     $$IDE_DIR/services/blocks/block_session.cpp \
-    $$IDE_DIR/services/blocks/block_drop.cpp
+    $$IDE_DIR/services/blocks/block_drop.cpp \
+    $$IDE_DIR/services/blocks/block_tidy.cpp
 
 UI_SOURCES = \
     $$IDE_DIR/ui/qt_dispatcher.cpp \
@@ -40,7 +41,8 @@ UI_SOURCES = \
     $$IDE_DIR/ui/block_view.cpp \
     $$IDE_DIR/ui/generated_code_pane.cpp \
     $$IDE_DIR/ui/block_editor.cpp \
-    $$IDE_DIR/ui/comment_edit.cpp
+    $$IDE_DIR/ui/comment_edit.cpp \
+    $$IDE_DIR/ui/field_editor.cpp
 
 # headers that declare Q_OBJECT classes (qmake runs moc on the HEADERS it is given)
 UI_MOC_HEADERS = \
@@ -52,6 +54,7 @@ UI_MOC_HEADERS = \
     $$IDE_DIR/ui/block_view.h \
     $$IDE_DIR/ui/block_editor.h \
     $$IDE_DIR/ui/comment_edit.h \
+    $$IDE_DIR/ui/field_editor.h \
     $$IDE_DIR/ui/generated_code_pane.h
 
 # the translations (compiled .qm files are in the repository)

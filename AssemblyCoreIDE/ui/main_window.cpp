@@ -213,9 +213,15 @@ void MainWindow::createActions() {
         else if (CodeEditor* e = currentEditor()) e->redo();
     });
     edit->addSeparator();
-    act(edit, tr("Cu&t"), QKeySequence::Cut, ed([](CodeEditor* e) { e->cut(); }));
-    act(edit, tr("&Copy"), QKeySequence::Copy, ed([](CodeEditor* e) { e->copy(); }));
-    act(edit, tr("&Paste"), QKeySequence::Paste, ed([](CodeEditor* e) { e->paste(); }));
+    auto blocksOrText = [this](void (BlockEditor::*onBlocks)(), void (CodeEditor::*onText)()) {
+        return [this, onBlocks, onText] {
+            if (auto* b = qobject_cast<BlockEditor*>(tabs_->currentWidget())) (b->*onBlocks)();
+            else if (CodeEditor* e = currentEditor()) (e->*onText)();
+        };
+    };
+    act(edit, tr("Cu&t"), QKeySequence::Cut, blocksOrText(&BlockEditor::cut, &CodeEditor::cut));
+    act(edit, tr("&Copy"), QKeySequence::Copy, blocksOrText(&BlockEditor::copy, &CodeEditor::copy));
+    act(edit, tr("&Paste"), QKeySequence::Paste, blocksOrText(&BlockEditor::paste, &CodeEditor::paste));
     edit->addSeparator();
     act(edit, tr("&Find / Replace"), QKeySequence::Find, [this] {
         CodeEditor* e = currentEditor();
@@ -226,8 +232,8 @@ void MainWindow::createActions() {
     act(edit, tr("Find in Pro&ject..."), QKeySequence("Ctrl+Shift+F"), [this] { findInProject(); });
     act(edit, tr("&Go to Line..."), QKeySequence("Ctrl+G"), ed([](CodeEditor* e) { e->gotoLineDialog(); }));
     edit->addSeparator();
-    act(edit, tr("Toggle &Comment"), QKeySequence("Ctrl+/"), ed([](CodeEditor* e) { e->toggleComment(); }));
-    act(edit, tr("&Duplicate Line"), QKeySequence("Ctrl+D"), ed([](CodeEditor* e) { e->duplicateLine(); }));
+    act(edit, tr("Toggle &Comment"), QKeySequence("Ctrl+/"), blocksOrText(&BlockEditor::toggleDisabled, &CodeEditor::toggleComment));              // (a block is "commented out" by disabling it)
+    act(edit, tr("&Duplicate Line"), QKeySequence("Ctrl+D"), blocksOrText(&BlockEditor::duplicateSelection, &CodeEditor::duplicateLine));
     act(edit, tr("Move Line &Up"), QKeySequence("Alt+Up"), ed([](CodeEditor* e) { e->moveLines(-1); }));
     act(edit, tr("Move Line Dow&n"), QKeySequence("Alt+Down"), ed([](CodeEditor* e) { e->moveLines(1); }));
     edit->addSeparator();

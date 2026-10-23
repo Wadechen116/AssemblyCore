@@ -18,6 +18,10 @@
 #include <QXmlStreamReader>
 
 #include <QRadioButton>
+#include <QMenu>
+#include <QClipboard>
+#include <QMimeData>
+#include <QTimer>
 #include <QScrollBar>
 #include <QWheelEvent>
 #include <QToolButton>
@@ -939,6 +943,19 @@ class BlockTests : public QObject {
         }
     };
 
+    struct EditHelp {
+        static acide::BlockScene::EditTarget find(acide::BlockScene& sc, const std::string& block, const std::string& part) {
+            for (const auto& t : sc.editTargets()) if (t.blockId == block && t.part == part) return t;
+            return acide::BlockScene::EditTarget();
+        }
+    };
+
+    struct MemoryClipboard : acide::IBlockClipboard {
+        std::string text, blocks;
+        void set(const std::string& t, const std::string& b) override { text = t; blocks = b; }
+        void get(std::string& t, std::string& b) override { t = text; b = blocks; }
+    };
+
     static QString outDir() {
         QByteArray d = qgetenv("ACIDE_TEST_OUT");
         return d.isEmpty() ? QDir::tempPath() : QString::fromLocal8Bit(d);
@@ -1253,6 +1270,236 @@ private slots:
         const QKeyCombination redoKey = redoKeys.first()[0];
         QTest::keyClick(&r.v(), redoKey.key(), redoKey.keyboardModifiers());
         QVERIFY(s.generated().text.find("(incomplete)") != std::string::npos);
+    }
+
+    void doubleClickingAPartOfABlockEditsIt() {
+        DragRig r(".main\n MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]\n ALU ADD unsigned\n JMP start, safe\nstart:\n");
+        auto& s = r.ed->session();
+        r.sc().setAnimationsEnabled(false);
+        auto& fe = r.ed->fieldEditor();
+        const std::string mov = s.document().sections[0].blocks[0].id, alu = s.document().sections[0].blocks[1].id, jmp = s.document().sections[0].blocks[2].id;
+        const std::string num = s.document().sections[0].blocks[0].value("src")->id;
+        auto open = [&](const std::string& block, const std::string& part) {
+            const auto t = EditHelp::find(r.sc(), block, part);
+            QVERIFY2(!t.blockId.empty(), qPrintable(QString::fromStdString(block + "." + part + " is not an edit target")));
+            QTest::mouseDClick(r.v().viewport(), Qt::LeftButton, Qt::NoModifier, r.at(t.rect.center()));
+            QVERIFY(fe.isOpen());
+        };
+        // a number: the editor opens with its value; Enter keeps the new one
+        open(num, "value");
+        QCOMPARE(fe.text(), QString("5"));
+        fe.lineEdit()->selectAll();
+        QTest::keyClicks(fe.lineEdit(), "9");
+        QTest::keyClick(fe.lineEdit(), Qt::Key_Return);
+        QVERIFY(!fe.isOpen());
+        QVERIFY(s.generated().text.find("MOV CONST(9, 2) -> MAIN_SCRATCHPAD[0..1]") != std::string::npos);
+        // a choice: the drop-down has the operations, typing another is fine
+        open(alu, "op");
+        QVERIFY(fe.count() > 10);
+        QVERIFY(fe.findText("SUB") >= 0 && fe.findText("CMP.GE") >= 0);
+        fe.lineEdit()->selectAll();
+        QTest::keyClicks(fe.lineEdit(), "SUB");
+        QTest::keyClick(fe.lineEdit(), Qt::Key_Return);
+        QVERIFY(s.generated().text.find("ALU SUB unsigned") != std::string::npos);
+        // Esc leaves it
+        open(alu, "op");
+        QTest::keyClicks(fe.lineEdit(), "XOR");
+        QTest::keyClick(fe.lineEdit(), Qt::Key_Escape);
+        QVERIFY(!fe.isOpen());
+        QVERIFY(s.generated().text.find("ALU SUB unsigned") != std::string::npos);
+        // the value is checked as you type: a shift amount of 99 gets a hint (the block keeps it; the problem shows)
+        QTest::keyClick(r.v().viewport(), Qt::Key_Escape);
+        open(alu, "op");
+        fe.lineEdit()->selectAll();
+        QTest::keyClicks(fe.lineEdit(), "SHL");
+        QTest::keyClick(fe.lineEdit(), Qt::Key_Return);
+        open(alu, "amount");
+        QTest::keyClicks(fe.lineEdit(), "99");
+        QVERIFY2(!fe.toolTip().isEmpty(), "a hint about the range of the shift amount");
+        QTest::keyClick(fe.lineEdit(), Qt::Key_Return);
+        QVERIFY(s.generated().text.find("ALU SHL 99") != std::string::npos);
+        // a flag is switched by one click
+        const auto flag = EditHelp::find(r.sc(), jmp, "safe");
+        QVERIFY(flag.flag);
+        QCOMPARE(flag.text, std::string("1"));
+        QTest::mouseClick(r.v().viewport(), Qt::LeftButton, Qt::NoModifier, r.at(flag.rect.center()));
+        QVERIFY(s.generated().text.find("JMP start\n") != std::string::npos);
+        QVERIFY(s.generated().text.find("JMP start, safe") == std::string::npos);
+        // undo goes back one step at a time
+        QVERIFY(s.undo());
+        QVERIFY(s.generated().text.find("JMP start, safe") != std::string::npos);
+        QVERIFY(s.undo());                       // amount 99
+        QVERIFY(s.generated().text.find("ALU SHL 99") == std::string::npos);
+        // a hole takes typed text: take the number out, then type into the hole
+        const std::string num2 = s.document().sections[0].blocks[0].value("src")->id;
+        s.apply([&](asmcore::blocks::Editor& ed) { return ed.unplugValue(mov, "src", 500, 300); });
+        QVERIFY(!s.document().sections[0].blocks[0].value("src"));
+        open(mov, "src");
+        QVERIFY(fe.text().isEmpty());
+        QTest::keyClicks(fe.lineEdit(), "CONST(7, 2)");
+        QTest::keyClick(fe.lineEdit(), Qt::Key_Return);
+        QVERIFY(s.document().sections[0].blocks[0].value("src") && s.document().sections[0].blocks[0].value("src")->type == "num");
+        QVERIFY(s.generated().text.find("MOV CONST(7, 2) ->") != std::string::npos);
+        (void)num2;
+    }
+
+    void arrowKeysMoveTheSelectionAndEnterEdits() {
+        DragRig r(".main\nstart: MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]\n ALU ADD unsigned\n.proc f\n RET\n.endp\n");
+        auto& s = r.ed->session();
+        r.sc().setAnimationsEnabled(false);
+        r.v().setFocus();
+        const auto& b = s.document().sections[0].blocks;
+        const std::string label = b[0].id, mov = b[1].id, alu = b[2].id, proc = b[3].id, ret = (*b[3].stack("BODY"))[0].id;
+        s.select({label});
+        QTest::keyClick(&r.v(), Qt::Key_Down);
+        QVERIFY(s.isSelected(mov) && s.selection().size() == 1);
+        QTest::keyClick(&r.v(), Qt::Key_Down);
+        QVERIFY(s.isSelected(alu));
+        QTest::keyClick(&r.v(), Qt::Key_Down);
+        QVERIFY(s.isSelected(proc));
+        QTest::keyClick(&r.v(), Qt::Key_Right);                                           // into the procedure
+        QVERIFY(s.isSelected(ret));
+        QTest::keyClick(&r.v(), Qt::Key_Left);                                            // and out again
+        QVERIFY(s.isSelected(proc));
+        QTest::keyClick(&r.v(), Qt::Key_Up);
+        QTest::keyClick(&r.v(), Qt::Key_Up);
+        QVERIFY(s.isSelected(mov));
+        QTest::keyClick(&r.v(), Qt::Key_Right);                                           // into what the move block holds: its first component
+        QVERIFY(s.selection().size() == 1 && s.document().find(*s.selection().begin())->type == "num");
+        QTest::keyClick(&r.v(), Qt::Key_Left);
+        QVERIFY(s.isSelected(mov));
+        // Enter types into the first part of the selected block
+        QTest::keyClick(&r.v(), Qt::Key_Down);                                            // the ALU block
+        QTest::keyClick(&r.v(), Qt::Key_Return);
+        QVERIFY(r.ed->fieldEditor().isOpen());
+        QCOMPARE(r.ed->fieldEditor().text(), QString("ADD"));
+        QTest::keyClick(r.ed->fieldEditor().lineEdit(), Qt::Key_Escape);
+        QVERIFY(!r.ed->fieldEditor().isOpen());
+    }
+
+    void tidyUpFromTheButton() {
+        DragRig r(".main\nstart: MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]\n JMP start\n.peri\np: JMP p\n");
+        auto& s = r.ed->session();
+        r.sc().setAnimationsEnabled(false);
+        const std::string text = s.generated().text;
+        s.apply([&](asmcore::blocks::Editor& ed) { return ed.moveSection(1, 3, 4); });
+        s.apply([&](asmcore::blocks::Editor& ed) { return ed.moveSection(0, 0, 0); });
+        auto* tidy = r.ed->findChild<QToolButton*>("tidy");
+        QVERIFY(tidy);
+        tidy->click();
+        const auto& lay = r.sc().layout();
+        bool overlap = false;
+        for (size_t i = 0; i < lay.stacks.size(); i++)
+            for (size_t j = i + 1; j < lay.stacks.size(); j++) {
+                const auto a = lay.stacks[i].bounds.translated(lay.stacks[i].origin.x, lay.stacks[i].origin.y), c = lay.stacks[j].bounds.translated(lay.stacks[j].origin.x, lay.stacks[j].origin.y);
+                overlap = overlap || a.intersects(c);
+            }
+        QVERIFY(!overlap);
+        QCOMPARE(s.generated().text, text);
+        QVERIFY(s.undo());
+    }
+
+    void copyPasteAndTheKeyboard() {
+        DragRig r(".main\nstart: MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]\n ALU ADD unsigned\n JMP start\n");
+        auto& s = r.ed->session();
+        auto clip = std::make_shared<MemoryClipboard>();
+        r.ed->setClipboard(clip);
+        r.sc().setAnimationsEnabled(false);
+        r.v().setFocus();
+        r.w->activateWindow();
+        const std::string mov = s.document().sections[0].blocks[1].id, alu = s.document().sections[0].blocks[2].id;
+        const std::string original = s.generated().text;
+        // Ctrl+C on a block: the clipboard has the blocks and their text
+        s.select({mov});
+        QTest::keyClick(&r.v(), Qt::Key_C, Qt::ControlModifier);
+        QVERIFY(clip->blocks.find("acblk-clip") != std::string::npos);
+        QCOMPARE(QString::fromStdString(clip->text), QString("    MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]\n"));
+        // Ctrl+V with another selected: it goes under it
+        s.select({alu});
+        QTest::keyClick(&r.v(), Qt::Key_V, Qt::ControlModifier);
+        QCOMPARE((int)s.document().sections[0].blocks.size(), 5);
+        QCOMPARE(s.document().sections[0].blocks[3].type, std::string("mov"));
+        // Ctrl+Z takes it back; Ctrl+D copies; Ctrl+E switches off; Delete removes
+        QTest::keyClick(&r.v(), Qt::Key_Z, Qt::ControlModifier);
+        QCOMPARE(s.generated().text, original);
+        s.select({mov});
+        QTest::keyClick(&r.v(), Qt::Key_D, Qt::ControlModifier);
+        QCOMPARE((int)s.document().sections[0].blocks.size(), 5);
+        QTest::keyClick(&r.v(), Qt::Key_E, Qt::ControlModifier);
+        QVERIFY(s.generated().text.find("; MOV CONST(5, 2)") != std::string::npos);
+        QTest::keyClick(&r.v(), Qt::Key_Delete);
+        QCOMPARE((int)s.document().sections[0].blocks.size(), 4);
+        // text from outside (only text, no blocks) becomes blocks
+        clip->blocks.clear();
+        clip->text = "MOV CONST(1, 1) -> MAIN_SCRATCHPAD[8..8]\n";
+        s.clearSelection();
+        r.ed->paste();
+        QCOMPARE((int)s.document().sections.size(), 2);
+        QCOMPARE(s.document().sections[1].domain, std::string("floating"));
+        QVERIFY(s.document().sections[1].blocks[0].value("src") != nullptr);
+    }
+
+    void theSystemClipboardCarriesBlocksAndText() {
+        DragRig r(".main\n MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]\n ALU ADD unsigned\n");
+        auto& s = r.ed->session();
+        s.select({s.document().sections[0].blocks[0].id});
+        r.ed->copy();
+        const QMimeData* mime = QApplication::clipboard()->mimeData();
+        if (!mime || !mime->hasFormat("application/x-acblk")) QSKIP("the system clipboard is busy (another program holds it)");
+        QCOMPARE(mime->text(), QString("    MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]\n"));
+        s.select({s.document().sections[0].blocks[1].id});
+        r.ed->paste();
+        QCOMPARE((int)s.document().sections[0].blocks.size(), 3);
+    }
+
+    void theContextMenuOffersWhatFitsTheSelection() {
+        DragRig r(".main\nstart: MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]\n JMP start\n.proc f\n RET\n.endp\n");
+        auto& s = r.ed->session();
+        const std::string mov = s.document().sections[0].blocks[1].id, proc = s.document().sections[0].blocks[3].id;
+        auto menuTexts = [&](const std::string& id, bool onTail = false) {
+            QStringList texts;
+            bool ran = false;
+            QTimer::singleShot(150, [&] {
+                if (auto* m = qobject_cast<QMenu*>(QApplication::activePopupWidget())) { for (QAction* a : m->actions()) if (!a->isSeparator()) texts << a->text() + (a->isEnabled() ? "" : " (off)"); m->close(); }
+                ran = true;
+            });
+            (void)onTail;
+            const QPointF at = id.empty() ? QPointF(900, 700) : r.center(id);
+            r.sc().contextRequested.fire(at, QPoint(0, 0), id);
+            return texts;
+        };
+        QStringList onMove = menuTexts(mov);
+        QVERIFY2(onMove.join("|").contains("Cu&t") && onMove.join("|").contains("Disa&ble") && onMove.join("|").contains("&Delete"), qPrintable(onMove.join("|")));
+        QVERIFY(onMove.join("|").contains("comment"));
+        QVERIFY(s.isSelected(mov));                                                          // the block under the pointer is selected
+        QVERIFY2(onMove.join("|").contains("&Fold / unfold (off)"), "only containers fold");
+        QStringList onProc = menuTexts(proc);
+        QVERIFY(onProc.join("|").contains("&Fold / unfold") && !onProc.join("|").contains("&Fold / unfold (off)"));
+        QStringList onEmpty = menuTexts("");
+        QVERIFY(onEmpty.join("|").contains("Select &all") && onEmpty.join("|").contains("Show everything"));
+    }
+
+    void tabGoesOnToTheNextPart() {
+        DragRig r(".main\n MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]\n JMP start\nstart:\n");
+        auto& s = r.ed->session();
+        r.sc().setAnimationsEnabled(false);
+        auto& fe = r.ed->fieldEditor();
+        const std::string num = s.document().sections[0].blocks[0].value("src")->id;
+        const auto t = EditHelp::find(r.sc(), num, "value");
+        QTest::mouseDClick(r.v().viewport(), Qt::LeftButton, Qt::NoModifier, r.at(t.rect.center()));
+        QVERIFY(fe.isOpen());
+        // the parts of the first line in reading order
+        std::vector<std::string> order;
+        for (const auto& e : r.sc().editTargets()) if (e.blockId == num || !e.flag) order.push_back(e.part);
+        QVERIFY(order.size() >= 4);
+        QTest::keyClick(fe.lineEdit(), Qt::Key_Tab);                                      // keeps "5", opens the next part
+        QVERIFY(fe.isOpen());
+        QVERIFY(fe.text() != "5" || order[1] != "value");
+        QTest::keyClick(fe.lineEdit(), Qt::Key_Backtab);                                  // and back
+        QVERIFY(fe.isOpen());
+        QCOMPARE(fe.text(), QString("5"));
+        QTest::keyClick(fe.lineEdit(), Qt::Key_Escape);
+        QVERIFY(!fe.isOpen());
     }
 
     void doubleClickingTheEndOfABlockEditsItsComment() {

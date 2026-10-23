@@ -16,6 +16,7 @@
 #include "blocks/block_session.h"
 #include "blocks/block_shapes.h"
 #include "blocks/block_spring.h"
+#include "blocks/block_tidy.h"
 #include "blocks/block_theme.h"
 
 using namespace acide;
@@ -618,6 +619,158 @@ static void t_drop() {
     check(body && body->size() == 1 && s.generated().text.find(".proc f\n    JMP x\n.endp") != std::string::npos, "...and it is there", s.generated().text);
 }
 
+static bool anyOverlap(const DocumentLayout& lay) {
+    for (size_t i = 0; i < lay.stacks.size(); i++)
+        for (size_t j = i + 1; j < lay.stacks.size(); j++) {
+            const Rect a = lay.stacks[i].bounds.translated(lay.stacks[i].origin.x, lay.stacks[i].origin.y), b = lay.stacks[j].bounds.translated(lay.stacks[j].origin.x, lay.stacks[j].origin.y);
+            if (a.intersects(b)) return true;
+        }
+    return false;
+}
+
+static void t_tidy() {
+    section("tidy up: nothing overlaps, the program stays what it was");
+    FakeMetrics m;
+    LayoutEngine eng(m);
+    BlockSession s;
+    s.setDocument(docOf("; a header\n.equ N = 1\n.main\nstart: MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]\n JMP start\n.peri\np: JMP p\n.main\nsecond: JMP second\n"));
+    const std::string text = s.generated().text;
+    // some loose stacks, and everything piled up on one spot
+    s.apply([&](Editor& e) { return e.liftBlocks(s.document().sections[1].blocks[1].id, true, 10, 10); });
+    {
+        Block nb;
+        nb.type = "num";
+        nb.set("value", "1");
+        s.apply([&](Editor& e) { return e.newFloating({nb}, 12, 12); });                       // (no id: the editor gives it one)
+    }
+    for (size_t i = 0; i < s.document().sections.size(); i++) s.apply([&](Editor& e) { return e.moveSection(i, 5.0 * (double)i, 3.0 * (double)i + (s.document().sections[i].domain == "floating" ? 0 : 100.0 * (double)i)); });
+    const std::string text2 = s.generated().text;
+    DocumentLayout lay = eng.layoutDocument(s.document());
+    check(anyOverlap(lay), "(the stacks overlap to begin with)");
+    const std::vector<size_t> orderBefore = programOrder(s.document());
+    const size_t moved = tidyUp(s, lay);
+    lay = eng.layoutDocument(s.document());
+    check(moved > 0 && !anyOverlap(lay), "tidied: nothing overlaps", std::to_string(moved));
+    check(s.generated().text == text2 && programOrder(s.document()) == orderBefore, "the program is exactly what it was (same text, same order)", s.generated().text);
+    // columns
+    const Document& d = s.document();
+    double mainX = -1, periX = -1, looseX = -1, defsY = 1e9;
+    for (size_t i = 0; i < d.sections.size(); i++) {
+        const double x = lay.stacks[i].origin.x + lay.stacks[i].bounds.x;
+        if (d.sections[i].domain == "main" && mainX < 0) mainX = x;
+        if (d.sections[i].domain == "peri") periX = x;
+        if (d.sections[i].domain == "floating") looseX = x;
+        if (d.sections[i].domain.empty()) defsY = lay.stacks[i].origin.y;
+    }
+    check(mainX == 0 && periX > mainX && looseX > periX, "Main on the left, Peri in the next column, loose stacks on the right of both", std::to_string(mainX) + " " + std::to_string(periX) + " " + std::to_string(looseX));
+    check(defsY < lay.stacks[1].origin.y + 1, "the definitions are at the top");
+    // order: each program stack strictly below the one before it
+    bool strictly = true;
+    double last = -1e9;
+    for (size_t i : programOrder(d)) { strictly = strictly && lay.stacks[i].origin.y + lay.stacks[i].bounds.y > last; last = lay.stacks[i].origin.y + lay.stacks[i].bounds.y; }
+    check(strictly, "each part of the program is strictly below the one before it (that is what keeps the order)");
+    // idempotent, and one undo step
+    check(tidyUp(s, lay) == 0, "tidying a tidy canvas moves nothing");
+    check(s.undo() && s.generated().text == text2, "one undo puts every stack back (the text never changed)");
+    check(anyOverlap(eng.layoutDocument(s.document())), "(and they overlap again)");
+    // snapping
+    s.redo();
+    TidyOptions snap;
+    snap.snap = 8;
+    const std::vector<Pt> places = tidyPlaces(s.document(), eng.layoutDocument(s.document()), snap);
+    bool onGrid = true;
+    DocumentLayout l2 = eng.layoutDocument(s.document());
+    for (size_t i = 0; i < places.size(); i++) onGrid = onGrid && std::fmod(std::fabs(places[i].x + l2.stacks[i].bounds.x), 8.0) < 1e-6 && std::fmod(std::fabs(places[i].y + l2.stacks[i].bounds.y), 8.0) < 1e-6;
+    check(onGrid, "with a grid, the pictures stand on it");
+
+    section("the number on a hat is its place in the program");
+    DocumentLayout dl = eng.layoutDocument(s.document());
+    std::string orders;
+    for (size_t i = 0; i < dl.stacks.size(); i++) orders += std::to_string(dl.stacks[i].header.order) + " ";
+    check(dl.stacks[programOrder(s.document())[0]].header.order == 1 && dl.stacks[programOrder(s.document()).back()].header.order == (int)programOrder(s.document()).size(), "1, 2, 3 ... in the order the text is written", orders);
+    bool floatingZero = true;
+    for (size_t i = 0; i < dl.stacks.size(); i++) if (s.document().sections[i].domain == "floating" && dl.stacks[i].header.order != 0) floatingZero = false;
+    check(floatingZero, "a stack that is not part of the program has none");
+    // dragging a hat changes the number
+    BlockSession t2;
+    t2.setDocument(docOf(".main\na: JMP a\n.main\nb: JMP b\n"));
+    t2.apply([&](Editor& e) { return e.moveSection(0, 0, 500); });
+    check(eng.layoutDocument(t2.document()).stacks[0].header.order == 2 && eng.layoutDocument(t2.document()).stacks[1].header.order == 1, "moving the first part below the second makes it the second");
+    check(t2.generated().text.find("b:\n") < t2.generated().text.find("a:\n"), "...and the text follows");
+}
+
+static void t_clipboard() {
+    section("clipboard, duplicate, disable, collapse");
+    BlockSession s;
+    s.setDocument(docOf(".main\nstart: MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]\n ALU ADD unsigned\n JMP start\n.proc f\n RET\n.endp\n"));
+    const std::string mov = s.document().sections[0].blocks[1].id, alu = s.document().sections[0].blocks[2].id, proc = s.document().sections[0].blocks[4].id;
+    const std::string original = s.generated().text;
+    // copy
+    s.select({mov});
+    const BlockSession::Clip clip = s.copySelection();
+    check(clip.text == "    MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]\n" && clip.blocks.find("acblk-clip") != std::string::npos, "a copy is the blocks (to paste back) and their assembler text");
+    // paste under the selected instruction
+    s.select({alu});
+    std::string note;
+    size_t n = s.paste(clip.blocks, 300, 300, note);
+    check(n == 1 && s.document().sections[0].blocks.size() == 6 && s.document().sections[0].blocks[3].type == "mov" && s.document().sections[0].blocks[3].id != mov, "pasted under the selected instruction, with a new id");
+    check(s.selection().size() == 1 && s.isSelected(s.document().sections[0].blocks[3].id), "the pasted block is selected");
+    check(s.generated().text.find("MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]\n    ALU ADD unsigned\n    MOV CONST(5, 2)") != std::string::npos, "...and the program has it there", s.generated().text);
+    check(s.undo() && s.generated().text == original, "one undo");
+    // paste assembler text with nothing selected: it lies on the canvas
+    s.clearSelection();
+    n = s.paste("MOV CONST(1, 1) -> MAIN_SCRATCHPAD[4..4]\n ALU SUB\n", 400, 120, note);
+    check(n == 2 && s.document().sections.back().domain == "floating" && s.document().sections.back().x == 400 && s.document().sections.back().y == 120 && s.document().sections.back().blocks.size() == 2, "assembler text becomes blocks on the canvas at the given place");
+    check(s.generated().text == original, "(not part of the program yet)");
+    s.undo();
+    // text that is not code is kept as text blocks, with a note
+    n = s.paste("what is this", 0, 0, note);
+    check(n == 1 && s.document().sections.back().blocks[0].type == "raw" && !note.empty(), "what is not understood is kept as text, and the note says so", note);
+    s.undo();
+    check(s.paste("", 0, 0, note) == 0 && !note.empty(), "an empty clipboard pastes nothing");
+    // a lone component goes into an empty socket
+    s.apply([&](Editor& e) { return e.unplugValue(mov, "src", 500, 50); });
+    const std::string floatingNum = s.document().sections.back().blocks[0].id;
+    s.select({floatingNum});
+    const BlockSession::Clip numClip = s.copySelection();
+    check(numClip.text == "CONST(5, 2)\n" || numClip.text == "5\n", "a component copied as text is the expression it stands for", numClip.text);
+    s.select({mov});
+    n = s.paste(numClip.blocks, 0, 0, note);
+    check(n == 1 && s.document().sections[0].blocks[1].value("src") && s.document().sections[0].blocks[1].value("src")->type == "num", "a component pasted with a block selected goes into its empty socket that takes it");
+    check(s.generated().text.find("MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]") != std::string::npos, "...and the instruction is whole again", s.generated().text);
+    s.setDocument(docOf(".main\nstart: MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]\n ALU ADD unsigned\n JMP start\n.proc f\n RET\n.endp\n"));
+    const std::string mov2 = s.document().sections[0].blocks[1].id, alu2 = s.document().sections[0].blocks[2].id, proc2 = s.document().sections[0].blocks[4].id;
+    // cut
+    s.select({alu2});
+    BlockSession::Clip cut;
+    check(s.cutSelection(cut) == 1 && s.generated().text.find("ALU") == std::string::npos && cut.text == "    ALU ADD unsigned\n", "cut: the block is gone and is on the clipboard");
+    s.undo();
+    // duplicate
+    s.select({mov2, alu2});
+    check(s.duplicateSelection() == 2 && s.document().sections[0].blocks.size() == 7, "duplicate: each selected instruction gets a copy right after it");
+    check(s.selection().size() == 2 && !s.isSelected(mov2), "the copies are selected");
+    s.undo();
+    s.select({s.document().sections[0].blocks[1].value("src")->id});
+    check(s.duplicateSelection() == 1 && s.document().sections.back().domain == "floating" && s.document().sections.back().blocks[0].get("value") == "5", "a component is duplicated beside: a copy on the canvas");
+    s.undo();
+    // disable / enable
+    s.select({mov2, alu2});
+    check(s.toggleDisabled() == 2 && s.generated().text.find("; MOV CONST(5, 2)") != std::string::npos && s.generated().text.find("; ALU ADD") != std::string::npos, "disable: they are written as comments");
+    check(s.toggleDisabled() == 2 && s.generated().text.find("; MOV") == std::string::npos, "and enable again");
+    s.select({mov2});
+    s.toggleDisabled();
+    s.select({mov2, alu2});
+    s.toggleDisabled();
+    check(s.document().find(mov2)->disabled && s.document().find(alu2)->disabled, "if only some are off, the selection is switched off");
+    s.undo(); s.undo(); s.undo(); s.undo();
+    s.select({s.document().sections[0].blocks[1].value("src")->id});
+    check(s.toggleDisabled() == 0, "a component cannot be switched off (it is not a line)");
+    // collapse
+    s.select({proc2, mov2});
+    check(s.toggleCollapsed() == 1 && s.document().find(proc2)->collapsed, "fold: only containers fold");
+    check(s.toggleCollapsed() == 1 && !s.document().find(proc2)->collapsed, "unfold");
+}
+
 static void t_session() {
     section("session");
     BlockSession s;
@@ -765,6 +918,8 @@ int main() {
     t_layout_text();
     t_layout_values();
     t_drop();
+    t_tidy();
+    t_clipboard();
     t_session();
     t_samples();
     std::printf("\n%s  %d passed, %d failed\n", g_fail ? "FAILED" : "OK    ", g_pass, g_fail);

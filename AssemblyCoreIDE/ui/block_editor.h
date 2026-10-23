@@ -12,6 +12,7 @@
 #include "block_view.h"
 #include "blocks/block_session.h"
 #include "comment_edit.h"
+#include "field_editor.h"
 #include "document_tab.h"
 #include "generated_code_pane.h"
 
@@ -21,6 +22,14 @@ class QStackedWidget;
 class QToolButton;
 
 namespace acide {
+
+// Where copied blocks go. The editor copies to the system clipboard; a test (or a platform whose clipboard is busy) can give it another.
+class IBlockClipboard {
+public:
+    virtual ~IBlockClipboard() = default;
+    virtual void set(const std::string& text, const std::string& blocks) = 0;       // the assembler text, and the blocks themselves (JSON)
+    virtual void get(std::string& text, std::string& blocks) = 0;                   // either may be empty
+};
 
 class BlockEditor : public QWidget, public DocumentTab {
     Q_OBJECT
@@ -43,9 +52,21 @@ public:
     BlockView& view() { return *view_; }
     GeneratedCodePane& codePane() { return *code_; }
     CommentEdit& commentEdit() { return *commentEdit_; }
+    FieldEditor& fieldEditor() { return *fieldEditor_; }
     QString errorText() const;                       // why the file could not be shown ("" if fine)
     QString infoText() const;                        // the summary line
     void selectBlock(const std::string& id, bool reveal = true);
+    // ---- what Edit > Cut / Copy / Paste ... and the context menu do to the selection
+    void setClipboard(std::shared_ptr<IBlockClipboard> c) { clipboard_ = std::move(c); }
+    void copy();
+    void cut();
+    void paste();
+    void duplicateSelection() { session_.duplicateSelection(); }
+    void deleteSelection() { session_.deleteSelection(); }
+    void toggleDisabled() { session_.toggleDisabled(); }
+    void toggleCollapsed() { session_.toggleCollapsed(); }
+    void selectAll() { scene_->selectAll(); }
+    void tidy();                                                          // every stack gets a place; nothing overlaps; the program is unchanged
     void undo() { if (scene_->dragging()) scene_->cancelDrag(); else session_.undo(); }       // (the Edit menu calls these)
     void redo() { session_.redo(); }
 
@@ -54,6 +75,8 @@ private:
     void refreshCode();
     void refreshInfo();
     void applyTheme();
+    void showContextMenu(const QPointF& scenePos, const QPoint& globalPos, const std::string& blockId);
+    void beginFieldEdit(const BlockScene::EditTarget& t);                 // a double click on a part of a block: type into it over the block
     void beginCommentEdit(const BlockScene::CommentTarget& t);            // a double click on the end of a block: edit its comment over it
     void refreshSymbols();                           // the names the hardware description defines (for the "not defined" checks)
     void onBlockClicked(const std::string& id, Qt::KeyboardModifiers m);
@@ -67,6 +90,10 @@ private:
     BlockView* view_ = nullptr;
     GeneratedCodePane* code_ = nullptr;
     CommentEdit* commentEdit_ = nullptr;
+    FieldEditor* fieldEditor_ = nullptr;
+    BlockScene::EditTarget fieldEditing_;
+    unsigned editSerial_ = 0;
+    std::shared_ptr<IBlockClipboard> clipboard_;
     BlockScene::CommentTarget editing_;
     unsigned commentSerial_ = 0;
     QWidget* zoomBar_;

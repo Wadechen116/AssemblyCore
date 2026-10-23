@@ -117,6 +117,10 @@ public:
     Outcome detachFromHat(size_t section);
     Outcome duplicate(const std::vector<std::string>& ids, bool dryRun = false);
     Outcome setField(const std::string& id, const std::string& name, const std::string& value);
+    // What typing into a part of a block does. A field (or a socket with a text mirror): the text is its value, and where it can be read as components it becomes
+    // components. Another socket (a part of dev= addr= ..., the first / last of a range): the component the text stands for is plugged in (an error if the text is not one).
+    // An empty text takes the component out and leaves a hole.
+    Outcome setPart(const std::string& id, const std::string& name, const std::string& text);
     Outcome setComment(const std::string& id, const std::string& comment);
     Outcome setDisabled(const std::string& id, bool disabled);
     Outcome setCollapsed(const std::string& id, bool collapsed);

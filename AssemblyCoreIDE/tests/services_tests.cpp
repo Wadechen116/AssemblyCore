@@ -215,7 +215,7 @@ static void t_hardware_link() {
     check(loadProjectProfile(ws, ptext, ppath) && ppath == "/p/target.profile" && ptext.find("profile_id = target") != std::string::npos && ptext.find("PLANNING") != std::string::npos, "...with the default values and a header");
     ws.setText("/p/target.profile", asmcore::profileUpdateKey(ptext, "main_image_base_word", "9999999"));
     SnapshotPtr sp = buildNow(ws.snapshot(), *lang);
-    check(!sp->notes.empty() && sp->notes[0].find("target.profile") != std::string::npos || !sp->result.ok, "an unsaved profile edit is what the build uses (here: a window that does not fit the SRAM)", sp->result.diagnosticsText());
+    check((!sp->notes.empty() && sp->notes[0].find("target.profile") != std::string::npos) || !sp->result.ok, "an unsaved profile edit is what the build uses (here: a window that does not fit the SRAM)", sp->result.diagnosticsText());
     ws.setText("/p/target.profile", ptext);
     // adopt existing files: nothing in the project changes, the originals become generated files
     auto fs2 = std::make_shared<MemoryFileSystem>();

@@ -552,8 +552,10 @@ StackLayout LayoutEngine::layoutStack(const Section& s, size_t index) const {
 
 DocumentLayout LayoutEngine::layoutDocument(const Document& d) const {
     DocumentLayout out;
+    const std::vector<size_t> program = programOrder(d);                        // the order the text is written in: the number on each hat
     for (size_t i = 0; i < d.sections.size(); i++) {
         out.stacks.push_back(layoutStack(d.sections[i], i));
+        for (size_t k = 0; k < program.size(); k++) if (program[k] == i) out.stacks.back().header.order = (int)k + 1;
         const StackLayout& s = out.stacks.back();
         out.bounds = unite(out.bounds, s.bounds.translated(s.origin.x, s.origin.y));
     }

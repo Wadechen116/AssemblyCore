@@ -12,6 +12,7 @@
 #include <QGraphicsItem>
 #include <QGraphicsRectItem>
 #include <QGraphicsScene>
+#include <QGraphicsSceneContextMenuEvent>
 #include <QKeyEvent>
 #include <QTimer>
 #include <vector>
@@ -103,6 +104,9 @@ public:
     const blocks::DropTarget& dropTarget() const { return dropTarget_; }
     void cancelDrag();                                                   // Esc: put everything back
 
+    // ---- the keyboard: arrows move the selection (Up / Down: the previous / next instruction of its stack, Left: out to what holds it, Right: into what it holds)
+    bool navigate(int dx, int dy);
+
     // ---- the comment at the end of a block (double click on the tail)
     struct CommentTarget {
         bool section = false;                                            // the comment after .main / .peri (a hat) rather than a block's
@@ -112,7 +116,26 @@ public:
         std::string text;
     };
     bool commentTargetAt(const QPointF& scenePos, CommentTarget& out) const;
+
+    // ---- the parts of a block that can be typed into (field chips, typed operands, empty holes), in reading order; a click on a flag toggles it
+    struct EditTarget {
+        std::string blockId, part;                                       // the block, and the field / socket name
+        bool socket = false, flag = false;
+        QRectF rect;                                                     // canvas coordinates
+        std::string text;
+        asmcore::blocks::FieldKind kind = asmcore::blocks::FieldKind::Text;
+        std::vector<std::string> options;                                // the choices of a Choice field
+        bool open = false;                                               // other values than the options are accepted
+        std::vector<std::string> accepts;                                // a socket: the value types it takes
+    };
+    std::vector<EditTarget> editTargets() const;
+    bool editTargetAt(const QPointF& scenePos, EditTarget& out) const;
+    Signal<const EditTarget&> fieldEdit;                                 // asked for: the owner opens an editor over `rect`
     Signal<const CommentTarget&> commentEdit;                            // asked for: the owner opens an editor over `rect`
+    bool commentTargetOf(const std::string& blockId, CommentTarget& out) const;     // the tail of a block, whatever the pointer does
+
+    // right button: the block under the pointer ("" on the empty canvas), where, and where on the screen
+    Signal<const QPointF&, const QPoint&, const std::string&> contextRequested;
 
     // ---- soft effects (visual only: the document and the layout never change). Springs, stepped by a timer; setAnimationsEnabled(false) switches them off.
     void setAnimationsEnabled(bool on);
@@ -142,6 +165,7 @@ public:
 protected:
     void keyPressEvent(QKeyEvent* e) override;
     void mouseDoubleClickEvent(QGraphicsSceneMouseEvent* e) override;
+    void contextMenuEvent(QGraphicsSceneContextMenuEvent* e) override;
     void mousePressEvent(QGraphicsSceneMouseEvent* e) override;
     void mouseMoveEvent(QGraphicsSceneMouseEvent* e) override;
     void mouseReleaseEvent(QGraphicsSceneMouseEvent* e) override;

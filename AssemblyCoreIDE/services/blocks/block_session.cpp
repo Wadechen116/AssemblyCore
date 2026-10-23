@@ -1,4 +1,5 @@
 #include "blocks/block_session.h"
+#include "blocks/block_drop.h"
 
 #include <algorithm>
 #include <functional>
@@ -125,6 +126,136 @@ size_t BlockSession::deleteSelection() {
         }
         if (o.ok) n++;
     }
+    endGroup();
+    return n;
+}
+
+BlockSession::Clip BlockSession::copySelection() const {
+    const std::vector<std::string> ids(selection_.begin(), selection_.end());
+    return Clip{copyBlocks(doc_, ids), blocksToText(doc_, ids)};
+}
+
+size_t BlockSession::cutSelection(Clip& out) {
+    out = copySelection();
+    return deleteSelection();
+}
+
+size_t BlockSession::paste(const std::string& text, double x, double y, std::string& note) {
+    std::vector<Block> blocks;
+    if (!pasteBlocks(doc_, text, blocks, note)) return 0;
+    const BlockDef* first = reg_.find(blocks[0].type);
+    const bool component = first && !first->valueType.empty();
+    std::vector<std::string> ids;
+    asmcore::blocks::Outcome o;
+    beginGroup("paste:" + std::to_string(++groupSerial_));
+    if (component && blocks.size() == 1) {
+        // into an empty socket of a selected block that takes it
+        for (const std::string& sid : selection_) {
+            const Block* host = doc_.find(sid);
+            const BlockDef* hd = host ? reg_.find(host->type) : nullptr;
+            if (!hd) continue;
+            for (const InputDef& in : hd->inputs) {
+                if (host->value(in.name)) continue;
+                if (checkSocket(in, blocks[0], reg_).fit == Fit::No) continue;
+                o = apply([&](Editor& e) { return e.plugValue(sid, in.name, blocks[0]); });
+                if (o.ok) { ids = o.ids; break; }
+            }
+            if (!ids.empty()) break;
+        }
+    } else if (!component) {
+        // under the last selected instruction
+        const Block* lastSel = nullptr;
+        size_t lastKey = 0;
+        for (const std::string& sid : selection_) {
+            const Location loc = locate(doc_, sid);
+            if (!loc.found) continue;
+            const BlockDef* d = reg_.find(doc_.find(sid)->type);
+            if (!d || !d->valueType.empty()) continue;
+            const size_t key = loc.section * 100000 + loc.index;
+            if (!lastSel || key >= lastKey) { lastSel = doc_.find(sid); lastKey = key; }
+        }
+        if (lastSel) {
+            const Location loc = locate(doc_, lastSel->id);
+            ConnectionPoint cp;
+            cp.kind = ConnectionPoint::Next;
+            cp.blockId = lastSel->id;
+            const Where w = whereOf(doc_, loc.section, cp);
+            o = apply([&](Editor& e) { return e.insertBlocks(w, blocks, false); });
+            if (o.ok) ids = o.ids;
+        }
+    }
+    if (ids.empty()) {                                                    // on the canvas
+        o = apply([&](Editor& e) { return e.newFloating(blocks, x, y); });
+        if (o.ok) ids = o.ids;
+    }
+    endGroup();
+    if (!ids.empty()) select(ids);
+    return ids.size();
+}
+
+size_t BlockSession::duplicateSelection() {
+    std::vector<std::string> stmts, comps;
+    for (const std::string& id : selection_) {
+        const Block* b = doc_.find(id);
+        const BlockDef* d = b ? reg_.find(b->type) : nullptr;
+        (d && !d->valueType.empty() ? comps : stmts).push_back(id);
+    }
+    size_t n = 0;
+    std::vector<std::string> now;
+    beginGroup("duplicate:" + std::to_string(++groupSerial_));
+    if (!stmts.empty()) {
+        const asmcore::blocks::Outcome o = apply([&](Editor& e) { return e.duplicate(stmts); });
+        if (o.ok) { n += o.ids.size(); now = o.ids; }
+    }
+    for (const std::string& id : comps) {                                // a socket holds one component: the copy lies beside it
+        const std::vector<std::string> one{id};
+        std::vector<Block> clone;
+        std::string note;
+        if (!pasteBlocks(doc_, copyBlocks(doc_, one), clone, note)) continue;
+        const Location loc = locate(doc_, id);
+        const asmcore::blocks::Outcome o = apply([&](Editor& e) { return e.newFloating(clone, 40 + 24.0 * (double)n, 40 + 24.0 * (double)n); });
+        if (o.ok) { n += o.ids.size(); for (const std::string& i : o.ids) now.push_back(i); }
+        (void)loc;
+    }
+    endGroup();
+    if (!now.empty()) select(now);
+    return n;
+}
+
+size_t BlockSession::toggleDisabled() {
+    size_t on = 0;
+    std::vector<std::string> ids;
+    for (const std::string& id : selection_) {
+        const Block* b = doc_.find(id);
+        const BlockDef* d = b ? reg_.find(b->type) : nullptr;
+        if (!b || !d || !d->valueType.empty()) continue;                  // components cannot be switched off (an operand is not a line)
+        ids.push_back(id);
+        if (!b->disabled) on++;
+    }
+    if (ids.empty()) return 0;
+    const bool disable = on > 0;                                          // anything still on: switch everything off; else switch on
+    beginGroup("disable:" + std::to_string(++groupSerial_));
+    size_t n = 0;
+    for (const std::string& id : ids) if (apply([&](Editor& e) { return e.setDisabled(id, disable); }).ok) n++;
+    endGroup();
+    return n;
+}
+
+size_t BlockSession::toggleCollapsed() {
+    std::vector<std::string> ids;
+    size_t open = 0;
+    for (const std::string& id : selection_) {
+        const Block* b = doc_.find(id);
+        const BlockDef* d = b ? reg_.find(b->type) : nullptr;
+        if (!b || !d || d->stacks.empty()) continue;
+        ids.push_back(id);
+        if (!b->collapsed) open++;
+    }
+    if (ids.empty()) return 0;
+    const bool fold = open > 0;
+    beginGroup("collapse:" + std::to_string(++groupSerial_));
+    size_t n = 0;
+    for (const std::string& id : ids) if (apply([&](Editor& e) { return e.setCollapsed(id, fold); }).ok) n++;
     endGroup();
     return n;
 }

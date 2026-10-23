@@ -388,6 +388,18 @@ void BlockPainter::paintStack(QPainter& p, const StackLayout& s, const StackPain
         p.setFont(f);
         p.setPen(toQColor(th.hatText));
         p.drawText(QRectF(r.left() + 14, r.top(), p.fontMetrics().horizontalAdvance(QString::fromUtf8(s.header.text.c_str())) + 4, r.height()), Qt::AlignVCenter | Qt::AlignLeft, QString::fromUtf8(s.header.text.c_str()));
+        if (s.header.order > 0) {                                           // the place of this hat in the program: the order its text is written in
+            const QRectF badge(r.left() - 7, r.top() - 7, 17, 17);
+            p.setPen(QPen(toQColor(th.canvas), 1.5));
+            p.setBrush(toQColor(th.selection));
+            p.drawEllipse(badge);
+            QFont bf = ui_;
+            bf.setBold(true);
+            bf.setPixelSize(10);
+            p.setFont(bf);
+            p.setPen(Qt::white);
+            p.drawText(badge, Qt::AlignCenter, QString::number(s.header.order));
+        }
         if (!s.header.commentLines.empty()) {
             QString all;
             for (size_t i = 0; i < s.header.commentLines.size(); i++) all += (i ? "\n" : "") + QString::fromUtf8(s.header.commentLines[i].c_str());

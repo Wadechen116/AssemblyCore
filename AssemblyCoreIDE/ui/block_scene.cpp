@@ -3,7 +3,10 @@
 #include <QFontMetricsF>
 #include <QGraphicsSceneHoverEvent>
 #include <QGraphicsRectItem>
+#include <QGraphicsView>
 #include <QGraphicsSceneMouseEvent>
+#include <algorithm>
+
 #include <QDateTime>
 #include <QToolTip>
 #include <QPainter>
@@ -72,6 +75,15 @@ const BlockBox* StackItem::boxAt(const QPointF& pos) const { return scene_.layou
 void StackItem::hoverMoveEvent(QGraphicsSceneHoverEvent* e) {
     const BlockBox* b = boxAt(e->pos());
     scene_.setHovered(b ? b->id : std::string());
+    {
+        const StackLayout& s = scene_.layout_.stacks[index_];
+        if (!b && s.header.kind == HeaderBox::Hat && s.header.rect.contains({e->pos().x(), e->pos().y()})) {
+            setToolTip(s.header.order > 0
+                           ? QCoreApplication::translate("BlockCanvas", "Part %1 of the program: the parts are written top to bottom (and left to right at the same height)\nDrag it to change the order; double-click the end of it to write a comment").arg(s.header.order)
+                           : QCoreApplication::translate("BlockCanvas", "A part of the program"));
+            return;
+        }
+    }
     if (!b) { setToolTip(QString()); return; }
     QString tip;
     if (b->shape != Shape::Value && b->shape != Shape::Note && b->shape != Shape::Spacer && b->tailRect.contains({e->pos().x(), e->pos().y()}))
@@ -234,6 +246,18 @@ void BlockScene::mousePressEvent(QGraphicsSceneMouseEvent* e) {
     if (e->button() != Qt::LeftButton) { QGraphicsScene::mousePressEvent(e); return; }
     pressPos_ = e->scenePos();
     pressMods_ = e->modifiers();
+    {
+        EditTarget ft;                                                             // a click on a flag chip switches it
+        if (editTargetAt(pressPos_, ft) && ft.flag) {
+            const std::string now = ft.text == "1" ? std::string() : std::string("1");
+            session_.apply([&](asmcore::blocks::Editor& ed) { return ed.setField(ft.blockId, ft.part, now); });
+            popEffect(ft.blockId);
+            session_.select({ft.blockId});
+            mode_ = Mode::Idle;
+            e->accept();
+            return;
+        }
+    }
     pressedId_ = blockAt(pressPos_);
     dragOrigin_.clear();
     movingStacks_.clear();
@@ -521,6 +545,66 @@ void BlockScene::cancelDrag() {
 
 // The end of a block (or of a hat): the comment if there is one, else the empty zone reserved for it. Only blocks that are lines of the program carry a
 // comment -- not components, not comment blocks.
+std::vector<BlockScene::EditTarget> BlockScene::editTargets() const {
+    std::vector<EditTarget> all;
+    for (const blocks::StackLayout& s : layout_.stacks) {
+        // the nearest block that is a line of the program (not a component) is the "row" of a block: its parts are read left to right
+        std::vector<int> root(s.blocks.size(), 0);
+        for (size_t i = 0; i < s.blocks.size(); i++) {
+            int r = (int)i;
+            while (s.blocks[(size_t)r].shape == blocks::Shape::Value && s.blocks[(size_t)r].parent >= 0) r = s.blocks[(size_t)r].parent;
+            root[i] = r;
+        }
+        std::map<int, std::vector<EditTarget>> rows;
+        std::vector<int> order;
+        for (size_t i = 0; i < s.blocks.size(); i++) {
+            const blocks::BlockBox& b = s.blocks[i];
+            if (b.shape == blocks::Shape::Spacer) continue;
+            const asmcore::blocks::BlockDef* def = session_.registry().find(b.type);
+            auto fieldDef = [&](const std::string& name) -> const asmcore::blocks::FieldDef* {
+                if (def) for (const asmcore::blocks::FieldDef& f : def->fields) if (f.name == name) return &f;
+                return nullptr;
+            };
+            std::vector<EditTarget> mine;
+            for (const blocks::FieldBox& f : b.fields) {
+                if (f.name.empty()) continue;
+                EditTarget t;
+                t.blockId = b.id; t.part = f.name; t.flag = f.kind == asmcore::blocks::FieldKind::Flag; t.kind = f.kind;
+                t.rect = QRectF(s.origin.x + f.rect.x, s.origin.y + f.rect.y, f.rect.w, f.rect.h);
+                t.text = f.fullText;
+                if (const asmcore::blocks::FieldDef* fd = fieldDef(f.name)) { t.options = fd->options; t.open = fd->open; }
+                mine.push_back(t);
+            }
+            for (const blocks::SocketBox& sb : b.sockets) {
+                if (sb.child >= 0) continue;                               // something is plugged in: it is edited itself
+                EditTarget t;
+                t.blockId = b.id; t.part = sb.name; t.socket = true;
+                t.rect = QRectF(s.origin.x + sb.rect.x - sb.plugDepth, s.origin.y + sb.rect.y, sb.rect.w + sb.plugDepth, sb.rect.h);
+                t.text = sb.fullText;
+                t.accepts = sb.types;
+                if (const asmcore::blocks::FieldDef* fd = fieldDef(sb.name)) { t.kind = fd->kind; t.options = fd->options; t.open = true; }
+                mine.push_back(t);
+            }
+            std::sort(mine.begin(), mine.end(), [](const EditTarget& a, const EditTarget& c) { return a.rect.x() < c.rect.x(); });
+            const int r = root[i];
+            if (!rows.count(r)) order.push_back(r);
+            for (const EditTarget& t : mine) rows[r].push_back(t);
+        }
+        for (int r : order) {
+            auto& v = rows[r];
+            std::stable_sort(v.begin(), v.end(), [](const EditTarget& a, const EditTarget& c) { return a.rect.x() < c.rect.x(); });
+            for (const EditTarget& t : v) all.push_back(t);
+        }
+    }
+    return all;
+}
+
+bool BlockScene::editTargetAt(const QPointF& p, EditTarget& out) const {
+    const std::vector<EditTarget> all = editTargets();
+    for (size_t i = all.size(); i-- > 0;) if (all[i].rect.contains(p)) { out = all[i]; return true; }
+    return false;
+}
+
 bool BlockScene::commentTargetAt(const QPointF& p, CommentTarget& out) const {
     for (size_t i = layout_.stacks.size(); i-- > 0;) {
         const blocks::StackLayout& s = layout_.stacks[i];
@@ -548,13 +632,94 @@ bool BlockScene::commentTargetAt(const QPointF& p, CommentTarget& out) const {
     return false;
 }
 
+bool BlockScene::commentTargetOf(const std::string& id, CommentTarget& out) const {
+    const blocks::BlockBox* b = nullptr;
+    const blocks::StackLayout* s = layout_.stackOf(id, &b);
+    if (!s || !b || b->shape == blocks::Shape::Value || b->shape == blocks::Shape::Note || b->shape == blocks::Shape::Spacer || b->tailRect.empty()) return false;
+    out.section = false;
+    out.stack = s->section;
+    out.blockId = id;
+    out.rect = QRectF(s->origin.x + b->tailRect.x, s->origin.y + b->tailRect.y, b->tailRect.w, b->tailRect.h);
+    out.text = b->comment;
+    return true;
+}
+
+void BlockScene::contextMenuEvent(QGraphicsSceneContextMenuEvent* e) {
+    contextRequested.fire(e->scenePos(), e->screenPos(), blockAt(e->scenePos()));
+    e->accept();
+}
+
 void BlockScene::mouseDoubleClickEvent(QGraphicsSceneMouseEvent* e) {
     CommentTarget t;
+    EditTarget et;
+    if (e->button() == Qt::LeftButton && editTargetAt(e->scenePos(), et) && !et.flag) { fieldEdit.fire(et); e->accept(); return; }          // a part of a block: edit it
     if (e->button() == Qt::LeftButton && commentTargetAt(e->scenePos(), t)) { commentEdit.fire(t); e->accept(); return; }
     QGraphicsScene::mouseDoubleClickEvent(e);
 }
 
+bool BlockScene::navigate(int dx, int dy) {
+    if (session_.selection().size() != 1) {
+        if (!session_.selection().empty()) return false;
+        // nothing selected: start at the first block of the first stack
+        for (const blocks::StackLayout& s : layout_.stacks) if (!s.top.empty()) { session_.select({s.blocks[(size_t)s.top[0]].id}); return true; }
+        return false;
+    }
+    const std::string id = *session_.selection().begin();
+    const blocks::BlockBox* box = nullptr;
+    const blocks::StackLayout* st = layout_.stackOf(id, &box);
+    if (!st || !box) return false;
+    const size_t index = (size_t)(box - &st->blocks[0]);
+    auto isStatement = [&](const blocks::BlockBox& b) { return b.shape != blocks::Shape::Value && b.shape != blocks::Shape::Spacer; };
+    if (dy != 0) {
+        // the instructions of the stack in reading order; from a component, start at the instruction it belongs to
+        size_t from = index;
+        while (st->blocks[from].shape == blocks::Shape::Value && st->blocks[from].parent >= 0) from = (size_t)st->blocks[from].parent;
+        std::vector<size_t> order;
+        for (size_t i = 0; i < st->blocks.size(); i++) if (isStatement(st->blocks[i])) order.push_back(i);
+        auto at = std::find(order.begin(), order.end(), from);
+        if (at == order.end()) return false;
+        if (dy > 0 && at + 1 != order.end()) { session_.select({st->blocks[*(at + 1)].id}); return true; }
+        if (dy < 0 && at != order.begin()) { session_.select({st->blocks[*(at - 1)].id}); return true; }
+        // beyond the end / beginning of the stack: the neighbouring stack (in the order of the sections)
+        const size_t n = layout_.stacks.size();
+        for (size_t step = 1; step < n; step++) {
+            const size_t k = dy > 0 ? (st->section + step) % n : (st->section + n - step) % n;
+            const blocks::StackLayout& other = layout_.stacks[k];
+            if (other.top.empty()) continue;
+            const blocks::BlockBox* pick = nullptr;
+            for (size_t i = 0; i < other.blocks.size(); i++) if (isStatement(other.blocks[i])) { if (dy > 0) { pick = &other.blocks[i]; break; } pick = &other.blocks[i]; }
+            if (pick) { session_.select({pick->id}); return true; }
+        }
+        return false;
+    }
+    if (dx < 0) {                                                           // out: to what holds it
+        if (box->parent >= 0) { session_.select({st->blocks[(size_t)box->parent].id}); return true; }
+        return false;
+    }
+    if (dx > 0) {                                                           // in: the first component, else the first block of the first slot
+        for (const blocks::SocketBox& sb : box->sockets) if (sb.child >= 0) { session_.select({st->blocks[(size_t)sb.child].id}); return true; }
+        for (const blocks::SlotBox& sl : box->slotBoxes) if (!sl.items.empty()) { session_.select({st->blocks[(size_t)sl.items[0]].id}); return true; }
+        return false;
+    }
+    return false;
+}
+
 void BlockScene::keyPressEvent(QKeyEvent* e) {
+    if (mode_ == Mode::Idle && !(e->modifiers() & (Qt::ControlModifier | Qt::AltModifier | Qt::ShiftModifier))) {
+        int dx = 0, dy = 0;
+        if (e->key() == Qt::Key_Up) dy = -1; else if (e->key() == Qt::Key_Down) dy = 1; else if (e->key() == Qt::Key_Left) dx = -1; else if (e->key() == Qt::Key_Right) dx = 1;
+        if ((dx || dy) && navigate(dx, dy)) {
+            if (!session_.selection().empty()) { const QRectF r = blockRect(*session_.selection().begin()); for (QGraphicsView* v : views()) v->ensureVisible(r, 30, 30); }
+            e->accept();
+            return;
+        }
+        if (e->key() == Qt::Key_Return || e->key() == Qt::Key_Enter || e->key() == Qt::Key_F2) {         // type into the first part of the selected block
+            if (session_.selection().size() == 1) {
+                const std::string id = *session_.selection().begin();
+                for (const EditTarget& t : editTargets()) if (t.blockId == id && !t.flag) { fieldEdit.fire(t); e->accept(); return; }
+            }
+        }
+    }
     if (e->key() == Qt::Key_Escape && (mode_ == Mode::DragPayload || mode_ == Mode::MoveStacks)) { cancelDrag(); e->accept(); return; }
     QGraphicsScene::keyPressEvent(e);
 }

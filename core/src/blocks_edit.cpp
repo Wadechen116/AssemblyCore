@@ -615,10 +615,40 @@ Outcome Editor::setField(const std::string& id, const std::string& name, const s
             }
         }
         b->set(name, value);
+        if (d) for (const InputDef& in : d->inputs) if (in.name == name) { explodeBlock(*b, doc_, reg_); break; }       // typed text that can be read as components becomes components
         touched.insert(sec);
         out.ids.push_back(id);
         return true;
     });
+}
+
+Outcome Editor::setPart(const std::string& id, const std::string& name, const std::string& text) {
+    // a field (or a socket with a text mirror): the text is the field's value; any other socket takes the component its text stands for
+    {
+        const Block* b = doc_.find(id);
+        const BlockDef* d = b ? reg_.find(b->type) : nullptr;
+        bool isField = false;
+        if (d) for (const FieldDef& f : d->fields) if (f.name == name) isField = true;
+        if (!d || isField) return setField(id, name, text);
+        const InputDef* in = nullptr;
+        for (const InputDef& i : d->inputs) if (i.name == name) in = &i;
+        if (!in) return fail("'" + b->type + "' has nothing called '" + name + "'");
+        if (trim(text).empty()) {                                              // an empty text takes the component out and leaves a hole
+            return run(*this, doc_, reg_, opt_, history_, "Edit field", "field:" + id + ":" + name, false, [&](Work& work, std::set<size_t>& touched, Outcome& out) {
+                size_t sec = 0;
+                Block* host = findAnyIn(work, id, &sec);
+                if (!host) { out.error = "the block " + id + " does not exist"; return false; }
+                host->clearValue(name);
+                if (in->derive.compare(0, 4, "arg:") == 0) host->set(in->derive.substr(4), partText(*host, *d, in->derive.substr(4), reg_));
+                touched.insert(sec);
+                out.ids.push_back(id);
+                return true;
+            });
+        }
+        Block child;
+        if (!componentFromText(doc_, reg_, *in, text, child)) return fail("'" + trim(text) + "' cannot be read as what '" + (in->label.empty() ? name : in->label) + "' takes");
+        return plugValue(id, name, child);
+    }
 }
 
 Outcome Editor::setComment(const std::string& id, const std::string& comment) {
@@ -796,6 +826,7 @@ void topMost(const std::vector<Block>& list, const std::set<std::string>& want, 
     for (const Block& b : list) {
         if (want.count(b.id)) { out.push_back(&b); continue; }              // its children come with it
         for (const auto& st : b.stacks) topMost(st.second, want, out);
+        for (const auto& vl : b.values) topMost(vl.second, want, out);       // a component can be copied too
     }
 }
 
@@ -855,8 +886,15 @@ std::string blocksToText(const Document& doc, const std::vector<std::string>& id
     for (const Section& s : doc.sections) topMost(s.blocks, want, picked);
     Document tmp;
     tmp.sections.push_back(Section());
-    for (const Block* b : picked) tmp.sections[0].blocks.push_back(*b);
-    return generate(tmp).text;
+    std::string text;
+    for (const Block* b : picked) {
+        const BlockDef* d = Registry::defaults().find(b->type);
+        if (d && !d->valueType.empty()) { text += valueText(*b) + "\n"; continue; }              // a component is written as the expression it stands for
+        tmp.sections[0].blocks.clear();
+        tmp.sections[0].blocks.push_back(*b);
+        text += generate(tmp).text;
+    }
+    return text;
 }
 
 std::vector<Block> blocksFromText(Document& doc, const std::string& text, bool* anyRaw) {

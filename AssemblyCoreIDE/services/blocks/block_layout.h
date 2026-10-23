@@ -125,6 +125,7 @@ struct HeaderBox {
     enum Kind { None, Hat, Tag } kind = None;
     Rect rect;
     std::string text, domain;
+    int order = 0;                                // a hat of the program: 1, 2, 3 ... the order the text is written in (0: not part of the program)
     std::string comment;                          // a hat carries the comment after .main / .peri
     std::vector<std::string> commentLines;
     Rect commentRect, tailRect;

@@ -23,6 +23,16 @@
         <source>Double-click to write or edit the comment at the end of this block</source>
         <translation>在積木尾端雙擊，可寫入或編輯結尾註解</translation>
     </message>
+    <message>
+        <source>Part %1 of the program: the parts are written top to bottom (and left to right at the same height)
+Drag it to change the order; double-click the end of it to write a comment</source>
+        <translation>程式的第 %1 部分：各部分由上而下（同高度時由左而右）依序寫出
+拖曳它可改變順序；在它的尾端雙擊可寫註解</translation>
+    </message>
+    <message>
+        <source>A part of the program</source>
+        <translation>程式的一部分</translation>
+    </message>
 </context>
 <context>
     <name>BreakpointsPanel</name>
@@ -600,6 +610,80 @@
         <translation>
             <numerusform> · 已選取 %n 個</numerusform>
         </translation>
+    </message>
+    <message>
+        <source>Tidy</source>
+        <translation>整理</translation>
+    </message>
+    <message>
+        <source>Tidy up: give every stack a place so that nothing overlaps (the program does not change)</source>
+        <translation>整理排版：讓每一疊積木各有位置、互不重疊（程式本身不變）</translation>
+    </message>
+    <message numerus="yes">
+        <source>Copied %n block(s)</source>
+        <translation>
+            <numerusform>已複製 %n 個積木</numerusform>
+        </translation>
+    </message>
+    <message>
+        <source>Nothing to paste</source>
+        <translation>沒有可貼上的內容</translation>
+    </message>
+    <message>
+        <source>Edit...</source>
+        <translation>編輯...</translation>
+    </message>
+    <message>
+        <source>Add a comment...</source>
+        <translation>加上註解...</translation>
+    </message>
+    <message>
+        <source>Edit the comment...</source>
+        <translation>編輯註解...</translation>
+    </message>
+    <message>
+        <source>Cu&amp;t</source>
+        <translation>剪下(&amp;T)</translation>
+    </message>
+    <message>
+        <source>&amp;Copy</source>
+        <translation>複製(&amp;C)</translation>
+    </message>
+    <message>
+        <source>&amp;Paste</source>
+        <translation>貼上(&amp;P)</translation>
+    </message>
+    <message>
+        <source>&amp;Duplicate</source>
+        <translation>複製一份(&amp;D)</translation>
+    </message>
+    <message>
+        <source>&amp;Enable</source>
+        <translation>啟用(&amp;E)</translation>
+    </message>
+    <message>
+        <source>Disa&amp;ble</source>
+        <translation>停用(&amp;B)</translation>
+    </message>
+    <message>
+        <source>&amp;Fold / unfold</source>
+        <translation>折疊／展開(&amp;F)</translation>
+    </message>
+    <message>
+        <source>&amp;Delete</source>
+        <translation>刪除(&amp;D)</translation>
+    </message>
+    <message>
+        <source>Select &amp;all</source>
+        <translation>全選(&amp;A)</translation>
+    </message>
+    <message>
+        <source>&amp;Tidy up</source>
+        <translation>整理排版(&amp;T)</translation>
+    </message>
+    <message>
+        <source>Show everything</source>
+        <translation>顯示全部</translation>
     </message>
 </context>
 <context>

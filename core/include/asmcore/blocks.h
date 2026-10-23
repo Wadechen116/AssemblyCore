@@ -205,6 +205,9 @@ std::string valueText(const Block& v, const Registry& reg = Registry::defaults()
 // Returns how many component blocks were made. A damaged / older file never fails: its text is what counts.
 int explodeBlock(Block& b, Document& doc, const Registry& reg = Registry::defaults());
 int explodeDocument(Document& doc, const Registry& reg = Registry::defaults(), const SymbolTable* extra = nullptr);   // extra: symbols from outside (the hardware description)
+// The component that the text of a socket stands for (a number, an expression, a region range, a CSR reference ...), if the text can be read completely and gives
+// back the same text. False otherwise (the text then stays text).
+bool componentFromText(Document& doc, const Registry& reg, const InputDef& in, const std::string& text, Block& out, const SymbolTable* extra = nullptr);
 // A name that is now known (e.g. a CSR of the hardware description) becomes a reference of its kind where a socket takes that kind. Returns how many.
 int retypeReferences(Document& doc, const Registry& reg, const SymbolTable& table);
 // Brings the components in line with the text mirrors after a file was read: a component whose text differs from its mirror is dropped

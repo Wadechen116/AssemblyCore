@@ -40,6 +40,16 @@ public:
     // Deletes the selected blocks: an instruction (with what it holds) is removed from its stack; a component is taken out of its socket and thrown away,
     // which leaves a hole. One undo step. Returns how many were deleted.
     size_t deleteSelection();
+    // ---- the clipboard. A copy is the blocks as JSON (to paste back as blocks) and as assembler text (to paste into a text editor).
+    struct Clip { std::string blocks, text; };
+    Clip copySelection() const;
+    size_t cutSelection(Clip& out);                                       // copy, then delete
+    // Pastes blocks (a copy of ours, or assembler text). Instructions go under the selected instruction; a lone component goes into an empty socket of the
+    // selected block that takes it; otherwise (or with nothing selected) they lie on the canvas at (x, y). The pasted blocks are selected. Returns how many; `note` says what was kept as text.
+    size_t paste(const std::string& text, double x, double y, std::string& note);
+    size_t duplicateSelection();                                          // each selected instruction twice, the copy right after it; a component: a copy beside it
+    size_t toggleDisabled();                                              // the selection is switched off, or on if everything in it was off
+    size_t toggleCollapsed();                                             // containers in the selection fold / unfold
     bool undo();
     bool redo();
     std::string undoLabel() const { return history_.undoLabel(); }

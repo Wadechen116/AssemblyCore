@@ -669,6 +669,33 @@ bool sameText(const std::string& a, const std::string& b) { return squeeze(a) ==
 }  // namespace
 
 namespace {
+bool isNameText(const std::string& t);
+// The component a socket's text stands for, if the text is read completely and gives back the very same text (nothing is lost).
+bool buildComponent(Document& doc, const Registry& reg, const SymbolTable& table, const InputDef& in, const std::string& text, Block& child) {
+    // a name that the definitions define as a CSR / service / device becomes a reference of that kind
+    std::string refKind;
+    for (const std::string& a : in.accepts) if (a == "csr" || a == "service" || a == "dev") refKind = a;
+    if (!refKind.empty() && isNameText(text) && table.find(text, refKind)) {
+        child = doc.make((refKind == "csr" ? "csr_ref" : refKind == "service" ? "service_ref" : "dev_ref"));
+        child.set("name", text);
+        return true;
+    }
+    bool wantsRegion = false;
+    for (const std::string& a : in.accepts) wantsRegion = wantsRegion || isRegionType(a);
+    bool ok = false;
+    if (takesConstant(in)) ok = parseConstOperand(doc, reg, text, child) || parseRegionOperand(doc, reg, text, child);    // a source: a region, CONST(...), or an int expression (a constant)
+    else if (wantsRegion) ok = parseRegionOperand(doc, reg, text, child);
+    else ok = parseWholeExpr(doc, reg, text, child);
+    if (!ok) return false;
+    const BlockDef* cd = reg.find(child.type);
+    bool fits = false;
+    for (const std::string& a : in.accepts) if (cd && a == cd->valueType) fits = true;
+    if (!fits) return false;
+    return sameText(valueText(child, reg, &in), text);                           // only where the blocks give back the very same text
+}
+}  // namespace
+
+namespace {
 bool isNameText(const std::string& t) {
     if (t.empty() || !(std::isalpha((unsigned char)t[0]) || t[0] == '_')) return false;
     for (char c : t) if (!std::isalnum((unsigned char)c) && c != '_') return false;
@@ -676,6 +703,13 @@ bool isNameText(const std::string& t) {
 }
 int explodeWith(Block& b, Document& doc, const Registry& reg, const SymbolTable& table);
 }  // namespace
+
+bool componentFromText(Document& doc, const Registry& reg, const InputDef& in, const std::string& text, Block& out, const SymbolTable* extra) {
+    SymbolTable table;
+    table.addDocument(doc);
+    if (extra) table.addTable(*extra);
+    return buildComponent(doc, reg, table, in, trim(text), out);
+}
 
 int explodeBlock(Block& b, Document& doc, const Registry& reg) {
     SymbolTable table;
@@ -745,35 +779,8 @@ int explodeWith(Block& b, Document& doc, const Registry& reg, const SymbolTable&
             }
             const std::string text = trim(b.get(in.name));
             if (text.empty()) continue;
-            // a name that the definitions define as a CSR / service / device becomes a reference of that kind
-            {
-                std::string refKind;
-                for (const std::string& a : in.accepts) if (a == "csr" || a == "service" || a == "dev") refKind = a;
-                if (!refKind.empty() && isNameText(text) && table.find(text, refKind)) {
-                    Block ref = doc.make((refKind == "csr" ? "csr_ref" : refKind == "service" ? "service_ref" : "dev_ref"));
-                    ref.set("name", text);
-                    made += 1;
-                    b.setValue(in.name, ref);
-                    continue;
-                }
-            }
-            bool wantsRegion = false;
-            for (const std::string& a : in.accepts) wantsRegion = wantsRegion || isRegionType(a);
             Block child;
-            bool ok = false;
-            if (takesConstant(in)) {                                                   // a source: a region, CONST(...), or an int expression (a constant)
-                ok = parseConstOperand(doc, reg, text, child) || parseRegionOperand(doc, reg, text, child);
-            } else if (wantsRegion) {
-                ok = parseRegionOperand(doc, reg, text, child);
-            } else {
-                ok = parseWholeExpr(doc, reg, text, child);
-            }
-            if (!ok) continue;
-            const BlockDef* cd = reg.find(child.type);
-            bool fits = false;
-            for (const std::string& a : in.accepts) if (cd && a == cd->valueType) fits = true;
-            if (!fits) continue;
-            if (!sameText(valueText(child, reg, &in), text)) continue;               // only where the blocks give back the very same text
+            if (!buildComponent(doc, reg, table, in, text, child)) continue;
             made += countBlocks(child);
             b.setValue(in.name, child);
         }
