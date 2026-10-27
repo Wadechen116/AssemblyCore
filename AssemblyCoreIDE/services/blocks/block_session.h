@@ -47,6 +47,11 @@ public:
     // Pastes blocks (a copy of ours, or assembler text). Instructions go under the selected instruction; a lone component goes into an empty socket of the
     // selected block that takes it; otherwise (or with nothing selected) they lie on the canvas at (x, y). The pasted blocks are selected. Returns how many; `note` says what was kept as text.
     size_t paste(const std::string& text, double x, double y, std::string& note);
+    // Puts fresh blocks (from the toolbox, from Typeblock, from a paste) where they belong: instructions under the selected instruction, a lone component into an empty
+    // socket of the selected block that takes it, otherwise a floating stack at (x, y). The new blocks are selected. Returns how many ids were placed; one undo step.
+    size_t place(std::vector<asmcore::blocks::Block> blocks, double x, double y);
+    // Makes blocks that belong to this document (their ids come from it): `make` is given the document to take ids from and must only create blocks.
+    std::vector<asmcore::blocks::Block> fresh(const std::function<std::vector<asmcore::blocks::Block>(asmcore::blocks::Document&)>& make) { return make(doc_); }
     size_t duplicateSelection();                                          // each selected instruction twice, the copy right after it; a component: a copy beside it
     size_t toggleDisabled();                                              // the selection is switched off, or on if everything in it was off
     size_t toggleCollapsed();                                             // containers in the selection fold / unfold

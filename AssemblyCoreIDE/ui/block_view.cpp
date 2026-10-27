@@ -1,7 +1,12 @@
 #include "block_view.h"
 
 #include <QGraphicsItem>
+#include <QDragEnterEvent>
+#include <QDragLeaveEvent>
+#include <QDragMoveEvent>
+#include <QDropEvent>
 #include <QKeyEvent>
+#include <QMimeData>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QScrollBar>
@@ -20,6 +25,38 @@ BlockView::BlockView(QGraphicsScene* scene, QWidget* parent) : QGraphicsView(sce
     setDragMode(NoDrag);
     setFocusPolicy(Qt::StrongFocus);
     setMouseTracking(true);
+    setAcceptDrops(true);
+    viewport()->setAcceptDrops(true);
+}
+
+void BlockView::dragEnterEvent(QDragEnterEvent* e) {
+    if (!e->mimeData()->hasFormat(kSampleMime)) { e->ignore(); return; }
+    dragEntry_ = QString::fromUtf8(e->mimeData()->data(kSampleMime));
+    e->setDropAction(Qt::CopyAction);
+    e->accept();
+    emit paletteDrag(dragEntry_, mapToScene(e->position().toPoint()), viewport()->mapToGlobal(e->position().toPoint()), 0);
+}
+
+void BlockView::dragMoveEvent(QDragMoveEvent* e) {
+    if (dragEntry_.isEmpty()) { e->ignore(); return; }
+    e->setDropAction(Qt::CopyAction);
+    e->accept();
+    emit paletteDrag(dragEntry_, mapToScene(e->position().toPoint()), viewport()->mapToGlobal(e->position().toPoint()), 1);
+}
+
+void BlockView::dragLeaveEvent(QDragLeaveEvent* e) {
+    if (!dragEntry_.isEmpty()) emit paletteDrag(dragEntry_, QPointF(), QPoint(), 3);
+    dragEntry_.clear();
+    e->accept();
+}
+
+void BlockView::dropEvent(QDropEvent* e) {
+    if (dragEntry_.isEmpty()) { e->ignore(); return; }
+    e->setDropAction(Qt::CopyAction);
+    e->accept();
+    const QString id = dragEntry_;
+    dragEntry_.clear();
+    emit paletteDrag(id, mapToScene(e->position().toPoint()), viewport()->mapToGlobal(e->position().toPoint()), 2);
 }
 
 void BlockView::setTheme(const blocks::BlockTheme& t) {

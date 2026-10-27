@@ -502,6 +502,7 @@ void BlockScene::endPayloadDrag(bool drop) {
     QPointF where;
     for (QGraphicsItem* it : items()) if (auto* si = dynamic_cast<StackItem*>(it)) if (si->index() == payload) where = si->pos();
     tiltActive_ = false;
+    palette_ = false;
     std::string poppedId;
     if (payload < layout_.stacks.size() && !layout_.stacks[payload].top.empty()) poppedId = layout_.stacks[payload].blocks[(size_t)layout_.stacks[payload].top[0]].id;
     double hostBefore = 0;
@@ -527,8 +528,36 @@ void BlockScene::endPayloadDrag(bool drop) {
     rebuild();
 }
 
+bool BlockScene::beginPaletteDrag(std::vector<asmcore::blocks::Block> blocks, const QPointF& scenePos) {
+    if (mode_ != Mode::Idle || blocks.empty()) return false;
+    session_.beginGroup("palette:" + std::to_string(++dragSerial_));
+    const asmcore::blocks::Outcome o = session_.apply([&](asmcore::blocks::Editor& ed) { return ed.newFloating(std::move(blocks), scenePos.x(), scenePos.y()); });
+    if (!o.ok || o.section >= layout_.stacks.size() || layout_.stacks[o.section].top.empty()) { session_.endGroup(); return false; }
+    payload_ = o.section;
+    lifted_ = true;
+    palette_ = true;
+    grab_ = QPointF(16, 12);                                              // the pointer holds it by its top left corner area
+    mode_ = Mode::DragPayload;
+    const std::string first = layout_.stacks[payload_].blocks[(size_t)layout_.stacks[payload_].top[0]].id;
+    session_.select({first});
+    popEffect(first);
+    return true;
+}
+
+void BlockScene::updatePaletteDrag(const QPointF& scenePos, const QPoint& screenPos) {
+    if (palette_ && mode_ == Mode::DragPayload) updatePayloadPreview(scenePos, screenPos);
+}
+
+void BlockScene::endPaletteDrag(bool drop) {
+    if (!palette_ || mode_ != Mode::DragPayload) return;
+    if (drop) endPayloadDrag(true);
+    else cancelDrag();
+    palette_ = false;
+}
+
 void BlockScene::cancelDrag() {
     if (mode_ == Mode::DragPayload) {
+        palette_ = false;
         dropTarget_ = blocks::DropTarget();
         QToolTip::hideText();
         session_.endGroup();
@@ -705,6 +734,13 @@ bool BlockScene::navigate(int dx, int dy) {
 }
 
 void BlockScene::keyPressEvent(QKeyEvent* e) {
+    // a printable key on the canvas: Typeblock
+    if (mode_ == Mode::Idle && !(e->modifiers() & (Qt::ControlModifier | Qt::AltModifier | Qt::MetaModifier)) && !e->text().isEmpty() && e->text()[0].isPrint() && !e->text()[0].isSpace() &&
+        e->key() != Qt::Key_Delete && e->key() != Qt::Key_Escape) {
+        typeRequested.fire(e->text().toUtf8().toStdString());
+        e->accept();
+        return;
+    }
     if (mode_ == Mode::Idle && !(e->modifiers() & (Qt::ControlModifier | Qt::AltModifier | Qt::ShiftModifier))) {
         int dx = 0, dy = 0;
         if (e->key() == Qt::Key_Up) dy = -1; else if (e->key() == Qt::Key_Down) dy = 1; else if (e->key() == Qt::Key_Left) dx = -1; else if (e->key() == Qt::Key_Right) dx = 1;

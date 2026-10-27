@@ -1343,6 +1343,228 @@ private slots:
         (void)num2;
     }
 
+    // ---- the toolbox and Typeblock
+    static void dragSample(DragRig& r, const char* entry, const QPointF& to, bool drop = true, bool leave = false) {
+        auto* mime = new QMimeData;
+        mime->setData(acide::BlockView::kSampleMime, entry);
+        const QPoint p = r.at(to);
+        QDragEnterEvent enter(p, Qt::CopyAction, mime, Qt::LeftButton, Qt::NoModifier);
+        QApplication::sendEvent(r.v().viewport(), &enter);
+        QDragMoveEvent move(p, Qt::CopyAction, mime, Qt::LeftButton, Qt::NoModifier);
+        QApplication::sendEvent(r.v().viewport(), &move);
+        if (leave) { QDragLeaveEvent lv; QApplication::sendEvent(r.v().viewport(), &lv); }
+        else if (drop) { QDropEvent dr(QPointF(p), Qt::CopyAction, mime, Qt::LeftButton, Qt::NoModifier); QApplication::sendEvent(r.v().viewport(), &dr); }
+        delete mime;
+    }
+
+    void theBlocksSpeakTheChosenLanguage() {
+        struct English { ~English() { acide::installLanguage("en"); } } reset;
+        QVERIFY(acide::installLanguage("zh_TW"));
+        DragRig r(".main\nstart: MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]\n JMP start\n");
+        QStringList drawers;
+        for (int i = 0; i < r.ed->toolbox().tree()->topLevelItemCount(); i++) drawers << r.ed->toolbox().tree()->topLevelItem(i)->text(0);
+        QVERIFY2(drawers.contains(QString::fromUtf8("資料")) && drawers.contains(QString::fromUtf8("範式")) && drawers.contains(QString::fromUtf8("數值")), qPrintable(drawers.join(",")));
+        const auto* st = r.sc().layout().stackOf(r.ed->session().document().sections[0].blocks[1].id);
+        const auto* mov = st->find(r.ed->session().document().sections[0].blocks[1].id);
+        QCOMPARE(QString::fromStdString(mov->title), QString::fromUtf8("搬移"));
+        QCOMPARE(QString::fromStdString(mov->sockets[0].label), QString::fromUtf8("來源"));
+        // a search by the English name still works, and the samples show the Chinese titles
+        r.ed->toolbox().setFilter("move");
+        bool seen = false;
+        for (int i = 0; i < r.ed->toolbox().tree()->topLevelItemCount(); i++) for (int k = 0; k < r.ed->toolbox().tree()->topLevelItem(i)->childCount(); k++) {
+            auto* it = r.ed->toolbox().tree()->topLevelItem(i)->child(k);
+            if (!it->isHidden() && it->text(0).startsWith(QString::fromUtf8("搬移"))) seen = true;
+        }
+        QVERIFY(seen);
+    }
+
+    void theToolboxListsTheDrawersAndSearches() {
+        DragRig r(".main\nstart: MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]\n");
+        auto& tb = r.ed->toolbox();
+        auto* tree = tb.tree();
+        QStringList drawers;
+        for (int i = 0; i < tree->topLevelItemCount(); i++) drawers << tree->topLevelItem(i)->text(0);
+        QVERIFY2(drawers.contains("Patterns") && drawers.contains("Data") && drawers.contains("CSR") && drawers.contains("Structure") && drawers.contains("Values") && drawers.contains("Regions") && drawers.contains("References"), qPrintable(drawers.join(",")));
+        QVERIFY(drawers.indexOf("Data") < drawers.indexOf("Values"));
+        QVERIFY(tb.visibleSamples() >= 40);
+        // the drawers are coloured, and an instruction drawer is not the colour of a component drawer
+        QTreeWidgetItem* data = nullptr;
+        QTreeWidgetItem* values = nullptr;
+        for (int i = 0; i < tree->topLevelItemCount(); i++) { if (tree->topLevelItem(i)->text(0) == "Data") data = tree->topLevelItem(i); if (tree->topLevelItem(i)->text(0) == "Values") values = tree->topLevelItem(i); }
+        QVERIFY(data && values && data->background(0).color() != values->background(0).color());
+        QVERIFY(data->child(0)->data(0, Qt::UserRole).toString().startsWith("type:"));
+        r.ed->resize(1000, 640);
+        QApplication::processEvents();
+        r.ed->grab().save(outDir() + "/blocks_toolbox.png");
+        // search
+        const int all = tb.visibleSamples();
+        tb.setFilter("mov");
+        QVERIFY(tb.visibleSamples() >= 1 && tb.visibleSamples() < all / 3);
+        bool hasMove = false;
+        for (int i = 0; i < tree->topLevelItemCount(); i++) for (int k = 0; k < tree->topLevelItem(i)->childCount(); k++) if (!tree->topLevelItem(i)->child(k)->isHidden() && tree->topLevelItem(i)->child(k)->text(0).startsWith("move")) hasMove = true;
+        QVERIFY(hasMove);
+        tb.setFilter("zzzzqq");
+        QCOMPARE(tb.visibleSamples(), 0);
+        tb.setFilter("");
+        QCOMPARE(tb.visibleSamples(), all);
+        // the toggle hides it
+        auto* toggle = r.ed->findChild<QToolButton*>("toolboxToggle");
+        QVERIFY(toggle && toggle->isChecked() && tb.isVisible());
+        toggle->click();
+        QVERIFY(!tb.isVisible());
+        toggle->click();
+        QVERIFY(tb.isVisible());
+    }
+
+    void aSampleIsInsertedAfterTheSelectionOnActivation() {
+        DragRig r(".main\nstart: MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]\n JMP start\n");
+        auto& s = r.ed->session();
+        r.sc().setAnimationsEnabled(false);
+        const std::string mov = s.document().sections[0].blocks[1].id;
+        s.select({mov});
+        emit r.ed->toolbox().activated("type:alu");
+        QCOMPARE((int)s.document().sections[0].blocks.size(), 4);
+        QCOMPARE(s.document().sections[0].blocks[2].type, std::string("alu"));
+        QVERIFY(s.isSelected(s.document().sections[0].blocks[2].id));
+        QVERIFY(s.generated().text.find("ALU ADD unsigned") != std::string::npos);
+        // a pattern is several blocks at once
+        emit r.ed->toolbox().activated("pattern:add_two");
+        QVERIFY((int)s.document().sections[0].blocks.size() >= 4 + 6);
+        // with nothing selected a sample lies on the canvas; one undo takes it away
+        s.clearSelection();
+        const size_t before = s.document().sections.size();
+        emit r.ed->toolbox().activated("type:num");
+        QCOMPARE(s.document().sections.size(), before + 1);
+        QCOMPARE(s.document().sections.back().domain, std::string("floating"));
+        QVERIFY(s.undo());
+        QCOMPARE(s.document().sections.size(), before);
+    }
+
+    void aSampleDraggedFromTheToolboxIsDroppedLikeAnyBlock() {
+        DragRig r(".main\nstart: MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]\n JMP start\n");
+        auto& s = r.ed->session();
+        r.sc().setAnimationsEnabled(false);
+        const std::string mov = s.document().sections[0].blocks[1].id;
+        const std::string text = s.generated().text;
+        // a number over a hole
+        s.apply([&](asmcore::blocks::Editor& ed) { return ed.unplugValue(mov, "src", 500, 300); });
+        s.apply([&](asmcore::blocks::Editor& ed) { return ed.removeSection(1); });
+        QVERIFY(s.generated().text.find("(incomplete)") != std::string::npos);
+        const QPointF hole = r.socketPoint(mov, "src");
+        dragSample(r, "type:num", hole + QPointF(16, -3), false);
+        QVERIFY(r.sc().paletteDragging());
+        QVERIFY2(r.sc().dropTarget().kind == acide::blocks::DropTarget::Socket && r.sc().dropTarget().fits(),
+                 qPrintable(QString("kind %1 fit %2 reason %3 hole %4,%5 payload %6 stacks %7").arg((int)r.sc().dropTarget().kind).arg((int)r.sc().dropTarget().fit).arg(QString::fromStdString(r.sc().dropTarget().reason)).arg(hole.x()).arg(hole.y()).arg((int)r.sc().payload()).arg((int)r.sc().layout().stacks.size())));
+        dragSample(r, "type:num", hole + QPointF(16, -3), true);                                // (a second enter is the same drag: dropped)
+        QVERIFY(!r.sc().dragging());
+        QVERIFY(s.document().sections[0].blocks[1].value("src") && s.document().sections[0].blocks[1].value("src")->type == "num");
+        QVERIFY(s.generated().text.find("MOV CONST(0, 2)") != std::string::npos || s.generated().text.find("MOV CONST(0)") != std::string::npos);
+        // an instruction under another one
+        const auto& lay = r.sc().layout();
+        QPointF under;
+        for (const auto& cp : lay.stacks[0].points) if (cp.kind == acide::blocks::ConnectionPoint::Next && cp.blockId == mov) under = QPointF(lay.stacks[0].origin.x + cp.pos.x, lay.stacks[0].origin.y + cp.pos.y);
+        dragSample(r, "type:alu", under + QPointF(16, 12));
+        QCOMPARE((int)s.document().sections[0].blocks.size(), 4);
+        QCOMPARE(s.document().sections[0].blocks[2].type, std::string("alu"));
+        QVERIFY(s.undo());
+        QCOMPARE((int)s.document().sections[0].blocks.size(), 3);
+        // an instruction in empty space stays on the canvas, floating
+        dragSample(r, "type:jmp", QPointF(700, 400));
+        QCOMPARE(s.document().sections.back().domain, std::string("floating"));
+        QCOMPARE(s.document().sections.back().blocks[0].type, std::string("jmp"));
+        QVERIFY(s.undo());
+        // leaving the canvas without dropping takes it back
+        const size_t n = s.document().sections.size();
+        dragSample(r, "type:jmp", QPointF(700, 400), false, true);
+        QVERIFY(!r.sc().dragging());
+        QCOMPARE(s.document().sections.size(), n);
+        (void)text;
+    }
+
+    void typeblockMakesBlocksFromTypedNamesAndLines() {
+        DragRig r(".main\nstart: MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]\n JMP start\n");
+        auto& s = r.ed->session();
+        r.sc().setAnimationsEnabled(false);
+        r.v().setFocus();
+        auto& tb = r.ed->typeblock();
+        const std::string mov = s.document().sections[0].blocks[1].id;
+        s.select({mov});
+        // a letter typed on the canvas opens it with that letter
+        QTest::keyClick(&r.v(), Qt::Key_M, Qt::NoModifier, 0);
+        QVERIFY(tb.isOpen());
+        QCOMPARE(tb.edit()->text(), QString("m"));
+        QTest::keyClicks(tb.edit(), "ov");
+        QVERIFY(tb.resultCount() >= 1);
+        QVERIFY2(tb.list()->item(0)->text().startsWith("move"), qPrintable(tb.list()->item(0)->text()));
+        QTest::keyClick(tb.edit(), Qt::Key_Escape);
+        QVERIFY(!tb.isOpen());
+        QCOMPARE((int)s.document().sections[0].blocks.size(), 3);                                // Esc adds nothing
+        // a name
+        r.ed->openTypeblock();
+        QVERIFY(tb.isOpen());
+        QTest::keyClicks(tb.edit(), "jump");
+        QTest::keyClick(tb.edit(), Qt::Key_Return);
+        QVERIFY(!tb.isOpen());
+        QCOMPARE((int)s.document().sections[0].blocks.size(), 4);
+        QCOMPARE(s.document().sections[0].blocks[2].type, std::string("jmp"));
+        // a line of assembler: it is offered first, and becomes the block with its components
+        r.ed->openTypeblock();
+        QTest::keyClicks(tb.edit(), "ALU SUB unsigned");
+        QVERIFY(tb.list()->item(0)->text().startsWith("Insert as assembler"));
+        QTest::keyClick(tb.edit(), Qt::Key_Return);
+        QCOMPARE(s.document().sections[0].blocks[3].type, std::string("alu"));
+        QVERIFY(s.generated().text.find("ALU SUB unsigned") != std::string::npos);
+        // Down chooses another entry
+        r.ed->openTypeblock();
+        QTest::keyClicks(tb.edit(), "csr");
+        QVERIFY(tb.resultCount() >= 2);
+        QTest::keyClick(tb.edit(), Qt::Key_Down);
+        QCOMPARE(tb.list()->currentRow(), 1);
+        QTest::keyClick(tb.edit(), Qt::Key_Escape);
+        // Ctrl+Space opens it too
+        QTest::keyClick(&r.v(), Qt::Key_Space, Qt::ControlModifier);
+        QVERIFY(tb.isOpen());
+        QTest::keyClick(tb.edit(), Qt::Key_Escape);
+        // text that is not understood stays text
+        r.ed->openTypeblock();
+        QTest::keyClicks(tb.edit(), "frobnicate the thing");
+        QTest::keyClick(tb.edit(), Qt::Key_Return);
+        QVERIFY(s.generated().text.find("frobnicate the thing") != std::string::npos);
+    }
+
+    void aWholeProgramCanBeTypedWithTheKeyboardOnly() {
+        DragRig r(".main\n");
+        auto& s = r.ed->session();
+        r.sc().setAnimationsEnabled(false);
+        r.v().setFocus();
+        auto& tb = r.ed->typeblock();
+        const std::vector<std::string> lines = {
+            "start:", "EXEC_CSR WRITE8 0x120, 0x01", "EXEC_CSR SET8 0x120, 0x10", "EXEC_CSR CLR8 0x120, 0x01",
+            "MOV CONST(0, 2) -> MAIN_SCRATCHPAD[0..1]", "MOV CONST(1, 2) -> MAIN_SCRATCHPAD[2..3]", "MOV CONST(5, 2) -> MAIN_SCRATCHPAD[4..5]",
+            "loop:", "MOV MAIN_SCRATCHPAD[0..1] -> ALU_OPA", "MOV MAIN_SCRATCHPAD[2..3] -> ALU_OPB", "ALU ADD unsigned", "MOV ALU_OUT[0..1] -> MAIN_SCRATCHPAD[0..1]",
+            "MOV MAIN_SCRATCHPAD[0..1] -> ALU_OPA", "MOV MAIN_SCRATCHPAD[4..5] -> ALU_OPB", "ALU CMP.EQ unsigned", "BR.COND ALU_CMP_TRUE, finish", "JMP loop",
+            "finish:", "EXEC_CSR WRITE_SP 0x121, len=2, ptr=0", "done:", "JMP done"};
+        for (const std::string& line : lines) {
+            r.ed->openTypeblock();
+            QVERIFY2(tb.isOpen(), line.c_str());
+            QTest::keyClicks(tb.edit(), QString::fromStdString(line));
+            QTest::keyClick(tb.edit(), Qt::Key_Return);
+        }
+        std::string expected = ".main\n";
+        for (const std::string& l : lines) expected += (l.back() == ':' ? "" : "    ") + l + "\n";
+        QCOMPARE(QString::fromStdString(s.generated().text), QString::fromStdString(expected));
+        QCOMPARE((int)s.document().sections.size(), 1);                                    // all in the Main part: nothing floats
+        // and it is a program: it assembles
+        asmcore::Options opt;
+        const asmcore::Result res = asmcore::assemble({asmcore::Source{"p.asm", s.generated().text}}, nullptr, opt);
+        QVERIFY2(res.ok, qPrintable(QString::fromStdString(res.diagnosticsText())));
+        // the blocks are components, not text
+        int raw = 0;
+        for (const auto& b : s.document().sections[0].blocks) raw += b.type == "raw";
+        QCOMPARE(raw, 0);
+        QVERIFY(s.document().sections[0].blocks[4].value("src") && s.document().sections[0].blocks[4].value("dst"));
+    }
+
     void arrowKeysMoveTheSelectionAndEnterEdits() {
         DragRig r(".main\nstart: MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]\n ALU ADD unsigned\n.proc f\n RET\n.endp\n");
         auto& s = r.ed->session();

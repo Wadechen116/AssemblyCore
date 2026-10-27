@@ -35,6 +35,450 @@ Drag it to change the order; double-click the end of it to write a comment</sour
     </message>
 </context>
 <context>
+    <name>BlockDrawer</name>
+    <message>
+        <source>CSR</source>
+        <translation>CSR</translation>
+    </message>
+    <message>
+        <source>Control</source>
+        <translation>控制</translation>
+    </message>
+    <message>
+        <source>Data</source>
+        <translation>資料</translation>
+    </message>
+    <message>
+        <source>Definitions</source>
+        <translation>定義</translation>
+    </message>
+    <message>
+        <source>Math</source>
+        <translation>運算</translation>
+    </message>
+    <message>
+        <source>Options</source>
+        <translation>選項</translation>
+    </message>
+    <message>
+        <source>Peripheral</source>
+        <translation>周邊</translation>
+    </message>
+    <message>
+        <source>References</source>
+        <translation>參照</translation>
+    </message>
+    <message>
+        <source>Regions</source>
+        <translation>區域</translation>
+    </message>
+    <message>
+        <source>Structure</source>
+        <translation>結構</translation>
+    </message>
+    <message>
+        <source>Text</source>
+        <translation>文字</translation>
+    </message>
+    <message>
+        <source>Values</source>
+        <translation>數值</translation>
+    </message>
+    <message>
+        <source>Patterns</source>
+        <translation>範式</translation>
+    </message>
+</context>
+<context>
+    <name>BlockField</name>
+    <message>
+        <source>address</source>
+        <translation>位址</translation>
+    </message>
+    <message>
+        <source>address bytes</source>
+        <translation>位址位元組數</translation>
+    </message>
+    <message>
+        <source>arguments</source>
+        <translation>引數</translation>
+    </message>
+    <message>
+        <source>as</source>
+        <translation>模式</translation>
+    </message>
+    <message>
+        <source>as written</source>
+        <translation>寫法</translation>
+    </message>
+    <message>
+        <source>bits</source>
+        <translation>位元</translation>
+    </message>
+    <message>
+        <source>block</source>
+        <translation>區塊</translation>
+    </message>
+    <message>
+        <source>buffer byte</source>
+        <translation>緩衝位元組</translation>
+    </message>
+    <message>
+        <source>by</source>
+        <translation>位移</translation>
+    </message>
+    <message>
+        <source>bytes</source>
+        <translation>位元組數</translation>
+    </message>
+    <message>
+        <source>condition</source>
+        <translation>條件</translation>
+    </message>
+    <message>
+        <source>constant</source>
+        <translation>常數</translation>
+    </message>
+    <message>
+        <source>data</source>
+        <translation>資料</translation>
+    </message>
+    <message>
+        <source>details</source>
+        <translation>細節</translation>
+    </message>
+    <message>
+        <source>device</source>
+        <translation>裝置</translation>
+    </message>
+    <message>
+        <source>direction</source>
+        <translation>方向</translation>
+    </message>
+    <message>
+        <source>directive</source>
+        <translation>指示字</translation>
+    </message>
+    <message>
+        <source>event</source>
+        <translation>事件</translation>
+    </message>
+    <message>
+        <source>event checkpoint</source>
+        <translation>事件檢查點</translation>
+    </message>
+    <message>
+        <source>external address</source>
+        <translation>外部位址</translation>
+    </message>
+    <message>
+        <source>first block</source>
+        <translation>第一個區塊</translation>
+    </message>
+    <message>
+        <source>from</source>
+        <translation>來源</translation>
+    </message>
+    <message>
+        <source>from RX byte</source>
+        <translation>RX 位元組起點</translation>
+    </message>
+    <message>
+        <source>handler</source>
+        <translation>處理程序</translation>
+    </message>
+    <message>
+        <source>into</source>
+        <translation>寫入</translation>
+    </message>
+    <message>
+        <source>kind</source>
+        <translation>種類</translation>
+    </message>
+    <message>
+        <source>mask</source>
+        <translation>遮罩</translation>
+    </message>
+    <message>
+        <source>name</source>
+        <translation>名稱</translation>
+    </message>
+    <message>
+        <source>operation</source>
+        <translation>運算</translation>
+    </message>
+    <message>
+        <source>procedure</source>
+        <translation>程序</translation>
+    </message>
+    <message>
+        <source>range</source>
+        <translation>範圍</translation>
+    </message>
+    <message>
+        <source>register</source>
+        <translation>暫存器</translation>
+    </message>
+    <message>
+        <source>run blocks up to</source>
+        <translation>執行到區塊</translation>
+    </message>
+    <message>
+        <source>scratchpad byte</source>
+        <translation>暫存區位元組</translation>
+    </message>
+    <message>
+        <source>service</source>
+        <translation>服務</translation>
+    </message>
+    <message>
+        <source>sign</source>
+        <translation>正負</translation>
+    </message>
+    <message>
+        <source>text</source>
+        <translation>文字</translation>
+    </message>
+    <message>
+        <source>then go to</source>
+        <translation>然後跳到</translation>
+    </message>
+    <message>
+        <source>to</source>
+        <translation>目的</translation>
+    </message>
+    <message>
+        <source>value</source>
+        <translation>值</translation>
+    </message>
+</context>
+<context>
+    <name>BlockPattern</name>
+    <message>
+        <source>Load a constant into the ALU</source>
+        <translation>把常數載入 ALU</translation>
+    </message>
+    <message>
+        <source>Put a number in the scratchpad, then in ALU A</source>
+        <translation>先放進暫存區，再搬到 ALU A</translation>
+    </message>
+    <message>
+        <source>Add two numbers</source>
+        <translation>兩數相加</translation>
+    </message>
+    <message>
+        <source>Load both numbers, add them, keep the result</source>
+        <translation>載入兩個數字、相加、留住結果</translation>
+    </message>
+    <message>
+        <source>Write a CSR from a constant</source>
+        <translation>用常數寫入 CSR</translation>
+    </message>
+    <message>
+        <source>Put a byte in the scratchpad, write it to a CSR</source>
+        <translation>把一個位元組放進暫存區，寫入 CSR</translation>
+    </message>
+    <message>
+        <source>Wait until the ALU says yes</source>
+        <translation>等到 ALU 回答成立</translation>
+    </message>
+    <message>
+        <source>Compare, branch out when it holds, otherwise try again</source>
+        <translation>比較；成立就跳出，否則再試</translation>
+    </message>
+    <message>
+        <source>Read a device and publish</source>
+        <translation>讀取裝置並發佈</translation>
+    </message>
+    <message>
+        <source>Read one byte over I2C, publish it for Main</source>
+        <translation>透過 I2C 讀一個位元組，發佈給 Main</translation>
+    </message>
+</context>
+<context>
+    <name>BlockTitle</name>
+    <message>
+        <source>ALU A</source>
+        <translation>ALU A</translation>
+    </message>
+    <message>
+        <source>ALU B</source>
+        <translation>ALU B</translation>
+    </message>
+    <message>
+        <source>ALU out</source>
+        <translation>ALU 輸出</translation>
+    </message>
+    <message>
+        <source>ALU status</source>
+        <translation>ALU 狀態</translation>
+    </message>
+    <message>
+        <source>CSR</source>
+        <translation>CSR</translation>
+    </message>
+    <message>
+        <source>CSR buffer</source>
+        <translation>CSR 緩衝區</translation>
+    </message>
+    <message>
+        <source>I2C transfer</source>
+        <translation>I2C 傳輸</translation>
+    </message>
+    <message>
+        <source>RX buffer</source>
+        <translation>RX 緩衝區</translation>
+    </message>
+    <message>
+        <source>WCET query</source>
+        <translation>WCET 查詢</translation>
+    </message>
+    <message>
+        <source>assembler text</source>
+        <translation>組譯器文字</translation>
+    </message>
+    <message>
+        <source>assume defined</source>
+        <translation>假設已定義</translation>
+    </message>
+    <message>
+        <source>bit</source>
+        <translation>位元</translation>
+    </message>
+    <message>
+        <source>blank line</source>
+        <translation>空行</translation>
+    </message>
+    <message>
+        <source>branch if</source>
+        <translation>若成立則跳轉</translation>
+    </message>
+    <message>
+        <source>calculate</source>
+        <translation>計算</translation>
+    </message>
+    <message>
+        <source>call</source>
+        <translation>呼叫</translation>
+    </message>
+    <message>
+        <source>cascade begin</source>
+        <translation>cascade 開始</translation>
+    </message>
+    <message>
+        <source>cascade end</source>
+        <translation>cascade 結束</translation>
+    </message>
+    <message>
+        <source>clear CSR bits</source>
+        <translation>清除 CSR 位元</translation>
+    </message>
+    <message>
+        <source>comment</source>
+        <translation>註解</translation>
+    </message>
+    <message>
+        <source>condition</source>
+        <translation>條件</translation>
+    </message>
+    <message>
+        <source>const pool</source>
+        <translation>常數池</translation>
+    </message>
+    <message>
+        <source>device</source>
+        <translation>裝置</translation>
+    </message>
+    <message>
+        <source>directive</source>
+        <translation>指示字</translation>
+    </message>
+    <message>
+        <source>event vector</source>
+        <translation>事件向量</translation>
+    </message>
+    <message>
+        <source>jump</source>
+        <translation>跳躍</translation>
+    </message>
+    <message>
+        <source>label</source>
+        <translation>標籤</translation>
+    </message>
+    <message>
+        <source>move</source>
+        <translation>搬移</translation>
+    </message>
+    <message>
+        <source>name</source>
+        <translation>名稱</translation>
+    </message>
+    <message>
+        <source>number</source>
+        <translation>數字</translation>
+    </message>
+    <message>
+        <source>operation</source>
+        <translation>運算</translation>
+    </message>
+    <message>
+        <source>procedure</source>
+        <translation>程序</translation>
+    </message>
+    <message>
+        <source>publish result</source>
+        <translation>發佈結果</translation>
+    </message>
+    <message>
+        <source>read CSR byte</source>
+        <translation>讀取 CSR 位元組</translation>
+    </message>
+    <message>
+        <source>read CSR bytes</source>
+        <translation>讀取多個 CSR 位元組</translation>
+    </message>
+    <message>
+        <source>result info</source>
+        <translation>結果資訊</translation>
+    </message>
+    <message>
+        <source>result slot</source>
+        <translation>結果槽</translation>
+    </message>
+    <message>
+        <source>return</source>
+        <translation>返回</translation>
+    </message>
+    <message>
+        <source>return from event</source>
+        <translation>從事件返回</translation>
+    </message>
+    <message>
+        <source>scratchpad</source>
+        <translation>暫存區</translation>
+    </message>
+    <message>
+        <source>service</source>
+        <translation>服務</translation>
+    </message>
+    <message>
+        <source>set CSR bits</source>
+        <translation>設定 CSR 位元</translation>
+    </message>
+    <message>
+        <source>sign</source>
+        <translation>正負</translation>
+    </message>
+    <message>
+        <source>write CSR</source>
+        <translation>寫入 CSR</translation>
+    </message>
+    <message>
+        <source>write CSR from scratchpad</source>
+        <translation>由暫存區寫入 CSR</translation>
+    </message>
+</context>
+<context>
     <name>BreakpointsPanel</name>
     <message>
         <source>On</source>
@@ -684,6 +1128,25 @@ Drag it to change the order; double-click the end of it to write a comment</sour
     <message>
         <source>Show everything</source>
         <translation>顯示全部</translation>
+    </message>
+    <message>
+        <source>Toolbox</source>
+        <translation>工具箱</translation>
+    </message>
+    <message>
+        <source>Show or hide the toolbox (the blocks to drag onto the canvas)</source>
+        <translation>顯示或隱藏工具箱（可拖到畫布上的積木）</translation>
+    </message>
+    <message>
+        <source>Not understood as an instruction: kept as assembler text</source>
+        <translation>無法辨識為指令：保留為組譯器文字</translation>
+    </message>
+</context>
+<context>
+    <name>acide::BlockToolbox</name>
+    <message>
+        <source>Search the blocks...</source>
+        <translation>搜尋積木...</translation>
     </message>
 </context>
 <context>
@@ -1785,6 +2248,17 @@ An IDE for the Sensor Micro-Sequencer ISA, built on the AssemblyCore assembler.<
     <message>
         <source>Created %1 from %2: %3 blocks, %4 lines kept as text</source>
         <translation>已由 %2 建立 %1：%3 個積木，%4 行保留為文字</translation>
+    </message>
+</context>
+<context>
+    <name>acide::TypeBlockBox</name>
+    <message>
+        <source>Type a block name or a line of assembler, Enter to add it</source>
+        <translation>輸入積木名稱或一行組譯器，按 Enter 加入</translation>
+    </message>
+    <message>
+        <source>Insert as assembler:  %1</source>
+        <translation>以組譯器插入：%1</translation>
     </message>
 </context>
 </TS>

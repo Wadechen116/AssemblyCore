@@ -104,6 +104,14 @@ public:
     const blocks::DropTarget& dropTarget() const { return dropTarget_; }
     void cancelDrag();                                                   // Esc: put everything back
 
+    // ---- a block taken from the toolbox: it lies on the canvas as a floating stack that follows the pointer; it is dropped like any other (plugged into a hole, put under an
+    // instruction ...) or stays where it is let go. Cancelling takes it back.
+    bool paletteDragging() const { return palette_; }
+    bool beginPaletteDrag(std::vector<asmcore::blocks::Block> blocks, const QPointF& scenePos);
+    void updatePaletteDrag(const QPointF& scenePos, const QPoint& screenPos);
+    void endPaletteDrag(bool drop);
+    Signal<const std::string&> typeRequested;                            // a printable key was typed on the canvas (Typeblock opens with it)
+
     // ---- the keyboard: arrows move the selection (Up / Down: the previous / next instruction of its stack, Left: out to what holds it, Right: into what it holds)
     bool navigate(int dx, int dy);
 
@@ -203,7 +211,8 @@ private:
     std::set<size_t> movingStacks_;                                     // the stacks a MoveStacks drag moves
     QPointF grab_;                                                      // where inside the dragged block the pointer holds it
     unsigned dragSerial_ = 0;
-    bool lifted_ = false;                                               // the drag changed the document (lifted something out)
+    bool lifted_ = false;
+    bool palette_ = false;                                               // the drag changed the document (lifted something out)
     blocks::DropTarget dropTarget_;
     QGraphicsItem* marker_ = nullptr;
     bool animate_ = true;

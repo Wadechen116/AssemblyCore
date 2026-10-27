@@ -11,12 +11,16 @@
 #include "block_scene.h"
 #include "block_view.h"
 #include "blocks/block_session.h"
+#include "block_toolbox.h"
+#include "blocks/block_catalog.h"
 #include "comment_edit.h"
+#include "typeblock_box.h"
 #include "field_editor.h"
 #include "document_tab.h"
 #include "generated_code_pane.h"
 
 class QLabel;
+class QSplitter;
 class QRadioButton;
 class QStackedWidget;
 class QToolButton;
@@ -53,6 +57,13 @@ public:
     GeneratedCodePane& codePane() { return *code_; }
     CommentEdit& commentEdit() { return *commentEdit_; }
     FieldEditor& fieldEditor() { return *fieldEditor_; }
+    BlockToolbox& toolbox() { return *toolbox_; }
+    TypeBlockBox& typeblock() { return *typeblock_; }
+    const blocks::BlockCatalog& catalog() const { return catalog_; }
+    // Puts a block of the toolbox (or a typed line of assembler) on the canvas: after the selected block when it fits, else on the canvas in the middle of the view.
+    size_t insertEntry(const QString& entryId);
+    size_t insertAssembler(const QString& text);
+    void openTypeblock(const QString& initial = QString());
     QString errorText() const;                       // why the file could not be shown ("" if fine)
     QString infoText() const;                        // the summary line
     void selectBlock(const std::string& id, bool reveal = true);
@@ -91,6 +102,12 @@ private:
     GeneratedCodePane* code_ = nullptr;
     CommentEdit* commentEdit_ = nullptr;
     FieldEditor* fieldEditor_ = nullptr;
+    BlockToolbox* toolbox_ = nullptr;
+    TypeBlockBox* typeblock_ = nullptr;
+    QSplitter* blocksPage_ = nullptr;
+    blocks::BlockCatalog catalog_;
+    std::vector<asmcore::blocks::Block> paletteBlocks_;
+    QString paletteEntry_;
     BlockScene::EditTarget fieldEditing_;
     unsigned editSerial_ = 0;
     std::shared_ptr<IBlockClipboard> clipboard_;

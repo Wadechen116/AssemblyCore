@@ -462,7 +462,7 @@ void checkBlock(const Block& b, const std::string& domain, bool inProc, bool asV
     const BlockDef* d = reg.find(b.type);
     if (!d) { err("unknown block type '" + b.type + "'"); return; }
     if (asValue && d->valueType.empty()) err("'" + d->title + "' is a statement; it cannot be plugged into a value socket");
-    if (!asValue && !d->valueType.empty()) err("'" + d->title + "' is a value; it must be plugged into a socket, not stand in a stack");
+    if (!asValue && !d->valueType.empty() && domain != "floating") err("'" + d->title + "' is a value; it must be plugged into a socket, not stand in a stack");
     const bool floating = domain == "floating";
     if (!floating && !asValue) {
         if (domain.empty() && (d->category == "Data" || d->category == "Math" || d->category == "CSR" || d->category == "Control" || d->category == "Peripheral"))

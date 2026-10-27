@@ -16,6 +16,7 @@ set(ACIDE_SERVICE_SOURCES
   ${CMAKE_CURRENT_LIST_DIR}/services/blocks/block_session.cpp
   ${CMAKE_CURRENT_LIST_DIR}/services/blocks/block_drop.cpp
   ${CMAKE_CURRENT_LIST_DIR}/services/blocks/block_tidy.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/services/blocks/block_catalog.cpp
 )
 
 set(ACIDE_UI_SOURCES
@@ -39,4 +40,7 @@ set(ACIDE_UI_SOURCES
   ${CMAKE_CURRENT_LIST_DIR}/ui/block_editor.cpp
   ${CMAKE_CURRENT_LIST_DIR}/ui/comment_edit.cpp
   ${CMAKE_CURRENT_LIST_DIR}/ui/field_editor.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/ui/block_toolbox.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/ui/block_texts.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/ui/typeblock_box.cpp
 )

@@ -11,6 +11,8 @@
 
 #include "asmcore/blocks.h"
 #include "asmcore/blocks_edit.h"
+#include "asmcore/asmcore.h"
+#include "blocks/block_catalog.h"
 #include "blocks/block_drop.h"
 #include "blocks/block_layout.h"
 #include "blocks/block_session.h"
@@ -628,6 +630,94 @@ static bool anyOverlap(const DocumentLayout& lay) {
     return false;
 }
 
+static void t_catalog() {
+    section("the catalog: drawers, samples, patterns, search");
+    BlockCatalog cat;
+    const Registry& reg = Registry::defaults();
+    // every definition is offered (except a blank line and raw text), and every entry can be made
+    std::set<std::string> offered;
+    for (const CatalogEntry& e : cat.entries()) if (!e.pattern()) offered.insert(e.type);
+    bool all = true;
+    std::string missing;
+    for (const BlockDef& d : reg.all()) if (d.type != "blank" && d.type != "raw" && !offered.count(d.type)) { all = false; missing += d.type + " "; }
+    check(all, "every block definition is in the toolbox (a new definition needs a sample text, or this test says so)", missing);
+    // the drawers
+    const std::vector<BlockCatalog::Drawer> drawers = cat.drawers();
+    check(!drawers.empty() && drawers[0].name == "Patterns" && drawers[0].cls == "pattern", "the first drawer holds the patterns");
+    std::set<const CatalogEntry*> inDrawers;
+    size_t count = 0;
+    for (const auto& d : drawers) for (const CatalogEntry* e : d.entries) { inDrawers.insert(e); count++; }
+    check(count == cat.entries().size() && inDrawers.size() == count, "every entry is in exactly one drawer");
+    std::string order;
+    for (const auto& d : drawers) order += d.name + " ";
+    check(order.find("Data") < order.find("Structure") && order.find("Structure") < order.find("Values") && order.find("Values") < order.find("References"), "instructions first, then structure, definitions, text, then the components", order);
+    bool pure = true;
+    for (const auto& d : drawers) for (const CatalogEntry* e : d.entries) pure = pure && e->cls == d.cls;
+    check(pure, "a drawer holds one class only (instructions and components are never mixed)");
+    // every entry can be made, and makes sense where it belongs
+    int made = 0, structuralErrors = 0, raws = 0;
+    std::string firstBad;
+    for (const CatalogEntry& e : cat.entries()) {
+        Document doc;
+        std::vector<Block> blocks = cat.instantiate(e, doc);
+        if (blocks.empty()) { firstBad = e.id + " makes nothing"; continue; }
+        made++;
+        Section s;
+        s.domain = e.component() ? "floating" : (e.domains == kPeri ? "peri" : e.cls == "definition" ? "" : "main");
+        s.blocks = blocks;
+        doc.sections.push_back(s);
+        for (const BlockProblem& p : validate(doc)) if (p.kind == "structure" && p.error) { structuralErrors++; if (firstBad.empty()) firstBad = e.id + ": " + p.message; }
+        std::function<void(const std::vector<Block>&)> walk = [&](const std::vector<Block>& v) { for (const Block& b : v) { if (b.type == "raw" && e.type != "raw") raws++; for (auto& st : b.stacks) walk(st.second); } };
+        walk(blocks);
+    }
+    check(made == (int)cat.entries().size() && structuralErrors == 0 && raws == 0, "every entry makes blocks with no structural error and nothing left as raw text", firstBad);
+    // components are built with their parts
+    Document d;
+    std::vector<Block> reg1 = cat.instantiate(*cat.find("type:region_main_scratchpad"), d), bin = cat.instantiate(*cat.find("type:expr_bin"), d), mov = cat.instantiate(*cat.find("type:mov"), d);
+    check(reg1[0].value("first") && reg1[0].value("last") && bin[0].value("a") && bin[0].value("b") && mov[0].value("src") && mov[0].value("dst"), "a region, an expression and a move come with their parts (numbers, regions) in place");
+    check(generate(Document()).text.empty() && !mov[0].get("src").empty(), "(and the text mirror is filled)");
+    // patterns
+    int patterns = 0, patternErrors = 0;
+    std::string patBad;
+    for (const CatalogEntry& e : cat.entries()) {
+        if (!e.pattern()) continue;
+        patterns++;
+        Document pd;
+        std::vector<Block> bl = cat.instantiate(e, pd);
+        if (bl.size() < 2) patBad += e.id + " is one block; ";
+        std::string text = (e.domains == kPeri ? ".devmap 0, I2C, 0x50\n.peri\n" : ".main\n");
+        for (const std::string& line : {e.text}) text += line + "\n";
+        text += e.domains == kPeri ? "end: JMP end\n" : "fin: JMP fin\n";
+        std::vector<asmcore::Source> src{asmcore::Source{"p.asm", text}};
+        asmcore::Options opt;
+        asmcore::Result r = asmcore::assemble(src, nullptr, opt);
+        bool errors = !r.ok;
+        if (errors) { patternErrors++; patBad += e.id + ": " + r.diagnosticsText().substr(0, 120) + "; "; }
+    }
+    check(patterns >= 5 && patternErrors == 0 && patBad.empty(), "every pattern is several blocks and assembles", patBad);
+    // search
+    auto titles = [&](const std::string& q, size_t n = 12) { std::string s; for (const CatalogEntry* e : cat.search(q, n)) s += e->title + "|"; return s; };
+    auto firstOf = [&](const std::string& q) { auto r = cat.search(q, 3); return r.empty() ? std::string() : r[0]->title; };
+    check(firstOf("mov") == "move" && firstOf("move") == "move", "'mov' and 'move' find the move block first", titles("mov"));
+    check(firstOf("jump") == "jump" && firstOf("ALU") == "calculate", "'jump'; the mnemonic 'ALU' finds the calculate block", titles("alu"));
+    check(titles("exec_csr").find("write CSR") != std::string::npos && titles("exec_csr").find("read CSR") != std::string::npos, "the mnemonic EXEC_CSR finds the CSR instructions", titles("exec_csr"));
+    check(titles("csr").find("write CSR") != std::string::npos, "'csr' finds the CSR blocks", titles("csr"));
+    check(!cat.search("mv").empty() && firstOf("mv") == "move", "the letters in order find a block ('mv' -> move)", titles("mv"));
+    check(cat.search("").empty() && cat.search("   ").empty() && cat.search("zzzzqq").empty(), "an empty query or one that matches nothing: nothing");
+    check(cat.search("c", 3).size() == 3 && cat.search("c", 1).size() == 1, "the limit");
+    check(firstOf("scratch") == "scratchpad", "components are found by name too ('scratch' -> scratchpad)", titles("scratch"));
+    check(titles("WAIT").find("Wait until") != std::string::npos, "patterns are found (case does not matter)", titles("WAIT"));
+    // typed assembler
+    check(cat.looksLikeAssembler("MOV CONST(1,2) -> MAIN_SCRATCHPAD[0..1]") && cat.looksLikeAssembler("start:") && cat.looksLikeAssembler(".equ X = 1") && cat.looksLikeAssembler("exec_csr write8 5, 1"), "a line of assembler is recognised (mnemonic, label, directive; any case)");
+    check(!cat.looksLikeAssembler("move") && !cat.looksLikeAssembler("csr") && !cat.looksLikeAssembler("scratch") && !cat.looksLikeAssembler(""), "a name to search for is not");
+    Document d2;
+    bool raw = true;
+    std::vector<Block> typed = cat.fromAssembler(d2, "MOV CONST(1,2) -> MAIN_SCRATCHPAD[0..1]", &raw);
+    check(typed.size() == 1 && typed[0].type == "mov" && typed[0].value("src") && !raw, "a typed line becomes the block (with its components)");
+    typed = cat.fromAssembler(d2, "frobnicate the thing", &raw);
+    check(typed.size() == 1 && typed[0].type == "raw" && raw, "a line that is not understood stays text, and says so");
+}
+
 static void t_tidy() {
     section("tidy up: nothing overlaps, the program stays what it was");
     FakeMetrics m;
@@ -918,6 +1008,7 @@ int main() {
     t_layout_text();
     t_layout_values();
     t_drop();
+    t_catalog();
     t_tidy();
     t_clipboard();
     t_session();

@@ -143,6 +143,11 @@ size_t BlockSession::cutSelection(Clip& out) {
 size_t BlockSession::paste(const std::string& text, double x, double y, std::string& note) {
     std::vector<Block> blocks;
     if (!pasteBlocks(doc_, text, blocks, note)) return 0;
+    return place(blocks, x, y);
+}
+
+size_t BlockSession::place(std::vector<Block> blocks, double x, double y) {
+    if (blocks.empty()) return 0;
     const BlockDef* first = reg_.find(blocks[0].type);
     const bool component = first && !first->valueType.empty();
     std::vector<std::string> ids;
@@ -173,6 +178,19 @@ size_t BlockSession::paste(const std::string& text, double x, double y, std::str
             if (!d || !d->valueType.empty()) continue;
             const size_t key = loc.section * 100000 + loc.index;
             if (!lastSel || key >= lastKey) { lastSel = doc_.find(sid); lastKey = key; }
+        }
+        if (!lastSel) {
+            // nothing selected: an EMPTY part of the program is clearly where to type (a new file starts with an empty .main)
+            for (size_t i = doc_.sections.size(); i-- > 0;) {
+                const Section& sec = doc_.sections[i];
+                if (!sec.blocks.empty() || (sec.domain != "main" && sec.domain != "peri")) continue;
+                const int need = first ? first->domains : kBoth;
+                if (!(need & (sec.domain == "main" ? kMain : kPeri))) continue;
+                Where w;
+                w.section = i;
+                o = apply([&](Editor& e) { return e.insertBlocks(w, blocks, false); });
+                if (o.ok) { ids = o.ids; break; }
+            }
         }
         if (lastSel) {
             const Location loc = locate(doc_, lastSel->id);

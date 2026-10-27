@@ -12,6 +12,7 @@
 #include <QStackedWidget>
 #include <QToolButton>
 #include <QToolTip>
+#include <QSplitter>
 #include <QMenu>
 #include <QMimeData>
 #include <QClipboard>
@@ -30,7 +31,7 @@ static blocks::BlockTheme blockThemeFor(const Settings& s, const Theme& t) {
     return BlockTheme::fromSettings(s, dark);
 }
 
-BlockEditor::BlockEditor(AppContext& ctx, const std::string& path, QWidget* parent) : QWidget(parent), ctx_(ctx), path_(path) {
+BlockEditor::BlockEditor(AppContext& ctx, const std::string& path, QWidget* parent) : QWidget(parent), ctx_(ctx), path_(path), catalog_(session_.registry()) {
     setObjectName("BlockEditor");
     const Theme theme = Theme::fromSettings(ctx.settings);
     QFont mono = editorFont(ctx.settings);
@@ -83,6 +84,14 @@ BlockEditor::BlockEditor(AppContext& ctx, const std::string& path, QWidget* pare
     QToolButton* zin = button("+", tr("Zoom in (Ctrl++)"), "zoomIn");
     QToolButton* z100 = button("1:1", tr("Actual size (Ctrl+0)"), "zoomReset");
     QToolButton* zfit = button(tr("Fit"), tr("Show the whole program"), "zoomFit");
+    QToolButton* toolboxBtn = new QToolButton(bar);
+    toolboxBtn->setText(tr("Toolbox"));
+    toolboxBtn->setToolTip(tr("Show or hide the toolbox (the blocks to drag onto the canvas)"));
+    toolboxBtn->setObjectName("toolboxToggle");
+    toolboxBtn->setCheckable(true);
+    toolboxBtn->setChecked(ctx.settings.get("blocks.toolbox", "1") != "0");
+    toolboxBtn->setAutoRaise(true);
+    bl->insertWidget(2, toolboxBtn);
     QToolButton* ztidy = button(tr("Tidy"), tr("Tidy up: give every stack a place so that nothing overlaps (the program does not change)"), "tidy");
     bl->addWidget(zoomBar_);
     root->addWidget(bar);
@@ -108,7 +117,18 @@ BlockEditor::BlockEditor(AppContext& ctx, const std::string& path, QWidget* pare
     fieldEditor_ = new FieldEditor(this);                  // (like the comment editor: a child of the editor, so the view's shortcuts do not take its keys)
     commentEdit_ = new CommentEdit(this);                  // a child of the editor, not of the view: the view's Esc / Delete shortcuts must not reach it
     code_ = new GeneratedCodePane(ctx.language, theme, mono, this);
-    pages_->addWidget(view_);
+    // the blocks page: the toolbox on the left, the canvas
+    blocksPage_ = new QSplitter(Qt::Horizontal, this);
+    blocksPage_->setObjectName("blocksPage");
+    toolbox_ = new BlockToolbox(catalog_, scene_->theme(), blocksPage_);
+    blocksPage_->addWidget(toolbox_);
+    blocksPage_->addWidget(view_);
+    blocksPage_->setStretchFactor(0, 0);
+    blocksPage_->setStretchFactor(1, 1);
+    blocksPage_->setSizes({210, 700});
+    blocksPage_->setCollapsible(1, false);
+    typeblock_ = new TypeBlockBox(catalog_, this);
+    pages_->addWidget(blocksPage_);
     pages_->addWidget(code_);
     root->addWidget(pages_, 1);
 
@@ -131,6 +151,38 @@ BlockEditor::BlockEditor(AppContext& ctx, const std::string& path, QWidget* pare
     connect(z100, &QToolButton::clicked, view_, &BlockView::resetZoom);
     connect(zfit, &QToolButton::clicked, view_, &BlockView::fitAll);
     connect(ztidy, &QToolButton::clicked, this, [this] { tidy(); });
+    connect(toolboxBtn, &QToolButton::toggled, this, [this, &ctx](bool on) {
+        toolbox_->setVisible(on);
+        ctx.settings.set("blocks.toolbox", on ? "1" : "0");
+    });
+    toolbox_->setVisible(toolboxBtn->isChecked());
+    connect(toolbox_, &BlockToolbox::activated, this, [this](const QString& id) { insertEntry(id); });
+    // a sample dragged from the toolbox over the canvas
+    connect(view_, &BlockView::paletteDrag, this, [this](const QString& id, const QPointF& at, const QPoint& screen, int phase) {
+        if (phase == 0) {
+            const blocks::CatalogEntry* en = catalog_.find(id.toStdString());
+            if (!en) return;
+            paletteBlocks_ = session_.fresh([&](asmcore::blocks::Document& d) { return catalog_.instantiate(*en, d); });
+            paletteEntry_ = id;
+            scene_->beginPaletteDrag(paletteBlocks_, at);
+            scene_->updatePaletteDrag(at, screen);
+        } else if (phase == 1) {
+            scene_->updatePaletteDrag(at, screen);
+        } else if (phase == 2) {
+            scene_->updatePaletteDrag(at, screen);
+            scene_->endPaletteDrag(true);
+            paletteEntry_.clear();
+            view_->setFocus();
+        } else {
+            scene_->endPaletteDrag(false);
+            paletteEntry_.clear();
+        }
+    });
+    // Typeblock: type on the canvas (or Ctrl+Space) and a block appears
+    conns_->add(scene_->typeRequested, [this](const std::string& text) { openTypeblock(QString::fromUtf8(text.c_str())); });
+    connect(typeblock_, &TypeBlockBox::chosenEntry, this, [this](const QString& id) { insertEntry(id); });
+    connect(typeblock_, &TypeBlockBox::chosenAssembler, this, [this](const QString& text) { insertAssembler(text); });
+    connect(typeblock_, &TypeBlockBox::closed, this, [this] { view_->setFocus(); });
     connect(view_, &BlockView::zoomChanged, this, [this](double z) { zoomLabel_->setText(QString::number(qRound(z * 100)) + "%"); });
     connect(code_, &GeneratedCodePane::lineClicked, this, [this](int line) {
         if (syncing_) return;
@@ -142,6 +194,7 @@ BlockEditor::BlockEditor(AppContext& ctx, const std::string& path, QWidget* pare
 
     conns_->add(scene_->contextRequested, [this](const QPointF& p, const QPoint& g, const std::string& id) { showContextMenu(p, g, id); });
     shortcut(QKeySequence("Ctrl+E"), [this] { session_.toggleDisabled(); });
+    shortcut(QKeySequence("Ctrl+Space"), [this] { openTypeblock(); });
     conns_->add(scene_->fieldEdit, [this](const BlockScene::EditTarget& t) { beginFieldEdit(t); });
     connect(fieldEditor_, &FieldEditor::committed, this, [this](const QString& text, int navigate) {
         const BlockScene::EditTarget t = fieldEditing_;
@@ -213,7 +266,7 @@ QString BlockEditor::tabTitle() const { return tr("Blocks: %1").arg(QFileInfo(QS
 BlockEditor::Page BlockEditor::page() const { return pages_->currentWidget() == code_ ? Page::Code : Page::Blocks; }
 
 void BlockEditor::setPage(Page p) {
-    pages_->setCurrentWidget(p == Page::Code ? static_cast<QWidget*>(code_) : static_cast<QWidget*>(view_));
+    pages_->setCurrentWidget(p == Page::Code ? static_cast<QWidget*>(code_) : static_cast<QWidget*>(blocksPage_));
     blocksRadio_->setChecked(p == Page::Blocks);
     codeRadio_->setChecked(p == Page::Code);
     zoomBar_->setVisible(p == Page::Blocks);
@@ -278,6 +331,43 @@ public:
     }
 };
 }  // namespace
+
+void BlockEditor::openTypeblock(const QString& initial) {
+    if (fieldEditor_->isOpen() || commentEdit_->isOpen() || typeblock_->isOpen() || page() != Page::Blocks) return;
+    QRect r = view_->geometry();
+    r.moveTopLeft(blocksPage_->mapTo(this, r.topLeft()));
+    typeblock_->open(r, initial);
+}
+
+// the middle of what is shown: where a block lands when nothing says otherwise
+size_t BlockEditor::insertEntry(const QString& entryId) {
+    const blocks::CatalogEntry* en = catalog_.find(entryId.toStdString());
+    if (!en) return 0;
+    std::vector<asmcore::blocks::Block> blocks = session_.fresh([&](asmcore::blocks::Document& d) { return catalog_.instantiate(*en, d); });
+    const QPointF c = view_->mapToScene(view_->viewport()->rect().center());
+    const size_t n = session_.place(blocks, c.x() - 60, c.y() - 20);
+    if (n && !session_.selection().empty()) {
+        const std::string id = *session_.selection().begin();
+        scene_->popEffect(id);
+        view_->showBlock(scene_->blockRect(id));
+    }
+    return n;
+}
+
+size_t BlockEditor::insertAssembler(const QString& text) {
+    bool raw = false;
+    std::vector<asmcore::blocks::Block> blocks = session_.fresh([&](asmcore::blocks::Document& d) { return catalog_.fromAssembler(d, text.toUtf8().toStdString(), &raw); });
+    if (blocks.empty()) return 0;
+    const QPointF c = view_->mapToScene(view_->viewport()->rect().center());
+    const size_t n = session_.place(blocks, c.x() - 60, c.y() - 20);
+    if (raw) ctx_.status.fire(tr("Not understood as an instruction: kept as assembler text"));
+    if (n && !session_.selection().empty()) {
+        const std::string id = *session_.selection().begin();
+        scene_->popEffect(id);
+        view_->showBlock(scene_->blockRect(id));
+    }
+    return n;
+}
 
 void BlockEditor::copy() {
     if (session_.selection().empty()) return;
