@@ -244,6 +244,7 @@ void addComponentDefs(Registry& r, const lang::Language& L) {
     socket("csr_read_buf", "csr", csrOrInt);
     socket("csr_read_buf", "window", {regionType("MAIN_CSR_DATA_BUF")}, "range:ptr,len");
     socket("br_cond", "cond", {"cond.main"});
+    for (const char* t : {"if", "while", "wait"}) socket(t, "cond", {"cond.main"});
     socket("br_cond", "target", {"label.flow"});
     socket("jmp", "target", {"label.flow"});
     socket("br_peri", "cond", {"cond.peri"});

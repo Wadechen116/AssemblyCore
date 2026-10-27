@@ -171,6 +171,26 @@ const Registry& Registry::defaults() {
             cond.open = true;
             def("br_cond", "branch if", "Control", kMain, {cond, F("target", "to"), flagSafe}, "BR.COND {cond}, {target}{?safe:, safe}", "7");
         }
+        {
+            // Structured control flow. BR.COND jumps only when its condition holds, so each lowers to labels + BR.COND + JMP (see Gen::structured). The condition reads
+            // what came right before it (an ALU compare for ALU_CMP_TRUE), the way a hand-written branch does.
+            auto structure = [&](const char* type, const char* title, std::vector<std::string> slots, const char* help, const char* condLabel = "condition") {
+                BlockDef s;
+                s.type = type; s.title = title; s.category = "Control"; s.domains = kMain;
+                FieldDef cnd = F("cond", condLabel, FieldKind::Choice);
+                cnd.options = names(lang::Tok::Condition, lang::Dom::Main);
+                cnd.open = true;
+                cnd.def = "ALU_CMP_TRUE";                                                      // (the usual one: the ALU compare before it)
+                s.fields = {cnd};
+                s.stacks = std::move(slots);
+                s.structural = true;
+                s.help = help;
+                r.add(s);
+            };
+            structure("if", "if", {"THEN", "ELSE"}, "Runs THEN when the condition holds, ELSE when it does not. Put the ALU compare right before it.");
+            structure("while", "while", {"COND", "BODY"}, "Runs COND (the blocks that work out the condition, ending with the ALU compare) and then BODY, again and again while the condition holds.");
+            structure("wait", "wait until", {"COND"}, "Runs COND again and again until the condition holds (COND: the blocks that work it out; may be empty for a hardware condition).");
+        }
         def("jmp", "jump", "Control", kBoth, {F("target", "to"), flagSafe}, "JMP {target}{?safe:, safe}", "7");
         def("br_eret", "return from event", "Control", kBoth, {}, "BR.ERET", "16.5", "End an event handler: back to the interrupted flow.");
         {
@@ -338,6 +358,36 @@ struct Gen {
     int line = 0;
     int loopDepth = 0;
     std::string sp(int a, int z) { return "MAIN_SCRATCHPAD[" + std::to_string(a) + ".." + std::to_string(z) + "]"; }
+    // if / while / wait: labels + BR.COND (jumps when the condition holds) + JMP. A body is written as the blocks inside it.
+    void list(const std::vector<Block>* v) { if (v) for (const Block& x : *v) block(x); }
+    void structured(const Block& b) {
+        const std::string cond = trim(b.get("cond")), top = b.type + "_" + b.id;
+        if (b.disabled) { emit("; " + b.type + " " + cond + " (turned off)", b.id); return; }
+        const std::string br = "    BR.COND " + (cond.empty() ? std::string("ALWAYS") : cond) + ", ";
+        if (b.type == "if") {
+            emitWithComment(br + top + "_then", b.comment, b.id, 4);
+            list(b.stack("ELSE"));
+            emit("    JMP " + top + "_end", b.id);
+            emit(top + "_then:", b.id);
+            list(b.stack("THEN"));
+            emit(top + "_end:", b.id);
+        } else if (b.type == "while") {
+            emitWithComment(top + ":", b.comment, b.id, 0);
+            list(b.stack("COND"));
+            emit(br + top + "_body", b.id);
+            emit("    JMP " + top + "_end", b.id);
+            emit(top + "_body:", b.id);
+            list(b.stack("BODY"));
+            emit("    JMP " + top, b.id);
+            emit(top + "_end:", b.id);
+        } else {                                                                              // wait
+            emitWithComment(top + ":", b.comment, b.id, 0);
+            list(b.stack("COND"));
+            emit(br + top + "_end", b.id);
+            emit("    JMP " + top, b.id);
+            emit(top + "_end:", b.id);
+        }
+    }
     void loopBlock(const Block& b) {
         const bool forever = b.get("mode") == "forever";
         const std::string top = "loop_" + b.id, end = top + "_end";
@@ -390,6 +440,9 @@ struct Gen {
             indent = !stmt.empty() && stmt[0] == '.' ? 0 : 4;
         } else if (b.type == "loop") {
             loopBlock(b);
+            return;
+        } else if (b.type == "if" || b.type == "while" || b.type == "wait") {
+            structured(b);
             return;
         } else if (b.type == "proc") {
             emitWithComment(".proc " + b.get("name"), b.comment, b.id, 0);
@@ -475,7 +528,7 @@ void checkSequenceHints(const std::vector<Block>& v, const Registry& reg, std::v
     for (size_t i = 0; i < v.size(); i++) {
         const Block& b = v[i];
         if (b.disabled) continue;
-        if (b.type == "br_cond") {
+        if (b.type == "br_cond" || b.type == "if") {
             const std::string cond = upper(text(b, "cond"));
             if (cond == "ALU_CMP_TRUE" || cond == "ALU_OUT_OV16") {
                 size_t k = i;
@@ -591,6 +644,17 @@ void checkLoops(const std::vector<Block>& v, int depth, std::vector<int>& bases,
                 bases.push_back(c);
             }
         }
+        // while / wait: the condition is worked out by the blocks in COND: when it reads the ALU flag, the last of them should be the ALU operation
+        if ((b.type == "while" || b.type == "wait") && !b.disabled) {
+            const std::string cond = upper(trim(b.get("cond")));
+            if (cond == "ALU_CMP_TRUE" || cond == "ALU_OUT_OV16") {
+                const std::vector<Block>* cs = b.stack("COND");
+                const Block* last = nullptr;
+                if (cs) for (const Block& x : *cs) if (!x.disabled && x.type != "comment" && x.type != "blank") last = &x;
+                if (!last) out.push_back({false, b.id, "the condition reads the ALU flag, but nothing in COND works it out (W506)", "hint"});
+                else if (last->type != "alu") out.push_back({false, last->id, "the condition reads the ALU flag, but the last block in COND is not an ALU operation (W506)", "hint"});
+            }
+        }
         for (const auto& st : b.stacks) checkLoops(st.second, loop ? depth + 1 : depth, bases, out);
         if (counting && !bases.empty()) bases.pop_back();
     }
@@ -653,7 +717,7 @@ json::Value toJson(const Block& b, const Registry& reg) {
         v.set("parts", vs);
     }
     bool anyStack = false;
-    for (const auto& st : b.stacks) if (!st.second.empty() || b.type == "proc" || b.type == "loop") anyStack = true;
+    for (const auto& st : b.stacks) if (!st.second.empty() || b.type == "proc" || b.type == "loop" || b.type == "if" || b.type == "while" || b.type == "wait") anyStack = true;
     if (anyStack) {
         json::Value s = json::Value::makeObject();
         for (const auto& st : b.stacks) {

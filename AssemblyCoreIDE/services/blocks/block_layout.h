@@ -59,6 +59,7 @@ struct LayoutStyle {
     double chipPadX = 6, chipPadY = 2;           // inside a field chip
     double minRow = 28;
     double slotIndent = 16, slotPad = 4, emptySlot = 18, containerFoot = 12;
+    double slotLabel = 18;                       // the row that names a slot ("then", "else") in a block with more than one
     double hatHeight = 30, hatMinWidth = 110, hatPadX = 14;
     double tagHeight = 18;                       // the strip above a floating stack
     double minWidth = 56;
@@ -91,6 +92,8 @@ struct SocketBox {
 };
 struct SlotBox {
     std::string name;
+    std::string label;                            // "" for a block with one slot; else the name of the slot in lower case ("then")
+    Rect labelRect;                               // the row above the slot that carries the label
     Rect rect;                                    // where the stack inside lies (at least a minimum height, even when empty)
     std::vector<int> items;                       // top-level blocks of the slot, indexes into StackLayout::blocks
 };

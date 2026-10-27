@@ -177,6 +177,16 @@ asmblk blocks                              列出所有積木與欄位
 
 > 操作說明（快速鍵、疑難排解）：`docs/BLOCKS_EDITOR.md`；練習專案：`sample/13_block_editor`。
 
+### 結構化控制流（B4 第一批）
+
+Control 抽屜的三個容器積木（只在 Main）。`BR.COND` 只在條件成立時跳，所以都降階成「標籤＋`BR.COND`＋`JMP`」；條件讀的是它**前一個**積木留下的結果，和手寫分支一樣（`ALU_CMP_TRUE` 前面要有 ALU 比較，否則 W506 提示）。條件預設 `ALU_CMP_TRUE`，可改成任何 Main 條件。
+| 積木 | 槽 | 行為 |
+|---|---|---|
+| **if** | then／else | 條件成立跑 then，否則跑 else（else 可空） |
+| **while** | cond／body | 先跑 cond（把條件算出來，最後一個應是 ALU 運算），條件成立才跑 body，再回頭；一開始就不成立則 body 一次都不跑 |
+| **wait until** | cond | 反覆跑 cond，直到條件成立才往下（硬體條件如 `PERI_RESULT_VALID` 時 cond 可以空） |
+多個槽的積木每個槽上方有一條名稱帶（then／else、cond／body）。這幾個的行為都在模擬器裡驗證過（`if` 走對分支、`while` 次數含 0 次、`wait until` 到條件成立才停）。標籤名由積木編號產生（`if_b12_then`），巢狀沒有問題。
+
 ### 硬體抽屜（B2）
 
 專案有硬體描述（`.achw`）時，工具箱多出「Hardware CSR／Devices／Services／Data／Names」抽屜（見 `docs/BLOCKS_EDITOR.md` 第 4 節）：每個 CSR 自動有寫入／設位元／清位元／讀回，裝置有讀／寫，服務有發佈，常數有載入，`.equ` 名稱是元件。名稱已填好，描述一改抽屜即時更新（含未存檔的緩衝區）。`BlockCatalog::setHardware(hw)` 產生它們（核心不知道 Qt；測試用 `sample/11_hardware_designer/board.achw`，每個積木的一行都用描述產生的 `.inc` 組譯過）。

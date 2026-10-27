@@ -1,5 +1,6 @@
 #include "block_painter.h"
 
+#include <QCoreApplication>
 #include <QFontMetricsF>
 #include <QPen>
 
@@ -224,6 +225,12 @@ public:
         const QColor rowText = toQColor(c.theme.textOn(Rgba{(uint8_t)fill.red(), (uint8_t)fill.green(), (uint8_t)fill.blue(), 255}));
         paintRow(c, b, rowText);
         paintTailHint(c, b, st, rowText);
+        for (const SlotBox& sl : b.slotBoxes) {                              // the name of a slot (a block with several)
+            if (sl.label.empty()) continue;
+            QFont lf = c.ui;
+            lf.setItalic(true);
+            drawText(c, qr(sl.labelRect), QCoreApplication::translate("BlockSlot", sl.label.c_str()), lf, rowText);
+        }
         for (const SlotBox& sl : b.slotBoxes) {                              // an empty slot of a container is a black hole too: instructions can be dropped into it
             if (!sl.items.empty()) continue;
             c.p.setPen(QPen(toQColor(c.theme.holeBorder), 1));
@@ -315,6 +322,8 @@ QPainterPath BlockPainter::outline(const BlockBox& b) {
                 const double barW = b.slotBoxes[0].rect.x - b.rect.x;
                 p |= roundedRect(QRectF(r.left(), head.bottom() - kRadius, barW, r.bottom() - head.bottom() + kRadius), kRadius);
                 p |= roundedRect(QRectF(r.left(), b.slotBoxes.back().rect.y + b.slotBoxes.back().rect.h, r.width(), r.bottom() - (b.slotBoxes.back().rect.y + b.slotBoxes.back().rect.h)), kRadius);
+                for (const SlotBox& sl : b.slotBoxes)                                       // the row that names a slot ("else") is a band across the block
+                    if (!sl.label.empty()) p |= roundedRect(QRectF(r.left(), sl.labelRect.y, r.width(), sl.labelRect.h), kRadius - 2);
                 // the inner corners of the slotBoxes stay square: they are where the stacks inside connect
             }
             p -= notch(r);

@@ -136,6 +136,13 @@ const char* const* blockTextsForTranslation(int& count) {
         QT_TRANSLATE_NOOP("BlockHardware", "publish"),
         QT_TRANSLATE_NOOP("BlockHardware", "load"),
         QT_TRANSLATE_NOOP("BlockHardware", " (several bytes)"),
+        QT_TRANSLATE_NOOP("BlockTitle", "if"),
+        QT_TRANSLATE_NOOP("BlockTitle", "while"),
+        QT_TRANSLATE_NOOP("BlockTitle", "wait until"),
+        QT_TRANSLATE_NOOP("BlockSlot", "then"),
+        QT_TRANSLATE_NOOP("BlockSlot", "else"),
+        QT_TRANSLATE_NOOP("BlockSlot", "cond"),
+        QT_TRANSLATE_NOOP("BlockSlot", "body"),
     };
     count = (int)(sizeof(texts) / sizeof(texts[0]));
     return texts;

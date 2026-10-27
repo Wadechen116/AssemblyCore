@@ -1736,6 +1736,43 @@ private slots:
         QVERIFY(!has("Hardware CSR"));
     }
 
+    void ifWhileAndWaitComeFromTheToolboxWithNamedSlots() {
+        DragRig r(".main\ntop: MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]\n JMP top\n");
+        auto& s = r.ed->session();
+        r.sc().setAnimationsEnabled(false);
+        // the toolbox offers them in the Control drawer
+        for (const char* id : {"type:if", "type:while", "type:wait"}) QVERIFY2(r.ed->toolbox().catalogHas(id), id);
+        s.select({s.document().sections[0].blocks[1].id});
+        emit r.ed->toolbox().activated("type:if");
+        std::string ifId;
+        for (const auto& b : s.document().sections[0].blocks) if (b.type == "if") ifId = b.id;
+        QVERIFY(!ifId.empty());
+        // two slots, each named on a row of its own
+        const acide::blocks::StackLayout* st = r.sc().layout().stackOf(ifId);
+        QVERIFY(st);
+        const acide::blocks::BlockBox* box = st->find(ifId);
+        QCOMPARE((int)box->slotBoxes.size(), 2);
+        QCOMPARE(QString::fromStdString(box->slotBoxes[0].label), QString("then"));
+        QCOMPARE(QString::fromStdString(box->slotBoxes[1].label), QString("else"));
+        QVERIFY(box->slotBoxes[0].labelRect.y < box->slotBoxes[0].rect.y && box->slotBoxes[0].rect.y + box->slotBoxes[0].rect.h <= box->slotBoxes[1].labelRect.y + 0.5);
+        // something dropped into the ELSE slot is part of the block (and of the text)
+        std::vector<asmcore::blocks::Block> blocks = s.fresh([&](asmcore::blocks::Document& d) { return r.ed->catalog().fromAssembler(d, "MOV CONST(2, 2) -> MAIN_SCRATCHPAD[4..5]", nullptr); });
+        QVERIFY(s.apply([&](asmcore::blocks::Editor& e) { asmcore::blocks::Where at;
+            at.section = 0;
+            at.container = ifId;
+            at.slot = "ELSE";
+            return e.insertBlocks(at, blocks);
+        }).ok);
+        QVERIFY(s.generated().text.find("MOV CONST(2, 2) -> MAIN_SCRATCHPAD[4..5]") != std::string::npos);
+        // while: a slot for the condition work and one for the body
+        s.select({ifId});
+        emit r.ed->toolbox().activated("type:while");
+        r.ed->resize(1000, 700);
+        r.ed->view().fitAll();
+        QApplication::processEvents();
+        r.ed->grab().save(outDir() + "/blocks_if.png");
+    }
+
     void aClosedChoiceIsPickedFromAMenuThatStays() {
         DragRig r(".main\ntop: MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]\n JMP top\n");
         auto& s = r.ed->session();

@@ -98,7 +98,7 @@ struct LayoutEngine::Run {
         shift(b.rect, dx, dy); shift(b.head, dx, dy); shift(b.titleRect, dx, dy); shift(b.commentRect, dx, dy);
         for (FieldBox& f : b.fields) { shift(f.rect, dx, dy); shift(f.labelRect, dx, dy); }
         for (SocketBox& s : b.sockets) { shift(s.rect, dx, dy); shift(s.labelRect, dx, dy); }
-        for (SlotBox& s : b.slotBoxes) shift(s.rect, dx, dy);
+        for (SlotBox& s : b.slotBoxes) { shift(s.rect, dx, dy); shift(s.labelRect, dx, dy); }
     }
     // Blocks are added in tree order (a block, then everything inside it), so what is inside a block is the run right after it, and its connection points are the
     // ones added since it was: moving a block touches those only (not the whole stack: a long stack would make every move cost as much as the stack).
@@ -477,6 +477,12 @@ struct LayoutEngine::Run {
                 for (const std::string& slotName : def->stacks) {
                     SlotBox sb;
                     sb.name = slotName;
+                    if (def->stacks.size() > 1) {                                       // several slots: each is named on a row of its own
+                        sb.label = slotName;
+                        for (char& ch : sb.label) ch = (char)std::tolower((unsigned char)ch);
+                        sb.labelRect = {x + S.padX, cy, 0, S.slotLabel};
+                        cy += S.slotLabel;
+                    }
                     const std::vector<Block>* content = b.stack(slotName);
                     static const std::vector<Block> none;
                     double iw = 0;
@@ -493,7 +499,7 @@ struct LayoutEngine::Run {
                 }
                 height = cy - y + S.containerFoot;
                 width = std::max(width, S.slotIndent + maxInner + S.slotPad);
-                for (SlotBox& sb : self().slotBoxes) sb.rect.w = width - S.slotIndent - S.slotPad;
+                for (SlotBox& sb : self().slotBoxes) { sb.rect.w = width - S.slotIndent - S.slotPad; sb.labelRect.w = width - 2 * S.padX; }
             }
         }
         self().rect = {x, y, width, height};

@@ -442,6 +442,95 @@ static void t_loop() {
     check(parseDocument(serializeDocument(e), back, err) && back.sections[0].blocks[3].type == "loop" && back.sections[0].blocks[3].get("count") == "9" && back.sections[0].blocks[3].stack("BODY") != nullptr, "the file keeps a loop with an empty body, its mode and its count", err);
 }
 
+// if / while / wait until: lowered to labels + BR.COND + JMP; what they do is checked in the simulator.
+static std::vector<Block> blocksOf(Document& d, const std::string& body) {
+    std::vector<Block> list = importAsm(".main\nx:\n" + body, "b").sections[0].blocks;
+    list.erase(list.begin());                                                      // (the label)
+    std::function<void(Block&)> fresh = [&](Block& x) {
+        x.id = d.newId();
+        for (auto& st : x.stacks) for (Block& c : st.second) fresh(c);
+        for (auto& vl : x.values) for (Block& c : vl.second) fresh(c);
+    };
+    for (Block& x : list) fresh(x);
+    return list;
+}
+static std::string structuredText(const std::string& head, const std::string& type, const std::vector<std::pair<std::string, std::string>>& slots, const std::string& cond = "ALU_CMP_TRUE") {
+    Document d = importAsm(".main\ns:\n" + head + "h: JMP h\n", "s");
+    Block b = d.make(type);
+    b.set("cond", cond);
+    for (const auto& sl : slots) *b.stack(sl.first, true) = blocksOf(d, sl.second);
+    std::vector<Block>& top = d.sections[0].blocks;
+    size_t at = top.size() - 1;                                                    // before "h: JMP h"
+    for (size_t i = 0; i < top.size(); i++) if (top[i].type == "label" && top[i].get("name") == "h") at = i;
+    top.insert(top.begin() + (long)at, b);
+    d.assignMissingIds();
+    return generate(d).text;
+}
+static long long runWord(const std::string& text, int at) {
+    Result r = assemble({Source{"p.asm", text}}, nullptr, Options());
+    if (!r.ok) { std::printf("        %s\n", r.diagnosticsText().c_str()); return -1; }
+    return scratchWord(r, at);
+}
+static void t_structured() {
+    std::printf("\nStructured blocks: if / while / wait until\n");
+    const Registry& reg = Registry::defaults();
+    for (const char* ty : {"if", "while", "wait"}) {
+        const BlockDef* def = reg.find(ty);
+        check(def && def->category == "Control" && def->domains == kMain && !def->stacks.empty(), std::string("the '") + ty + "' block exists: a Control block of Main with slots");
+    }
+    const std::string two = "MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]\n MOV CONST(5, 2) -> MAIN_SCRATCHPAD[2..3]\n";
+    const std::string six = "MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]\n MOV CONST(6, 2) -> MAIN_SCRATCHPAD[2..3]\n";
+    const std::string cmp = " MOV MAIN_SCRATCHPAD[0..1] -> ALU_OPA\n MOV MAIN_SCRATCHPAD[2..3] -> ALU_OPB\n ALU CMP.EQ unsigned\n";
+    const std::vector<std::pair<std::string, std::string>> ifSlots = {{"THEN", "MOV CONST(1, 2) -> MAIN_SCRATCHPAD[4..5]\n"}, {"ELSE", "MOV CONST(2, 2) -> MAIN_SCRATCHPAD[4..5]\n"}};
+    const std::string t1 = structuredText(two + cmp, "if", ifSlots), t2 = structuredText(six + cmp, "if", ifSlots);
+    check(t1.find("BR.COND ALU_CMP_TRUE, if_") != std::string::npos && t1.find("_then:") != std::string::npos && t1.find("_end:") != std::string::npos, "if: BR.COND to the THEN part, the ELSE part falls through, then the end", t1);
+    check(runWord(t1, 4) == 1 && runWord(t2, 4) == 2, "if: THEN runs when the condition holds, ELSE when it does not");
+    check(runWord(structuredText(six + cmp, "if", {{"THEN", "MOV CONST(1, 2) -> MAIN_SCRATCHPAD[4..5]\n"}, {"ELSE", ""}}), 4) == 0, "if: an empty ELSE does nothing");
+    // while: counter < limit
+    const std::string init = "MOV CONST(0, 2) -> MAIN_SCRATCHPAD[0..1]\n MOV CONST(1, 2) -> MAIN_SCRATCHPAD[2..3]\n MOV CONST(3, 2) -> MAIN_SCRATCHPAD[4..5]\n";
+    const std::string lt = " MOV MAIN_SCRATCHPAD[0..1] -> ALU_OPA\n MOV MAIN_SCRATCHPAD[4..5] -> ALU_OPB\n ALU CMP.LT unsigned\n";
+    const std::string inc = " MOV MAIN_SCRATCHPAD[0..1] -> ALU_OPA\n MOV MAIN_SCRATCHPAD[2..3] -> ALU_OPB\n ALU ADD unsigned\n MOV ALU_OUT[0..1] -> MAIN_SCRATCHPAD[0..1]\n";
+    const std::string w = structuredText(init, "while", {{"COND", lt}, {"BODY", inc}});
+    check(runWord(w, 0) == 3, "while: the body runs while the condition holds (3 times: the counter reaches 3)", w);
+    const std::string w0 = structuredText("MOV CONST(0, 2) -> MAIN_SCRATCHPAD[0..1]\n MOV CONST(1, 2) -> MAIN_SCRATCHPAD[2..3]\n MOV CONST(0, 2) -> MAIN_SCRATCHPAD[4..5]\n", "while", {{"COND", lt}, {"BODY", inc}});
+    check(runWord(w0, 0) == 0, "while: never runs the body when the condition is false at the start");
+    // wait until: COND works out the condition each round; here it counts and compares with the limit
+    const std::string eq = " MOV MAIN_SCRATCHPAD[0..1] -> ALU_OPA\n MOV MAIN_SCRATCHPAD[4..5] -> ALU_OPB\n ALU CMP.EQ unsigned\n";
+    const std::string wt = structuredText(init, "wait", {{"COND", inc + eq}});
+    check(runWord(wt, 0) == 3, "wait until: COND runs again and again until the condition holds", wt);
+    check(wt.find("JMP wait_") != std::string::npos && wt.find("BR.COND ALU_CMP_TRUE, wait_") != std::string::npos, "wait until: BR.COND leaves, JMP goes round");
+    const std::string hw = structuredText(init, "wait", {}, "ALWAYS");
+    check(assemble({Source{"p.asm", hw}}, nullptr, Options()).ok, "wait until with a hardware condition and nothing to work out assembles");
+    // checks
+    Document noAlu = importAsm(".main\ns: MOV CONST(1, 2) -> MAIN_SCRATCHPAD[0..1]\nh: JMP h\n", "x");
+    Block ib = noAlu.make("if");
+    noAlu.sections[0].blocks.insert(noAlu.sections[0].blocks.begin() + 2, ib);
+    bool hint = false;
+    for (const BlockProblem& p : validate(noAlu, reg)) hint |= p.message.find("W506") != std::string::npos && p.blockId == ib.id;
+    check(hint, "an if on the ALU flag with no ALU operation before it gets the W506 hint");
+    Document wd = importAsm(".main\ns:\nh: JMP h\n", "x");
+    Block wb = wd.make("while");
+    wd.sections[0].blocks.insert(wd.sections[0].blocks.begin() + 1, wb);
+    hint = false;
+    for (const BlockProblem& p : validate(wd, reg)) hint |= p.message.find("nothing in COND") != std::string::npos;
+    check(hint, "a while on the ALU flag with an empty COND gets a hint");
+    wd.sections[0].blocks[1].set("cond", "ALWAYS");
+    bool any = false;
+    for (const BlockProblem& p : validate(wd, reg)) any |= p.blockId == wb.id;
+    check(!any, "...and none for a hardware condition");
+    // the file keeps the empty slots and the condition
+    Document e = importAsm(".main\ns:\nh: JMP h\n", "x");
+    Block eb = e.make("if");
+    eb.set("cond", "PERI_RESULT_VALID");
+    *eb.stack("THEN", true) = {};
+    *eb.stack("ELSE", true) = {};
+    e.sections[0].blocks.insert(e.sections[0].blocks.begin() + 1, eb);
+    Document back;
+    std::string err;
+    const Block* bb = parseDocument(serializeDocument(e), back, err) ? &back.sections[0].blocks[1] : nullptr;
+    check(bb && bb->type == "if" && bb->get("cond") == "PERI_RESULT_VALID" && bb->stack("THEN") && bb->stack("ELSE"), "the file keeps an if with empty slots and its condition", err);
+}
+
 int main() {
     std::printf("AssemblyCore block program tests\n");
     t_coverage();
@@ -452,6 +541,7 @@ int main() {
     t_operands();
     t_roundtrip();
     t_loop();
+    t_structured();
     std::printf("\n%s  %d passed, %d failed\n", g_fail ? "FAILED" : "OK    ", g_pass, g_fail);
     return g_fail ? 1 : 0;
 }

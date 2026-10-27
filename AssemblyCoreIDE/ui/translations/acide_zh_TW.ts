@@ -359,6 +359,25 @@ Drag it to change the order; double-click the end of it to write a comment</sour
     </message>
 </context>
 <context>
+    <name>BlockSlot</name>
+    <message>
+        <source>then</source>
+        <translation>則</translation>
+    </message>
+    <message>
+        <source>else</source>
+        <translation>否則</translation>
+    </message>
+    <message>
+        <source>cond</source>
+        <translation>條件的計算</translation>
+    </message>
+    <message>
+        <source>body</source>
+        <translation>本體</translation>
+    </message>
+</context>
+<context>
     <name>BlockTitle</name>
     <message>
         <source>ALU A</source>
@@ -543,6 +562,18 @@ Drag it to change the order; double-click the end of it to write a comment</sour
     <message>
         <source>loop</source>
         <translation>迴圈</translation>
+    </message>
+    <message>
+        <source>if</source>
+        <translation>如果</translation>
+    </message>
+    <message>
+        <source>while</source>
+        <translation>當</translation>
+    </message>
+    <message>
+        <source>wait until</source>
+        <translation>等待直到</translation>
     </message>
 </context>
 <context>
