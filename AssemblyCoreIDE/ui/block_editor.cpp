@@ -232,7 +232,7 @@ BlockEditor::BlockEditor(AppContext& ctx, const std::string& path, QWidget* pare
                     for (size_t step = 1; step <= n; step++) {
                         const BlockScene::EditTarget& next = all[(i + (navigate > 0 ? step : n - step)) % n];
                         const bool closedChoice = next.kind == asmcore::blocks::FieldKind::Choice && !next.open && !next.options.empty();        // (those are picked from a menu: Tab goes past them)
-                        if (!next.flag && !closedChoice) { beginFieldEdit(next); return; }
+                        if (!next.flag && !closedChoice) { beginTextEdit(next); return; }                                                        // (the others are typed, with the list as help)
                     }
                 }
         }
@@ -657,6 +657,11 @@ void BlockEditor::showChoiceMenu(const BlockScene::EditTarget& t) {
         a->setChecked(text == current);
         connect(a, &QAction::triggered, this, [this, t, text] { applyFieldValue(t, text); });
     }
+    if (t.open) {                                                                       // other values are allowed too: type one
+        menu->addSeparator();
+        QAction* other = menu->addAction(tr("Other value..."));
+        connect(other, &QAction::triggered, this, [this, t] { QTimer::singleShot(0, this, [this, t] { beginTextEdit(t); }); });
+    }
     connect(menu, &QMenu::aboutToHide, this, [this, menu] {
         QTimer::singleShot(0, menu, [this, menu] { if (choiceMenu_ == menu) choiceMenu_ = nullptr; menu->deleteLater(); view_->setFocus(); });
     });
@@ -676,9 +681,16 @@ void BlockEditor::applyFieldValue(const BlockScene::EditTarget& t, const QString
     else scene_->popEffect(t.blockId);
 }
 
+// A part with a list of values (an operation, a sign, a condition, a width ...) is picked from a menu; a part that is free text (a name, a number) is typed into the
+// editor over it.
 void BlockEditor::beginFieldEdit(const BlockScene::EditTarget& t) {
     if (fieldEditor_->isOpen() || commentEdit_->isOpen()) return;
-    if (t.kind == asmcore::blocks::FieldKind::Choice && !t.open && !t.options.empty()) { showChoiceMenu(t); return; }
+    if (!t.options.empty()) { showChoiceMenu(t); return; }
+    beginTextEdit(t);
+}
+
+void BlockEditor::beginTextEdit(const BlockScene::EditTarget& t) {
+    if (fieldEditor_->isOpen() || commentEdit_->isOpen()) return;
     fieldEditing_ = t;
     QStringList items;
     std::set<std::string> seen;

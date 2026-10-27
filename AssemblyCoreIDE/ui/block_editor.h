@@ -138,6 +138,7 @@ private:
     std::vector<std::string> blocksFor(const QString& kind) const;
     std::map<QString, unsigned> jumpAt_;
     void showChoiceMenu(const BlockScene::EditTarget& t);
+    void beginTextEdit(const BlockScene::EditTarget& t);
     void applyFieldValue(const BlockScene::EditTarget& t, const QString& text);
     QMenu* choiceMenu_ = nullptr;
     void applyBuildProblems();                               // the assembler's messages about the generated file become badges on the blocks that produced the lines

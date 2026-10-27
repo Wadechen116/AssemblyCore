@@ -1216,6 +1216,10 @@ Drag it to change the order; double-click the end of it to write a comment</sour
         <source>%1 is now generated from %2 (the earlier text is kept as %3)</source>
         <translation>%1 現在由 %2 產生（原本的文字備份為 %3）</translation>
     </message>
+    <message>
+        <source>Other value...</source>
+        <translation>其他值...</translation>
+    </message>
 </context>
 <context>
     <name>acide::BlockToolbox</name>

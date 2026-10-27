@@ -1295,26 +1295,47 @@ private slots:
         QTest::keyClick(fe.lineEdit(), Qt::Key_Return);
         QVERIFY(!fe.isOpen());
         QVERIFY(s.generated().text.find("MOV CONST(9, 2) -> MAIN_SCRATCHPAD[0..1]") != std::string::npos);
-        // a choice: the drop-down has the operations, typing another is fine
-        open(alu, "op");
-        QVERIFY(fe.count() > 10);
-        QVERIFY(fe.findText("SUB") >= 0 && fe.findText("CMP.GE") >= 0);
-        fe.lineEdit()->selectAll();
-        QTest::keyClicks(fe.lineEdit(), "SUB");
-        QTest::keyClick(fe.lineEdit(), Qt::Key_Return);
+        // a choice: a menu lists the operations (the current one checked); a pick applies it
+        auto menuOf = [&](const std::string& block, const std::string& part) {
+            const auto t = EditHelp::find(r.sc(), block, part);
+            QTest::mouseDClick(r.v().viewport(), Qt::LeftButton, Qt::NoModifier, r.at(t.rect.center()));
+            return r.ed->choiceMenu();
+        };
+        auto pick = [&](const std::string& block, const std::string& part, const QString& text) {
+            QMenu* m = menuOf(block, part);
+            QVERIFY2(m && m->isVisible(), "a menu opens");
+            QAction* hit = nullptr;
+            for (QAction* a : m->actions()) if (a->text() == text) hit = a;
+            QVERIFY2(hit, qPrintable(text));
+            hit->trigger();
+            QTest::qWait(20);
+        };
+        {
+            QMenu* m = menuOf(alu, "op");
+            QVERIFY(m && m->isVisible() && !fe.isVisible());
+            QStringList items;
+            QAction* checked = nullptr;
+            for (QAction* a : m->actions()) { items << a->text(); if (a->isChecked()) checked = a; }
+            QVERIFY(items.size() > 10 && items.contains("SUB") && items.contains("CMP.GE") && items.contains("Other value..."));
+            QVERIFY(checked && checked->text() == "ADD");
+            QTest::keyClick(m, Qt::Key_Escape);                                                // Esc leaves it as it is
+            QTest::qWait(30);
+            QVERIFY(!r.ed->choiceMenu());
+            QVERIFY(s.generated().text.find("ALU ADD unsigned") != std::string::npos);
+        }
+        pick(alu, "op", "SUB");
         QVERIFY(s.generated().text.find("ALU SUB unsigned") != std::string::npos);
-        // Esc leaves it
-        open(alu, "op");
+        // another value than the listed ones: "Other value..." opens the editor to type it
+        pick(alu, "op", "Other value...");
+        QTest::qWait(30);
+        QVERIFY(fe.isOpen());
+        fe.lineEdit()->selectAll();
         QTest::keyClicks(fe.lineEdit(), "XOR");
-        QTest::keyClick(fe.lineEdit(), Qt::Key_Escape);
+        QTest::keyClick(fe.lineEdit(), Qt::Key_Escape);                                         // Esc leaves it
         QVERIFY(!fe.isOpen());
         QVERIFY(s.generated().text.find("ALU SUB unsigned") != std::string::npos);
         // the value is checked as you type: a shift amount of 99 gets a hint (the block keeps it; the problem shows)
-        QTest::keyClick(r.v().viewport(), Qt::Key_Escape);
-        open(alu, "op");
-        fe.lineEdit()->selectAll();
-        QTest::keyClicks(fe.lineEdit(), "SHL");
-        QTest::keyClick(fe.lineEdit(), Qt::Key_Return);
+        pick(alu, "op", "SHL");
         open(alu, "amount");
         QTest::keyClicks(fe.lineEdit(), "99");
         QVERIFY2(!fe.toolTip().isEmpty(), "a hint about the range of the shift amount");
@@ -1719,12 +1740,12 @@ private slots:
         QVERIFY(found);
         r.sc().fieldEdit.fire(t);
         auto* fe = r.ed->findChild<acide::FieldEditor*>("fieldEditor");
-        QVERIFY(fe && fe->isVisible() && fe->count() >= 2);
-        fe->setCurrentIndex(fe->count() - 1);
-        emit fe->activated(fe->count() - 1);                                       // (a choice in the drop-down)
+        QVERIFY2(r.ed->choiceMenu() && r.ed->choiceMenu()->isVisible(), "the direction is picked from a menu");
         QVERIFY(!fe->isVisible());
+        for (QAction* a : r.ed->choiceMenu()->actions()) if (a->text() == "WRITE") a->trigger();
+        QTest::qWait(30);
         QVERIFY(!fe->isOpen());
-        (void)s;
+        QVERIFY(s.generated().text.find("EXEC_XFER WRITE") != std::string::npos);
     }
 
     void theToolboxGrowsWithTheUsersOwnBlocks() {
@@ -2045,10 +2066,11 @@ private slots:
         // Enter types into the first part of the selected block
         QTest::keyClick(&r.v(), Qt::Key_Down);                                            // the ALU block
         QTest::keyClick(&r.v(), Qt::Key_Return);
-        QVERIFY(r.ed->fieldEditor().isOpen());
-        QCOMPARE(r.ed->fieldEditor().text(), QString("ADD"));
-        QTest::keyClick(r.ed->fieldEditor().lineEdit(), Qt::Key_Escape);
-        QVERIFY(!r.ed->fieldEditor().isOpen());
+        QVERIFY2(r.ed->choiceMenu() && r.ed->choiceMenu()->isVisible(), "the first part of the ALU block is its operation: a menu");
+        QVERIFY(r.ed->choiceMenu()->actions().size() > 10);
+        QTest::keyClick(r.ed->choiceMenu(), Qt::Key_Escape);
+        QTest::qWait(30);
+        QVERIFY(!r.ed->choiceMenu() && !r.ed->fieldEditor().isOpen());
     }
 
     void tidyUpFromTheButton() {
