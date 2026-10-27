@@ -22,6 +22,7 @@
 #include "generated_code_pane.h"
 
 class QLabel;
+class QMenu;
 class QSplitter;
 class QRadioButton;
 class QStackedWidget;
@@ -78,7 +79,8 @@ public:
     CustomBlockDialog* customDialog() const { return customDialog_; }
     QString errorText() const;                       // why the file could not be shown ("" if fine)
     QString infoText() const;
-    void jumpTo(const QString& kind);                         // "floating" / "raw" / "problems": select the next such block and show it (the counts of the status line are links)                        // the summary line
+    QMenu* choiceMenu() const { return choiceMenu_; }         // the menu of a closed choice while it is open (for tests)
+    void jumpTo(const QString& kind);                         // "floating" / "raw" / "problems": select the next such block and show it (the counts of the status line are links)
     void selectBlock(const std::string& id, bool reveal = true);
     // ---- what Edit > Cut / Copy / Paste ... and the context menu do to the selection
     void setClipboard(std::shared_ptr<IBlockClipboard> c) { clipboard_ = std::move(c); }
@@ -135,6 +137,9 @@ private:
     std::unique_ptr<ConnectionBag> conns_ = std::make_unique<ConnectionBag>();      // released first in the destructor
     std::vector<std::string> blocksFor(const QString& kind) const;
     std::map<QString, unsigned> jumpAt_;
+    void showChoiceMenu(const BlockScene::EditTarget& t);
+    void applyFieldValue(const BlockScene::EditTarget& t, const QString& text);
+    QMenu* choiceMenu_ = nullptr;
     void applyBuildProblems();                               // the assembler's messages about the generated file become badges on the blocks that produced the lines
     SnapshotPtr snap_;
     void syncToWorkspace();

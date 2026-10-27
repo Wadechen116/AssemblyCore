@@ -1622,11 +1622,9 @@ private slots:
         QVERIFY(s.generated().text.find("MOV CONST(25, 2)") != std::string::npos);
         // the mode: choose "forever" from the list -> no counting, the count and counter go away
         QTest::mouseDClick(r.v().viewport(), Qt::LeftButton, Qt::NoModifier, r.at(target("mode").rect.center()));
-        QVERIFY(fe->isVisible());
-        const int i = fe->findText("forever");
-        QVERIFY(i >= 0);
-        fe->setCurrentIndex(i);
-        emit fe->activated(i);
+        QVERIFY(r.ed->choiceMenu() && r.ed->choiceMenu()->isVisible());                  // (a closed choice is picked from a menu)
+        for (QAction* a : r.ed->choiceMenu()->actions()) if (a->text() == "forever") a->trigger();
+        QTest::qWait(30);
         QVERIFY(!fe->isVisible());
         QVERIFY(s.generated().text.find("ALU CMP.EQ") == std::string::npos && s.generated().text.find("JMP loop_") != std::string::npos);
         QVERIFY(target("count").blockId.empty());
@@ -1673,7 +1671,7 @@ private slots:
         QVERIFY2(!fe->isVisible() && !fe->isOpen(), "click elsewhere");
     }
 
-    void theListOfAClosedChoiceStaysOpenForPicking() {
+    void aClosedChoiceIsPickedFromAMenuThatStays() {
         DragRig r(".main\ntop: MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]\n JMP top\n");
         auto& s = r.ed->session();
         r.sc().setAnimationsEnabled(false);
@@ -1681,26 +1679,33 @@ private slots:
         emit r.ed->toolbox().activated("type:loop");
         std::string loop;
         for (const auto& b : s.document().sections[0].blocks) if (b.type == "loop") loop = b.id;
-        auto* fe = r.ed->findChild<acide::FieldEditor*>("fieldEditor");
-        QVERIFY(fe && !loop.empty());
+        QVERIFY(!loop.empty());
         BlockScene::EditTarget t;
         for (const auto& e : r.sc().editTargets()) if (e.blockId == loop && e.part == "mode") t = e;
         QVERIFY(!t.blockId.empty());
         QVERIFY(!t.options.empty() && !t.open);                                      // a closed choice (for / forever)
         QTest::mouseDClick(r.v().viewport(), Qt::LeftButton, Qt::NoModifier, r.at(t.rect.center()));
-        QVERIFY(fe->isVisible());
-        QTest::qWait(100);
-        // the list closing by itself right after it opened (a stray release) does not end the edit: it opens again
-        QTest::qWait(60);
-        QVERIFY2(fe->isOpen() && fe->isVisible(), "the list does not end the edit by itself");
-        QTest::qWait(400);
-        QVERIFY2(fe->isOpen() && fe->isVisible(), "the list stays until something is picked");
-        // a real choice, later
-        const int i = fe->findText("forever");
-        QVERIFY(i >= 0);
-        fe->setCurrentIndex(i);
-        emit fe->activated(i);
-        QVERIFY(!fe->isVisible());
+        QVERIFY2(r.ed->choiceMenu() && r.ed->choiceMenu()->isVisible(), "a menu opens under the part");
+        auto* fe = r.ed->findChild<acide::FieldEditor*>("fieldEditor");
+        QVERIFY(!fe->isVisible());                                                   // (not the drop-down box)
+        QTest::qWait(600);
+        QVERIFY2(r.ed->choiceMenu() && r.ed->choiceMenu()->isVisible(), "...and it stays");
+        QStringList items;
+        QAction* pickForever = nullptr;
+        for (QAction* a : r.ed->choiceMenu()->actions()) { items << a->text(); if (a->text() == "forever") pickForever = a; }
+        QCOMPARE(items, QStringList({"for", "forever"}));
+        QVERIFY(r.ed->choiceMenu()->actions()[0]->isChecked());                     // the current value is marked
+        pickForever->trigger();
+        QTest::qWait(30);
+        QVERIFY(s.generated().text.find("ALU CMP.EQ") == std::string::npos);        // picked: no counting any more
+        QVERIFY(s.generated().text.find("JMP loop_") != std::string::npos);
+        // Esc leaves it as it is
+        for (const auto& e : r.sc().editTargets()) if (e.blockId == loop && e.part == "mode") t = e;
+        QTest::mouseDClick(r.v().viewport(), Qt::LeftButton, Qt::NoModifier, r.at(t.rect.center()));
+        QVERIFY(r.ed->choiceMenu() && r.ed->choiceMenu()->isVisible());
+        QTest::keyClick(r.ed->choiceMenu(), Qt::Key_Escape);
+        QTest::qWait(50);
+        QVERIFY(!r.ed->choiceMenu());
         QVERIFY(s.generated().text.find("ALU CMP.EQ") == std::string::npos);
     }
 

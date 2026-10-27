@@ -222,14 +222,7 @@ BlockEditor::BlockEditor(AppContext& ctx, const std::string& path, QWidget* pare
     conns_->add(scene_->fieldEdit, [this](const BlockScene::EditTarget& t) { beginFieldEdit(t); });
     connect(fieldEditor_, &FieldEditor::committed, this, [this](const QString& text, int navigate) {
         const BlockScene::EditTarget t = fieldEditing_;
-        const std::string value = text.trimmed().toUtf8().toStdString();
-        if (value != t.text) {
-            session_.beginGroup("edit:" + std::to_string(++editSerial_));                       // each kept edit is its own undo step
-            const asmcore::blocks::Outcome o = session_.apply([&](asmcore::blocks::Editor& ed) { return ed.setPart(t.blockId, t.part, value); });
-            session_.endGroup();
-            if (!o.ok) QToolTip::showText(QCursor::pos(), QString::fromUtf8(o.error.c_str()), this);
-            else scene_->popEffect(t.blockId);
-        }
+        applyFieldValue(t, text);
         view_->setFocus();
         if (navigate != 0) {                                                                   // Tab / Shift+Tab: the next / previous part
             const std::vector<BlockScene::EditTarget> all = scene_->editTargets();
@@ -238,7 +231,8 @@ BlockEditor::BlockEditor(AppContext& ctx, const std::string& path, QWidget* pare
                     const size_t n = all.size();
                     for (size_t step = 1; step <= n; step++) {
                         const BlockScene::EditTarget& next = all[(i + (navigate > 0 ? step : n - step)) % n];
-                        if (!next.flag) { beginFieldEdit(next); return; }
+                        const bool closedChoice = next.kind == asmcore::blocks::FieldKind::Choice && !next.open && !next.options.empty();        // (those are picked from a menu: Tab goes past them)
+                        if (!next.flag && !closedChoice) { beginFieldEdit(next); return; }
                     }
                 }
         }
@@ -647,8 +641,44 @@ void BlockEditor::showContextMenu(const QPointF& scenePos, const QPoint& globalP
 }
 
 // The names that fit a part: the choices of its field, else the symbols of the kind its socket takes (CSRs, services, devices, numbers, labels, procedures).
+// A closed choice (only the listed values make sense: for / forever, ...) is picked from a menu that opens under the part. A menu is what Windows users
+// know (the right-button menus work the same way) and it stays until something is picked or Esc is pressed; a drop-down list opened in the middle of a double
+// click was closed again by the click that was still going on.
+void BlockEditor::showChoiceMenu(const BlockScene::EditTarget& t) {
+    if (choiceMenu_) { choiceMenu_->close(); choiceMenu_->deleteLater(); choiceMenu_ = nullptr; }
+    auto* menu = new QMenu(this);
+    menu->setObjectName("choiceMenu");
+    choiceMenu_ = menu;
+    const QString current = QString::fromUtf8(t.text.c_str());
+    for (const std::string& o : t.options) {
+        const QString text = QString::fromUtf8(o.c_str());
+        QAction* a = menu->addAction(text);
+        a->setCheckable(true);
+        a->setChecked(text == current);
+        connect(a, &QAction::triggered, this, [this, t, text] { applyFieldValue(t, text); });
+    }
+    connect(menu, &QMenu::aboutToHide, this, [this, menu] {
+        QTimer::singleShot(0, menu, [this, menu] { if (choiceMenu_ == menu) choiceMenu_ = nullptr; menu->deleteLater(); view_->setFocus(); });
+    });
+    view_->showBlock(t.rect);
+    const QRect r = view_->mapFromScene(t.rect).boundingRect();
+    menu->popup(view_->viewport()->mapToGlobal(r.bottomLeft()));
+}
+
+// Puts a part's new text into the program (one undo step), or says why not.
+void BlockEditor::applyFieldValue(const BlockScene::EditTarget& t, const QString& text) {
+    const std::string value = text.trimmed().toUtf8().toStdString();
+    if (value == t.text) return;
+    session_.beginGroup("edit:" + std::to_string(++editSerial_));                       // each kept edit is its own undo step
+    const asmcore::blocks::Outcome o = session_.apply([&](asmcore::blocks::Editor& ed) { return ed.setPart(t.blockId, t.part, value); });
+    session_.endGroup();
+    if (!o.ok) QToolTip::showText(QCursor::pos(), QString::fromUtf8(o.error.c_str()), this);
+    else scene_->popEffect(t.blockId);
+}
+
 void BlockEditor::beginFieldEdit(const BlockScene::EditTarget& t) {
     if (fieldEditor_->isOpen() || commentEdit_->isOpen()) return;
+    if (t.kind == asmcore::blocks::FieldKind::Choice && !t.open && !t.options.empty()) { showChoiceMenu(t); return; }
     fieldEditing_ = t;
     QStringList items;
     std::set<std::string> seen;
