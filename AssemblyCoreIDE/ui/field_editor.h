@@ -15,6 +15,7 @@ public:
     void open(const QRect& where, const QString& text, const QStringList& items, bool editable, const QFont& font, const QColor& bg, const QColor& fg, const QColor& border,
               std::function<QString(const QString&)> hint);
     bool isOpen() const { return open_; }
+    void hidePopup() override;                                // a closed list (no typing) is finished when its drop-down closes, chosen or not
     QString text() const { return editable_ ? currentText() : itemText(currentIndex()); }
 
 signals:

@@ -1378,6 +1378,24 @@ private slots:
         QVERIFY(seen);
     }
 
+    void aChoiceFromTheListClosesTheEditor() {
+        DragRig r(".peri\nstart: EXEC_XFER READ dev=0, addr=0, addrlen=1, ptr=0\n");
+        auto& s = r.ed->session();
+        r.sc().setAnimationsEnabled(false);
+        BlockScene::EditTarget t;
+        bool found = false;
+        for (const auto& e : r.sc().editTargets()) if (e.part == "rw") { t = e; found = true; }
+        QVERIFY(found);
+        r.sc().fieldEdit.fire(t);
+        auto* fe = r.ed->findChild<acide::FieldEditor*>("fieldEditor");
+        QVERIFY(fe && fe->isVisible() && fe->count() >= 2);
+        fe->setCurrentIndex(fe->count() - 1);
+        emit fe->activated(fe->count() - 1);                                       // (a choice in the drop-down)
+        QVERIFY(!fe->isVisible());
+        QVERIFY(!fe->isOpen());
+        (void)s;
+    }
+
     void theToolboxGrowsWithTheUsersOwnBlocks() {
         DragRig r(".main\nstart: MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]\n JMP start\n");
         auto& tb = r.ed->toolbox();

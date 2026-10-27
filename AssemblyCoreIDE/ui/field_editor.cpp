@@ -15,6 +15,7 @@ FieldEditor::FieldEditor(QWidget* parent) : QComboBox(parent) {
     setObjectName("fieldEditor");
     setInsertPolicy(QComboBox::NoInsert);
     setMaxVisibleItems(14);
+    connect(this, QOverload<int>::of(&QComboBox::activated), this, [this] { if (open_) finish(true, 0); });      // a choice from the list is the answer
     hide();
 }
 
@@ -55,6 +56,11 @@ void FieldEditor::open(const QRect& where, const QString& text, const QStringLis
     setFocus();
     if (!editable || !items.isEmpty()) QTimer::singleShot(0, this, [this] { if (open_ && !editable_) showPopup(); });
     showHint(text);
+}
+
+void FieldEditor::hidePopup() {
+    QComboBox::hidePopup();
+    if (open_ && !editable_) QTimer::singleShot(0, this, [this] { if (open_) finish(true, 0); });       // (after `activated`, if there was a choice)
 }
 
 void FieldEditor::showHint(const QString& text) {
