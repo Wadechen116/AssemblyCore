@@ -14,6 +14,7 @@
 #include "block_toolbox.h"
 #include "blocks/block_catalog.h"
 #include "comment_edit.h"
+#include "custom_block_dialog.h"
 #include "typeblock_box.h"
 #include "field_editor.h"
 #include "document_tab.h"
@@ -64,6 +65,10 @@ public:
     size_t insertEntry(const QString& entryId);
     size_t insertAssembler(const QString& text);
     void openTypeblock(const QString& initial = QString());
+    // The user's own blocks in the toolbox: a dialog to make (or edit) one -- from the blocks selected on the canvas if asked -- and to delete one. Kept in the settings.
+    void newCustomBlock(const QString& drawer, bool fromSelection, const QString& replacingId = QString());
+    void deleteCustomBlock(const QString& entryId);
+    CustomBlockDialog* customDialog() const { return customDialog_; }
     QString errorText() const;                       // why the file could not be shown ("" if fine)
     QString infoText() const;                        // the summary line
     void selectBlock(const std::string& id, bool reveal = true);
@@ -105,6 +110,7 @@ private:
     BlockToolbox* toolbox_ = nullptr;
     TypeBlockBox* typeblock_ = nullptr;
     QSplitter* blocksPage_ = nullptr;
+    CustomBlockDialog* customDialog_ = nullptr;
     blocks::BlockCatalog catalog_;
     std::vector<asmcore::blocks::Block> paletteBlocks_;
     QString paletteEntry_;

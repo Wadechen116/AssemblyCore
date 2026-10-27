@@ -14,6 +14,7 @@
 #include <QToolTip>
 #include <QSplitter>
 #include <QMenu>
+#include <QMessageBox>
 #include <QMimeData>
 #include <QClipboard>
 #include <QApplication>
@@ -127,6 +128,12 @@ BlockEditor::BlockEditor(AppContext& ctx, const std::string& path, QWidget* pare
     blocksPage_->setStretchFactor(1, 1);
     blocksPage_->setSizes({210, 700});
     blocksPage_->setCollapsible(1, false);
+    {                                                           // the blocks of the user's own
+        std::vector<blocks::CustomBlock> mine;
+        for (const std::string& line : ctx.settings.getList("blocks.custom")) { blocks::CustomBlock c; if (blocks::decodeCustom(line, c)) mine.push_back(c); }
+        catalog_.setCustom(mine);
+        toolbox_->refresh();
+    }
     typeblock_ = new TypeBlockBox(catalog_, this);
     pages_->addWidget(blocksPage_);
     pages_->addWidget(code_);
@@ -157,6 +164,17 @@ BlockEditor::BlockEditor(AppContext& ctx, const std::string& path, QWidget* pare
     });
     toolbox_->setVisible(toolboxBtn->isChecked());
     connect(toolbox_, &BlockToolbox::activated, this, [this](const QString& id) { insertEntry(id); });
+    connect(toolbox_, &BlockToolbox::addRequested, this, [this](const QString& drawer, bool fromSel) { newCustomBlock(drawer, fromSel); });
+    connect(toolbox_, &BlockToolbox::editRequested, this, [this](const QString& id) {
+        const blocks::CatalogEntry* en = catalog_.find(id.toStdString());
+        if (en && en->custom) newCustomBlock(QString::fromStdString(en->category), false, id);
+    });
+    connect(toolbox_, &BlockToolbox::deleteRequested, this, [this](const QString& id) {
+        const blocks::CatalogEntry* en = catalog_.find(id.toStdString());
+        if (!en || !en->custom) return;
+        if (QMessageBox::question(this, tr("Delete the block"), tr("Delete the block \"%1\" from the toolbox?").arg(QString::fromStdString(en->title))) == QMessageBox::Yes) deleteCustomBlock(id);
+    });
+    conns_->add(session_.selectionChanged, [this] { toolbox_->setSelectionAvailable(!session_.selection().empty()); });
     // a sample dragged from the toolbox over the canvas
     connect(view_, &BlockView::paletteDrag, this, [this](const QString& id, const QPointF& at, const QPoint& screen, int phase) {
         if (phase == 0) {
@@ -332,6 +350,66 @@ public:
 };
 }  // namespace
 
+static void saveCustom(AppContext& ctx, const std::vector<blocks::CustomBlock>& all) {
+    std::vector<std::string> lines;
+    for (const blocks::CustomBlock& c : all) lines.push_back(blocks::encodeCustom(c));
+    ctx.settings.setList("blocks.custom", lines);
+}
+
+// the text of the selected blocks without the indentation the program gives them
+static QString selectionAsText(BlockSession& s) {
+    if (s.selection().empty()) return QString();
+    std::string text = s.copySelection().text;
+    std::vector<std::string> lines;
+    std::string cur;
+    for (char ch : text) { if (ch == '\n') { lines.push_back(cur); cur.clear(); } else cur += ch; }
+    if (!cur.empty()) lines.push_back(cur);
+    size_t indent = std::string::npos;
+    for (const std::string& l : lines) {
+        if (l.find_first_not_of(' ') == std::string::npos) continue;
+        indent = std::min(indent, l.find_first_not_of(' '));
+    }
+    std::string out;
+    for (const std::string& l : lines) out += (indent != std::string::npos && l.size() >= indent ? l.substr(indent) : l) + "\n";
+    return QString::fromUtf8(out.c_str());
+}
+
+void BlockEditor::newCustomBlock(const QString& drawer, bool fromSelection, const QString& replacingId) {
+    if (customDialog_) return;
+    customDialog_ = new CustomBlockDialog(catalog_, toolbox_->drawerNames(), replacingId, this);
+    customDialog_->setAttribute(Qt::WA_DeleteOnClose);
+    QString title, text;
+    QString where = drawer.isEmpty() ? QString::fromStdString(toolbox_->drawerNames().empty() ? std::string("Data") : toolbox_->drawerNames()[1 < toolbox_->drawerNames().size() ? 1 : 0]) : drawer;
+    if (!replacingId.isEmpty()) {
+        if (const blocks::CatalogEntry* en = catalog_.find(replacingId.toStdString())) { title = QString::fromStdString(en->title); text = QString::fromStdString(en->text); where = QString::fromStdString(en->category); }
+    }
+    customDialog_->setValues(where, title, text);
+    const QString sel = selectionAsText(session_);
+    customDialog_->setSelectionText(sel);
+    if (fromSelection && !sel.isEmpty()) customDialog_->textEdit()->setPlainText(sel);
+    connect(customDialog_, &QDialog::accepted, this, [this, replacingId] {
+        std::vector<blocks::CustomBlock> all = catalog_.custom();
+        const blocks::CustomBlock c = customDialog_->values();
+        if (!replacingId.isEmpty()) {
+            for (size_t i = 0; i < all.size(); i++) if (blocks::BlockCatalog::customId(all[i]) == replacingId.toStdString()) { all[i] = c; break; }
+        } else all.push_back(c);
+        catalog_.setCustom(all);
+        saveCustom(ctx_, all);
+        toolbox_->refresh();
+        ctx_.status.fire(tr("Added \"%1\" to the toolbox").arg(QString::fromStdString(c.title)));
+    });
+    connect(customDialog_, &QObject::destroyed, this, [this] { customDialog_ = nullptr; });
+    customDialog_->open();
+}
+
+void BlockEditor::deleteCustomBlock(const QString& entryId) {
+    std::vector<blocks::CustomBlock> all;
+    for (const blocks::CustomBlock& c : catalog_.custom()) if (blocks::BlockCatalog::customId(c) != entryId.toStdString()) all.push_back(c);
+    catalog_.setCustom(all);
+    saveCustom(ctx_, all);
+    toolbox_->refresh();
+}
+
 void BlockEditor::openTypeblock(const QString& initial) {
     if (fieldEditor_->isOpen() || commentEdit_->isOpen() || typeblock_->isOpen() || page() != Page::Blocks) return;
     QRect r = view_->geometry();
@@ -423,6 +501,7 @@ void BlockEditor::showContextMenu(const QPointF& scenePos, const QPoint& globalP
     add(tr("&Copy"), [this] { copy(); }, any, QKeySequence::Copy);
     add(tr("&Paste"), [this] { paste(); }, true, QKeySequence::Paste);
     add(tr("&Duplicate"), [this] { session_.duplicateSelection(); }, any, QKeySequence("Ctrl+D"));
+    add(tr("Save the selection as a new block..."), [this] { newCustomBlock("Patterns", true); }, any);
     menu.addSeparator();
     bool anyInstruction = false, anyContainer = false, allOff = true;
     for (const std::string& id : session_.selection()) {

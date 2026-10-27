@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <functional>
 #include <map>
 #include <set>
 
@@ -14,6 +15,15 @@ namespace blocks {
 using namespace asmcore::blocks;
 
 namespace {
+
+// An operand typed as text (a number, an expression, a name, a range such as MAIN_SCRATCHPAD[4..7]): a number / expression first, then a region.
+bool operandFromText(Document& doc, const Registry& reg, const std::string& text, Block& out) {
+    InputDef num("v", "", {kTypeInt}, true);
+    if (componentFromText(doc, reg, num, text, out)) return true;
+    InputDef region("v", "", {}, true);
+    for (const BlockDef& d : reg.all()) if (d.semantic == "region") region.accepts.push_back(d.valueType);
+    return componentFromText(doc, reg, region, text, out);
+}
 
 std::string lower(std::string s) {
     for (char& c : s) c = (char)std::tolower((unsigned char)c);
@@ -88,6 +98,38 @@ const char* kComponentDrawers[] = {"Values", "Regions", "Options", "References"}
 
 }  // namespace
 
+std::string encodeCustom(const CustomBlock& c) {
+    auto esc = [](const std::string& s) {
+        std::string o;
+        for (char ch : s) {
+            if (ch == '\\') o += "\\\\";
+            else if (ch == '\t') o += "\\t";
+            else if (ch == '\n') o += "\\n";
+            else if (ch == '\r') continue;
+            else o += ch;
+        }
+        return o;
+    };
+    return esc(c.drawer) + "\t" + esc(c.title) + "\t" + esc(c.text);
+}
+
+bool decodeCustom(const std::string& line, CustomBlock& out) {
+    std::vector<std::string> parts(1);
+    for (size_t i = 0; i < line.size(); i++) {
+        char ch = line[i];
+        if (ch == '\t') { parts.emplace_back(); continue; }
+        if (ch == '\\' && i + 1 < line.size()) {
+            const char n = line[++i];
+            parts.back() += n == 'n' ? '\n' : n == 't' ? '\t' : n;
+            continue;
+        }
+        parts.back() += ch;
+    }
+    if (parts.size() != 3 || parts[0].empty() || parts[1].empty()) return false;
+    out = CustomBlock{parts[0], parts[1], parts[2]};
+    return true;
+}
+
 BlockCatalog::BlockCatalog(const Registry& reg) : reg_(reg) {
     for (const Pattern& p : kPatterns) {
         CatalogEntry e;
@@ -98,7 +140,7 @@ BlockCatalog::BlockCatalog(const Registry& reg) : reg_(reg) {
         e.domains = p.domains;
         e.text = p.text;
         e.description = p.description;
-        entries_.push_back(e);
+        builtin_.push_back(e);
     }
     for (const BlockDef& d : reg.all()) {
         CatalogEntry e;
@@ -115,8 +157,72 @@ BlockCatalog::BlockCatalog(const Registry& reg) : reg_(reg) {
             if (!t && e.cls != "text") continue;                                  // a block with no known sample text is not offered (a test notices)
         }
         if (d.type == "blank" || d.type == "raw") continue;                         // (a blank line and raw text are not something to pick from a toolbox)
+        builtin_.push_back(e);
+    }
+    rebuild();
+}
+
+void BlockCatalog::rebuild() {
+    entries_ = builtin_;
+    for (const CustomBlock& c : custom_) {
+        CatalogEntry e;
+        e.id = customId(c);
+        e.title = c.title;
+        e.category = c.drawer;
+        e.cls = drawerClass(c.drawer);
+        e.text = c.text;
+        e.custom = true;
+        e.description = "";
+        Document tmp;
+        if (e.cls != "component") {                                              // Main-only / Peri-only follows the first block
+            std::vector<Block> v = blocksFromText(tmp, c.text, nullptr);
+            if (!v.empty()) if (const BlockDef* d = reg_.find(v[0].type)) e.domains = d->domains;
+        }
         entries_.push_back(e);
     }
+}
+
+void BlockCatalog::setCustom(std::vector<CustomBlock> c) {
+    custom_ = std::move(c);
+    rebuild();
+}
+
+std::string BlockCatalog::drawerClass(const std::string& drawer) const {
+    for (const CatalogEntry& e : builtin_) if (e.category == drawer) return e.cls;
+    return "instruction";
+}
+
+BlockCatalog::Check BlockCatalog::checkCustom(const CustomBlock& c, const std::string& replacing) const {
+    Check r;
+    auto trimmed = [](std::string s) {
+        size_t a = 0;
+        while (a < s.size() && std::isspace((unsigned char)s[a])) a++;
+        size_t b = s.size();
+        while (b > a && std::isspace((unsigned char)s[b - 1])) b--;
+        return s.substr(a, b - a);
+    };
+    const std::string title = trimmed(c.title), text = trimmed(c.text);
+    if (title.empty()) { r.message = "Give the block a name"; return r; }
+    if (text.empty()) { r.message = "Write the text the block is made from"; return r; }
+    for (const CatalogEntry& e : entries_)
+        if (e.category == c.drawer && e.title == title && e.id != replacing) { r.message = "There is already a block with this name in the drawer"; return r; }
+    Document tmp;
+    if (drawerClass(c.drawer) == "component") {
+        Block b;
+        if (!operandFromText(tmp, reg_, text, b)) { r.message = "The text is not an operand (a number, an expression, or a range such as MAIN_SCRATCHPAD[4..7])"; return r; }
+        r.blocks = 1;
+        r.ok = true;
+        return r;
+    }
+    bool raw = false;
+    const std::vector<Block> v = blocksFromText(tmp, text, &raw);
+    if (v.empty()) { r.message = "Nothing in the text makes a block"; return r; }
+    r.blocks = (int)v.size();
+    std::function<void(const std::vector<Block>&)> count = [&](const std::vector<Block>& l) { for (const Block& b : l) { if (b.type == "raw") r.raw++; for (auto& st : b.stacks) count(st.second); } };
+    count(v);
+    r.ok = true;
+    if (r.raw) r.message = std::to_string(r.raw) + " line(s) are not understood as instructions and stay as assembler text";
+    return r;
 }
 
 const CatalogEntry* BlockCatalog::find(const std::string& id) const {
@@ -213,6 +319,11 @@ Block makeComponent(Document& doc, const Registry& reg, const std::string& type)
 }  // namespace
 
 std::vector<Block> BlockCatalog::instantiate(const CatalogEntry& e, Document& doc) const {
+    if (e.custom && e.component()) {                                                // the text is an operand
+        Block b;
+        if (operandFromText(doc, reg_, e.text, b)) return {b};
+        return {doc.make("num")};
+    }
     if (e.component()) return {makeComponent(doc, reg_, e.type)};
     std::vector<Block> v = blocksFromText(doc, e.text, nullptr);
     if (v.empty()) v.push_back(doc.make(e.type.empty() ? "comment" : e.type));

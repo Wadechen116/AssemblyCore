@@ -718,6 +718,56 @@ static void t_catalog() {
     check(typed.size() == 1 && typed[0].type == "raw" && raw, "a line that is not understood stays text, and says so");
 }
 
+static void t_custom_blocks() {
+    section("the user's own blocks in the toolbox");
+    CustomBlock c{"Data", "clear first byte", "MOV CONST(0, 1) -> MAIN_SCRATCHPAD[0..0]\n; and say so\n"};
+    const std::string line = encodeCustom(c);
+    CustomBlock back;
+    check(line.find('\n') == std::string::npos && decodeCustom(line, back) && back.drawer == "Data" && back.title == c.title && back.text == "MOV CONST(0, 1) -> MAIN_SCRATCHPAD[0..0]\n; and say so\n", "a block is one line in the settings and comes back whole (line breaks included)", line);
+    CustomBlock odd{"Co\tntrol", "a\\b\ttab \xE4\xB8\xAD\xE6\x96\x87", "x\\n\ty"};
+    CustomBlock odd2;
+    check(decodeCustom(encodeCustom(odd), odd2) && odd2.drawer == odd.drawer && odd2.title == odd.title && odd2.text == odd.text, "tabs, backslashes and non-ASCII text survive");
+    check(!decodeCustom("", odd2) && !decodeCustom("only one field", odd2) && !decodeCustom("\tno drawer\ttext", odd2), "damaged lines are refused");
+
+    BlockCatalog cat;
+    const size_t before = cat.entries().size();
+    check(cat.checkCustom(c).ok && cat.checkCustom(c).blocks == 2, "a name and a text that makes blocks is fine");
+    check(!cat.checkCustom(CustomBlock{"Data", "", "RET"}).ok && !cat.checkCustom(CustomBlock{"Data", "x", "  "}).ok, "a name and a text are needed");
+    check(!cat.checkCustom(CustomBlock{"Data", "move", "RET"}).ok && cat.checkCustom(CustomBlock{"Data", "move", "RET"}).message.find("already") != std::string::npos, "the name must be new in its drawer");
+    check(cat.checkCustom(CustomBlock{"Math", "move", "RET"}).ok, "(the same name in another drawer is fine)");
+    check(cat.checkCustom(CustomBlock{"Data", "weird", "frobnicate"}).ok && cat.checkCustom(CustomBlock{"Data", "weird", "frobnicate"}).raw == 1 && !cat.checkCustom(CustomBlock{"Data", "weird", "frobnicate"}).message.empty(), "text that is not understood is allowed, with a note");
+    check(!cat.checkCustom(CustomBlock{"Values", "bad", "not an operand ("}).ok && cat.checkCustom(CustomBlock{"Values", "bytes 4 to 7", "MAIN_SCRATCHPAD[4..7]"}).ok && cat.checkCustom(CustomBlock{"Values", "limit plus one", "LIMIT + 1"}).ok, "in a component drawer the text must be an operand");
+
+    cat.setCustom({c, CustomBlock{"Values", "bytes 4 to 7", "MAIN_SCRATCHPAD[4..7]"}, CustomBlock{"Peripheral", "read two", "EXEC_XFER READ dev=0, len=2, ptr=0"}});
+    check(cat.entries().size() == before + 3, "the entries are added");
+    const CatalogEntry* e = cat.find(BlockCatalog::customId(c));
+    check(e && e->custom && e->cls == "instruction" && e->category == "Data" && e->title == "clear first byte", "a custom block is in its drawer with the class of the drawer");
+    const CatalogEntry* comp = cat.find("custom:Values/bytes 4 to 7");
+    check(comp && comp->cls == "component" && comp->component(), "one in a component drawer is a component");
+    const CatalogEntry* peri = cat.find("custom:Peripheral/read two");
+    check(peri && peri->domains == asmcore::blocks::kPeri, "it is Peri-only if its first block is");
+    // in the drawers
+    bool inData = false, inValues = false;
+    for (const auto& d : cat.drawers()) {
+        for (const CatalogEntry* x : d.entries) {
+            if (x->id == e->id && d.name == "Data") inData = true;
+            if (x->id == comp->id && d.name == "Values") inValues = true;
+        }
+    }
+    check(inData && inValues, "the drawers list them");
+    // making blocks
+    Document d;
+    std::vector<Block> v = cat.instantiate(*e, d);
+    check(v.size() == 2 && v[0].type == "mov" && v[0].value("src") && v[1].type == "comment", "a custom instruction makes the blocks of its text (here a move and a comment)");
+    std::vector<Block> cv = cat.instantiate(*comp, d);
+    check(cv.size() == 1 && cv[0].type == "region_main_scratchpad" && cv[0].value("first") && cv[0].value("last"), "a custom component makes the operand (a region with its range)");
+    check(cat.search("clear first").size() == 1 && cat.search("clear first")[0]->custom, "Typeblock finds it by name");
+    // editing keeps the name available, removing takes it away
+    check(cat.checkCustom(CustomBlock{"Data", "clear first byte", "RET"}, e->id).ok && !cat.checkCustom(CustomBlock{"Data", "clear first byte", "RET"}).ok, "the entry being edited may keep its name");
+    cat.setCustom({});
+    check(cat.entries().size() == before && !cat.find(e->id), "removing them all brings the toolbox back to what it was");
+}
+
 static void t_tidy() {
     section("tidy up: nothing overlaps, the program stays what it was");
     FakeMetrics m;
@@ -1009,6 +1059,7 @@ int main() {
     t_layout_values();
     t_drop();
     t_catalog();
+    t_custom_blocks();
     t_tidy();
     t_clipboard();
     t_session();

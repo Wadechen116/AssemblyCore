@@ -568,6 +568,29 @@ Drag it to change the order; double-click the end of it to write a comment</sour
     </message>
 </context>
 <context>
+    <name>CustomBlockCheck</name>
+    <message>
+        <source>Give the block a name</source>
+        <translation>請替積木取個名稱</translation>
+    </message>
+    <message>
+        <source>Write the text the block is made from</source>
+        <translation>請寫下組成積木的文字</translation>
+    </message>
+    <message>
+        <source>There is already a block with this name in the drawer</source>
+        <translation>這個抽屜裡已有同名的積木</translation>
+    </message>
+    <message>
+        <source>Nothing in the text makes a block</source>
+        <translation>這段文字做不出任何積木</translation>
+    </message>
+    <message>
+        <source>The text is not an operand (a number, an expression, or a range such as MAIN_SCRATCHPAD[4..7])</source>
+        <translation>這段文字不是運算元（數字、運算式，或像 MAIN_SCRATCHPAD[4..7] 的範圍）</translation>
+    </message>
+</context>
+<context>
     <name>EventModel</name>
     <message>
         <source>Cycle</source>
@@ -1141,12 +1164,56 @@ Drag it to change the order; double-click the end of it to write a comment</sour
         <source>Not understood as an instruction: kept as assembler text</source>
         <translation>無法辨識為指令：保留為組譯器文字</translation>
     </message>
+    <message>
+        <source>Delete the block</source>
+        <translation>刪除積木</translation>
+    </message>
+    <message>
+        <source>Delete the block &quot;%1&quot; from the toolbox?</source>
+        <translation>要從工具箱刪除積木「%1」嗎？</translation>
+    </message>
+    <message>
+        <source>Added &quot;%1&quot; to the toolbox</source>
+        <translation>已將「%1」加入工具箱</translation>
+    </message>
+    <message>
+        <source>Save the selection as a new block...</source>
+        <translation>將選取的積木存成新積木...</translation>
+    </message>
 </context>
 <context>
     <name>acide::BlockToolbox</name>
     <message>
         <source>Search the blocks...</source>
         <translation>搜尋積木...</translation>
+    </message>
+    <message>
+        <source>New block...</source>
+        <translation>新增積木...</translation>
+    </message>
+    <message>
+        <source>New block in &quot;%1&quot;...</source>
+        <translation>在「%1」新增積木...</translation>
+    </message>
+    <message>
+        <source>New block from the selected blocks...</source>
+        <translation>由選取的積木新增積木...</translation>
+    </message>
+    <message>
+        <source>Save the selected blocks in &quot;%1&quot;...</source>
+        <translation>把選取的積木存到「%1」...</translation>
+    </message>
+    <message>
+        <source>Edit...</source>
+        <translation>編輯...</translation>
+    </message>
+    <message>
+        <source>Delete</source>
+        <translation>刪除</translation>
+    </message>
+    <message>
+        <source>Add a block of your own to this drawer</source>
+        <translation>在這個抽屜新增自己的積木</translation>
     </message>
 </context>
 <context>
@@ -1197,6 +1264,49 @@ Drag it to change the order; double-click the end of it to write a comment</sour
     <message>
         <source>Enter keeps the comment, Shift+Enter starts a new line, Esc cancels</source>
         <translation>Enter 保留註解，Shift+Enter 換行，Esc 取消</translation>
+    </message>
+</context>
+<context>
+    <name>acide::CustomBlockDialog</name>
+    <message>
+        <source>New block</source>
+        <translation>新增積木</translation>
+    </message>
+    <message>
+        <source>Edit the block</source>
+        <translation>編輯積木</translation>
+    </message>
+    <message>
+        <source>The name shown in the toolbox</source>
+        <translation>工具箱中顯示的名稱</translation>
+    </message>
+    <message>
+        <source>Drawer</source>
+        <translation>抽屜</translation>
+    </message>
+    <message>
+        <source>Name</source>
+        <translation>名稱</translation>
+    </message>
+    <message>
+        <source>Made from this assembler text (several lines make several blocks; in a drawer of components: an operand such as MAIN_SCRATCHPAD[4..7] or LIMIT + 1):</source>
+        <translation>由這段組譯器文字組成（多行就是多個積木；元件抽屜則寫一個運算元，例如 MAIN_SCRATCHPAD[4..7] 或 LIMIT + 1）：</translation>
+    </message>
+    <message>
+        <source>Use the selected blocks</source>
+        <translation>使用選取的積木</translation>
+    </message>
+    <message numerus="yes">
+        <source>OK: %n block(s) are made</source>
+        <translation>
+            <numerusform>好：會做出 %n 個積木</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <source>%n line(s) are not understood as instructions and stay as assembler text</source>
+        <translation>
+            <numerusform>有 %n 行看不懂為指令，會保留為組譯器文字</numerusform>
+        </translation>
     </message>
 </context>
 <context>

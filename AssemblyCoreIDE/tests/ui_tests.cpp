@@ -1378,6 +1378,109 @@ private slots:
         QVERIFY(seen);
     }
 
+    void theToolboxGrowsWithTheUsersOwnBlocks() {
+        DragRig r(".main\nstart: MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]\n JMP start\n");
+        auto& tb = r.ed->toolbox();
+        auto& s = r.ed->session();
+        // every drawer header has a +
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);      // (the headers of the first build are deleted later)
+        const auto plus = tb.tree()->findChildren<QToolButton*>("addBlock");
+        QCOMPARE((int)plus.size(), tb.tree()->topLevelItemCount());
+        // the + opens the dialog for its drawer
+        QToolButton* dataPlus = nullptr;
+        for (auto* b : plus) if (b->property("drawer").toString() == "Data") dataPlus = b;
+        QVERIFY(dataPlus);
+        dataPlus->click();
+        auto* dlg = r.ed->customDialog();
+        QVERIFY(dlg && dlg->isVisible());
+        QCOMPARE(dlg->drawerBox()->currentData().toString(), QString("Data"));
+        QVERIFY(!dlg->valid());                                                   // no name yet
+        dlg->titleEdit()->setText("clear first byte");
+        dlg->textEdit()->setPlainText("MOV CONST(0, 1) -> MAIN_SCRATCHPAD[0..0]");
+        QVERIFY2(dlg->valid(), qPrintable(dlg->message()));
+        dlg->titleEdit()->setText("move");                                       // the name is taken in this drawer
+        QVERIFY(!dlg->valid());
+        dlg->titleEdit()->setText("clear first byte");
+        dlg->accept();
+        QApplication::processEvents();
+        QVERIFY(!r.ed->customDialog());
+        // it is in the drawer, in the settings, and usable like any sample
+        const QString id = "custom:Data/clear first byte";
+        QVERIFY(tb.catalogHas(id));
+        QCOMPARE((int)r.f.ctx.settings.getList("blocks.custom").size(), 1);
+        const std::string first = s.document().sections[0].blocks[0].id;
+        s.select({s.document().sections[0].blocks[1].id});
+        emit tb.activated(id);
+        QVERIFY(s.generated().text.find("MOV CONST(0, 1) -> MAIN_SCRATCHPAD[0..0]") != std::string::npos);
+        (void)first;
+        // the right button in a drawer offers a new block there; on one's own block also edit / delete
+        r.ed->newCustomBlock("Math", false);
+        QVERIFY(r.ed->customDialog() && r.ed->customDialog()->drawerBox()->currentData().toString() == "Math");
+        r.ed->customDialog()->reject();
+        QApplication::processEvents();
+        // made from the selected blocks
+        for (const auto& b : s.document().sections[0].blocks) if (b.type == "jmp") s.select({b.id});
+        r.ed->newCustomBlock("Control", true);
+        QVERIFY(r.ed->customDialog());
+        QVERIFY2(r.ed->customDialog()->textEdit()->toPlainText().contains("JMP start"), qPrintable(r.ed->customDialog()->textEdit()->toPlainText()));
+        r.ed->customDialog()->titleEdit()->setText("loop forever");
+        r.ed->customDialog()->accept();
+        QApplication::processEvents();
+        QVERIFY(tb.catalogHas("custom:Control/loop forever"));
+        // two blocks joined together, selected, become one new block (what the canvas menu "Save the selection as a new block" does)
+        {
+            std::set<std::string> two;
+            for (const auto& b : s.document().sections[0].blocks) if (b.type == "mov" || b.type == "jmp") two.insert(b.id);
+            QVERIFY(two.size() >= 2);
+            s.select(std::vector<std::string>(two.begin(), two.end()));
+            r.ed->newCustomBlock("Patterns", true);
+            QVERIFY(r.ed->customDialog() && r.ed->customDialog()->drawerBox()->currentData().toString() == "Patterns");
+            QVERIFY(r.ed->customDialog()->textEdit()->toPlainText().contains("MOV") && r.ed->customDialog()->textEdit()->toPlainText().contains("JMP"));
+            r.ed->customDialog()->titleEdit()->setText("my pair");
+            QVERIFY(r.ed->customDialog()->valid());
+            r.ed->customDialog()->accept();
+            QApplication::processEvents();
+            QVERIFY(tb.catalogHas("custom:Patterns/my pair"));
+            s.clearSelection();
+            emit tb.activated("custom:Patterns/my pair");
+            int movs = 0;
+            for (const auto& sec : s.document().sections) for (const auto& b : sec.blocks) movs += b.type == "mov";
+            QVERIFY(movs >= 2);
+            r.ed->deleteCustomBlock("custom:Patterns/my pair");
+            QVERIFY(!tb.catalogHas("custom:Patterns/my pair"));
+        }
+        // a component drawer takes an operand
+        r.ed->newCustomBlock("Values", false);
+        r.ed->customDialog()->titleEdit()->setText("bytes 4 to 7");
+        r.ed->customDialog()->textEdit()->setPlainText("MAIN_SCRATCHPAD[4..7]");
+        QVERIFY(r.ed->customDialog()->valid());
+        r.ed->customDialog()->textEdit()->setPlainText("not (an operand");
+        QVERIFY(!r.ed->customDialog()->valid());
+        r.ed->customDialog()->textEdit()->setPlainText("MAIN_SCRATCHPAD[4..7]");
+        r.ed->customDialog()->accept();
+        QApplication::processEvents();
+        QVERIFY(tb.catalogHas("custom:Values/bytes 4 to 7"));
+        // edit one: the dialog holds its values and it may keep its name
+        r.ed->newCustomBlock("Data", false, id);
+        QVERIFY(r.ed->customDialog()->titleEdit()->text() == "clear first byte" && r.ed->customDialog()->valid());
+        r.ed->customDialog()->textEdit()->setPlainText("RET");
+        r.ed->customDialog()->accept();
+        QApplication::processEvents();
+        QCOMPARE((int)r.f.ctx.settings.getList("blocks.custom").size(), 3);
+        // delete
+        r.ed->deleteCustomBlock("custom:Control/loop forever");
+        QVERIFY(!tb.catalogHas("custom:Control/loop forever"));
+        QCOMPARE((int)r.f.ctx.settings.getList("blocks.custom").size(), 2);
+        // what is in the settings is what the next session reads back
+        asmcore::blocks::Registry reg = asmcore::blocks::Registry::defaults();
+        acide::blocks::BlockCatalog next(reg);
+        std::vector<acide::blocks::CustomBlock> mine;
+        for (const std::string& line : r.f.ctx.settings.getList("blocks.custom")) { acide::blocks::CustomBlock c; QVERIFY(acide::blocks::decodeCustom(line, c)); mine.push_back(c); }
+        next.setCustom(mine);
+        QVERIFY(next.find(id.toStdString()) && next.find(id.toStdString())->text == "RET");
+        QVERIFY(next.find("custom:Values/bytes 4 to 7"));
+    }
+
     void theToolboxListsTheDrawersAndSearches() {
         DragRig r(".main\nstart: MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]\n");
         auto& tb = r.ed->toolbox();

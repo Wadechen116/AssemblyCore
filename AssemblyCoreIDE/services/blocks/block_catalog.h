@@ -10,6 +10,14 @@
 namespace acide {
 namespace blocks {
 
+// A block of the user's own in a drawer of the toolbox: a name and the assembler text it is made from (several lines make several blocks; in a component drawer
+// the text is an operand, e.g. MAIN_SCRATCHPAD[4..7] or LIMIT + 1). Kept in the settings, one line each.
+struct CustomBlock {
+    std::string drawer, title, text;
+};
+std::string encodeCustom(const CustomBlock& c);                      // one line, no line break in it
+bool decodeCustom(const std::string& line, CustomBlock& out);
+
 struct CatalogEntry {
     std::string id;                    // "type:mov", "pattern:add_two"
     std::string title;                 // "move"
@@ -18,6 +26,7 @@ struct CatalogEntry {
     int domains = asmcore::blocks::kBoth;
     std::string text;                  // the assembler text of the sample: what a fresh block (or a pattern) is made from ("" for a component)
     std::string description;
+    bool custom = false;               // made by the user (can be edited and deleted)
     bool component() const { return cls == "component"; }
     bool pattern() const { return cls == "pattern"; }
 };
@@ -28,6 +37,20 @@ public:
 
     const std::vector<CatalogEntry>& entries() const { return entries_; }
     const CatalogEntry* find(const std::string& id) const;
+
+    // ---- the user's own blocks
+    void setCustom(std::vector<CustomBlock> c);                       // replaces them all; the entries are rebuilt
+    const std::vector<CustomBlock>& custom() const { return custom_; }
+    static std::string customId(const CustomBlock& c) { return "custom:" + c.drawer + "/" + c.title; }
+    std::string drawerClass(const std::string& drawer) const;         // the class of the blocks in a drawer ("instruction" if the drawer is unknown)
+    struct Check {
+        bool ok = false;
+        std::string message;           // why not, or a note ("2 lines are not understood and stay as text")
+        int blocks = 0, raw = 0;
+    };
+    // Can this be a block of the toolbox? A title, a text that makes blocks (an operand in a component drawer), and no other block with that title in the drawer
+    // (`replacing`: the id of the entry being edited, which may keep its name).
+    Check checkCustom(const CustomBlock& c, const std::string& replacing = "") const;
 
     struct Drawer {
         std::string name, cls;
@@ -49,8 +72,10 @@ public:
     bool looksLikeAssembler(const std::string& text) const;
 
 private:
+    void rebuild();
     const asmcore::blocks::Registry& reg_;
-    std::vector<CatalogEntry> entries_;
+    std::vector<CatalogEntry> builtin_, entries_;
+    std::vector<CustomBlock> custom_;
 };
 
 }  // namespace blocks

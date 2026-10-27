@@ -45,6 +45,7 @@ UI_SOURCES = \
     $$IDE_DIR/ui/comment_edit.cpp \
     $$IDE_DIR/ui/field_editor.cpp \
     $$IDE_DIR/ui/block_toolbox.cpp \
+    $$IDE_DIR/ui/custom_block_dialog.cpp \
     $$IDE_DIR/ui/block_texts.cpp \
     $$IDE_DIR/ui/typeblock_box.cpp
 
@@ -60,6 +61,7 @@ UI_MOC_HEADERS = \
     $$IDE_DIR/ui/comment_edit.h \
     $$IDE_DIR/ui/field_editor.h \
     $$IDE_DIR/ui/block_toolbox.h \
+    $$IDE_DIR/ui/custom_block_dialog.h \
     $$IDE_DIR/ui/typeblock_box.h \
     $$IDE_DIR/ui/generated_code_pane.h
 

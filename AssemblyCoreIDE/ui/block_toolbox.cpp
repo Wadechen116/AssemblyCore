@@ -3,7 +3,12 @@
 #include <QApplication>
 #include <QDrag>
 #include <QHeaderView>
+#include <QAction>
+#include <QHBoxLayout>
+#include <QLabel>
 #include <QLineEdit>
+#include <QMenu>
+#include <QToolButton>
 #include <QMimeData>
 #include <QPainter>
 #include <QPixmap>
@@ -71,12 +76,51 @@ BlockToolbox::BlockToolbox(const blocks::BlockCatalog& catalog, const blocks::Bl
     tree_->setUniformRowHeights(true);
     tree_->setToolTipDuration(8000);
     l->addWidget(tree_, 1);
+    tree_->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(tree_, &QTreeWidget::customContextMenuRequested, this, [this](const QPoint& at) { showMenu(at); });
     connect(search_, &QLineEdit::textChanged, this, [this] { applyFilter(); });
     connect(tree_, &QTreeWidget::itemActivated, this, [this](QTreeWidgetItem* it) {
         const QString id = it->data(0, Qt::UserRole).toString();
         if (!id.isEmpty()) emit activated(id);
     });
     build();
+}
+
+std::vector<std::string> BlockToolbox::drawerNames() const {
+    std::vector<std::string> v;
+    for (int i = 0; i < tree_->topLevelItemCount(); i++) v.push_back(tree_->topLevelItem(i)->data(0, Qt::UserRole + 2).toString().toStdString());
+    return v;
+}
+
+// build the drawers again (a block was added or removed), keeping which are open and what is typed in the search box
+void BlockToolbox::refresh() {
+    std::set<QString> open;
+    for (int i = 0; i < tree_->topLevelItemCount(); i++) if (tree_->topLevelItem(i)->isExpanded()) open.insert(tree_->topLevelItem(i)->data(0, Qt::UserRole + 2).toString());
+    build();
+    for (int i = 0; i < tree_->topLevelItemCount(); i++) if (open.count(tree_->topLevelItem(i)->data(0, Qt::UserRole + 2).toString())) tree_->topLevelItem(i)->setExpanded(true);
+    applyFilter();
+}
+
+// right button: new block in the drawer under the pointer; on one of the user's own: edit / delete
+void BlockToolbox::showMenu(const QPoint& at) {
+    QTreeWidgetItem* it = tree_->itemAt(at);
+    if (it) tree_->setCurrentItem(it);
+    const QString drawer = it ? it->data(0, Qt::UserRole + 2).toString() : QString();
+    QMenu menu(this);
+    menu.setObjectName("toolboxMenu");
+    const QString where = drawer.isEmpty() ? QString() : tr2("BlockDrawer", drawer.toStdString());
+    QAction* add = menu.addAction(drawer.isEmpty() ? tr("New block...") : tr("New block in \"%1\"...").arg(where));
+    connect(add, &QAction::triggered, this, [this, drawer] { emit addRequested(drawer, false); });
+    QAction* fromSel = menu.addAction(drawer.isEmpty() ? tr("New block from the selected blocks...") : tr("Save the selected blocks in \"%1\"...").arg(where));
+    fromSel->setEnabled(selectionAvailable_);
+    connect(fromSel, &QAction::triggered, this, [this, drawer] { emit addRequested(drawer, true); });
+    if (it && it->data(0, Qt::UserRole + 3).toBool()) {
+        menu.addSeparator();
+        const QString id = it->data(0, Qt::UserRole).toString();
+        connect(menu.addAction(tr("Edit...")), &QAction::triggered, this, [this, id] { emit editRequested(id); });
+        connect(menu.addAction(tr("Delete")), &QAction::triggered, this, [this, id] { emit deleteRequested(id); });
+    }
+    menu.exec(tree_->viewport()->mapToGlobal(at));
 }
 
 void BlockToolbox::setTheme(const blocks::BlockTheme& t) {
@@ -98,14 +142,55 @@ void BlockToolbox::build() {
         top->setBackground(0, col);
         top->setForeground(0, toQColor(theme_.textOn(blocks::Rgba{(uint8_t)col.red(), (uint8_t)col.green(), (uint8_t)col.blue(), 255})));
         top->setFlags(Qt::ItemIsEnabled);
+        top->setData(0, Qt::UserRole + 2, QString::fromStdString(d.name));
+        // the header: the name, and a + that adds a block of the user's own to this drawer
+        {
+            auto* head = new QWidget;
+            head->setAutoFillBackground(true);
+            QPalette pal = head->palette();
+            pal.setColor(QPalette::Window, col);
+            head->setPalette(pal);
+            auto* hl = new QHBoxLayout(head);
+            hl->setContentsMargins(4, 0, 2, 0);
+            auto* name = new QLabel(top->text(0), head);
+            name->setFont(f);
+            name->setAttribute(Qt::WA_TransparentForMouseEvents);
+            QPalette np = name->palette();
+            np.setColor(QPalette::WindowText, top->foreground(0).color());
+            name->setPalette(np);
+            hl->addWidget(name, 1);
+            auto* add = new QToolButton(head);
+            add->setText("+");
+            add->setObjectName("addBlock");
+            add->setProperty("drawer", QString::fromStdString(d.name));
+            add->setAutoRaise(true);
+            add->setCursor(Qt::PointingHandCursor);
+            add->setToolTip(tr("Add a block of your own to this drawer"));
+            add->setFont(f);
+            QPalette bp = add->palette();
+            bp.setColor(QPalette::ButtonText, top->foreground(0).color());
+            add->setPalette(bp);
+            const QString dname = QString::fromStdString(d.name);
+            connect(add, &QToolButton::clicked, this, [this, dname] { emit addRequested(dname, false); });
+            hl->addWidget(add);
+            tree_->setItemWidget(top, 0, head);
+        }
         for (const CatalogEntry* e : d.entries) {
             auto* it = new QTreeWidgetItem(top);
-            QString title = pattern ? tr2("BlockPattern", e->title) : tr2("BlockTitle", e->title);
+            QString title = e->custom ? QString::fromStdString(e->title) : pattern ? tr2("BlockPattern", e->title) : tr2("BlockTitle", e->title);
             if (e->domains == asmcore::blocks::kMain && !e->component()) title += "  [Main]";
             else if (e->domains == asmcore::blocks::kPeri && !e->component()) title += "  [Peri]";
             it->setText(0, title);
             it->setData(0, Qt::UserRole, QString::fromStdString(e->id));
             it->setData(0, Qt::UserRole + 1, QString::fromStdString(e->title));
+            it->setData(0, Qt::UserRole + 2, QString::fromStdString(d.name));
+            it->setData(0, Qt::UserRole + 3, e->custom);
+            if (e->custom) {                                                         // the user's own: italic, with a star
+                QFont cf = it->font(0);
+                cf.setItalic(true);
+                it->setFont(0, cf);
+                it->setText(0, QString::fromStdString(e->title) + "  \u2605");
+            }
             QColor tint = col;
             tint.setAlphaF(0.55f);
             it->setBackground(0, tint);

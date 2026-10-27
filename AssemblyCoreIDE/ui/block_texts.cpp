@@ -115,6 +115,11 @@ const char* const* blockTextsForTranslation(int& count) {
         QT_TRANSLATE_NOOP("BlockPattern", "Compare, branch out when it holds, otherwise try again"),
         QT_TRANSLATE_NOOP("BlockPattern", "Read a device and publish"),
         QT_TRANSLATE_NOOP("BlockPattern", "Read one byte over I2C, publish it for Main"),
+        QT_TRANSLATE_NOOP("CustomBlockCheck", "Give the block a name"),
+        QT_TRANSLATE_NOOP("CustomBlockCheck", "Write the text the block is made from"),
+        QT_TRANSLATE_NOOP("CustomBlockCheck", "There is already a block with this name in the drawer"),
+        QT_TRANSLATE_NOOP("CustomBlockCheck", "Nothing in the text makes a block"),
+        QT_TRANSLATE_NOOP("CustomBlockCheck", "The text is not an operand (a number, an expression, or a range such as MAIN_SCRATCHPAD[4..7])"),
     };
     count = (int)(sizeof(texts) / sizeof(texts[0]));
     return texts;
