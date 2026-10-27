@@ -1673,6 +1673,37 @@ private slots:
         QVERIFY2(!fe->isVisible() && !fe->isOpen(), "click elsewhere");
     }
 
+    void theListOfAClosedChoiceStaysOpenForPicking() {
+        DragRig r(".main\ntop: MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]\n JMP top\n");
+        auto& s = r.ed->session();
+        r.sc().setAnimationsEnabled(false);
+        s.select({s.document().sections[0].blocks[1].id});
+        emit r.ed->toolbox().activated("type:loop");
+        std::string loop;
+        for (const auto& b : s.document().sections[0].blocks) if (b.type == "loop") loop = b.id;
+        auto* fe = r.ed->findChild<acide::FieldEditor*>("fieldEditor");
+        QVERIFY(fe && !loop.empty());
+        BlockScene::EditTarget t;
+        for (const auto& e : r.sc().editTargets()) if (e.blockId == loop && e.part == "mode") t = e;
+        QVERIFY(!t.blockId.empty());
+        QVERIFY(!t.options.empty() && !t.open);                                      // a closed choice (for / forever)
+        QTest::mouseDClick(r.v().viewport(), Qt::LeftButton, Qt::NoModifier, r.at(t.rect.center()));
+        QVERIFY(fe->isVisible());
+        QTest::qWait(100);
+        // the list closing by itself right after it opened (a stray release) does not end the edit: it opens again
+        QTest::qWait(60);
+        QVERIFY2(fe->isOpen() && fe->isVisible(), "the list does not end the edit by itself");
+        QTest::qWait(400);
+        QVERIFY2(fe->isOpen() && fe->isVisible(), "the list stays until something is picked");
+        // a real choice, later
+        const int i = fe->findText("forever");
+        QVERIFY(i >= 0);
+        fe->setCurrentIndex(i);
+        emit fe->activated(i);
+        QVERIFY(!fe->isVisible());
+        QVERIFY(s.generated().text.find("ALU CMP.EQ") == std::string::npos);
+    }
+
     void aChoiceFromTheListClosesTheEditor() {
         DragRig r(".peri\nstart: EXEC_XFER READ dev=0, addr=0, addrlen=1, ptr=0\n");
         auto& s = r.ed->session();

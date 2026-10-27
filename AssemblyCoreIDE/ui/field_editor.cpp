@@ -1,6 +1,7 @@
 #include "field_editor.h"
 
 #include <QAbstractItemView>
+#include <QApplication>
 #include <QCompleter>
 #include <QEvent>
 #include <QKeyEvent>
@@ -15,13 +16,18 @@ FieldEditor::FieldEditor(QWidget* parent) : QComboBox(parent) {
     setObjectName("fieldEditor");
     setInsertPolicy(QComboBox::NoInsert);
     setMaxVisibleItems(14);
-    connect(this, QOverload<int>::of(&QComboBox::activated), this, [this] { if (open_) finish(true, 0); });      // a choice from the list is the answer
+    connect(this, QOverload<int>::of(&QComboBox::activated), this, [this] {                                       // a choice from the list is the answer
+        if (!open_) return;
+        if (strayClose()) return;
+        finish(true, 0);
+    });
     hide();
 }
 
 void FieldEditor::open(const QRect& where, const QString& text, const QStringList& items, bool editable, const QFont& font, const QColor& bg, const QColor& fg, const QColor& border,
                        std::function<QString(const QString&)> hint) {
     hint_ = std::move(hint);
+    shown_ = false;
     border_ = border;
     editable_ = editable;
     open_ = true;
@@ -54,13 +60,39 @@ void FieldEditor::open(const QRect& where, const QString& text, const QStringLis
     show();
     raise();
     setFocus();
-    if (!editable || !items.isEmpty()) QTimer::singleShot(0, this, [this] { if (open_ && !editable_) showPopup(); });
+    if (!editable) showPopupWhenReleased(0);
     showHint(text);
+}
+
+// The editor opens in the middle of a double click, with the button still down. A list opened right then receives the button's release, and the item under
+// the pointer (the current one: the list lies over the box) is "chosen" at once -- the list seems to vanish. So the list waits until all buttons are up.
+void FieldEditor::showPopupWhenReleased(int tries) {
+    if (!open_ || editable_) return;
+    if (QApplication::mouseButtons() != Qt::NoButton && tries < 40) {
+        QTimer::singleShot(25, this, [this, tries] { showPopupWhenReleased(tries + 1); });
+        return;
+    }
+    QTimer::singleShot(0, this, [this] {
+        if (!open_ || editable_) return;
+        showPopup();
+        shown_ = true;
+        shownClock_.start();
+    });
+}
+
+// A list that closes or "chooses" within a quarter of a second of opening was closed by a stray click, not by a person: open it again.
+bool FieldEditor::strayClose() {
+    if (!shown_ || !shownClock_.isValid() || shownClock_.elapsed() >= 250) return false;
+    shown_ = false;
+    QTimer::singleShot(0, this, [this] { showPopupWhenReleased(0); });
+    return true;
 }
 
 void FieldEditor::hidePopup() {
     QComboBox::hidePopup();
-    if (open_ && !editable_) QTimer::singleShot(0, this, [this] { if (open_) finish(true, 0); });       // (after `activated`, if there was a choice)
+    if (open_ && !editable_) QTimer::singleShot(0, this, [this] {                                          // (after `activated`, if there was a choice)
+        if (open_ && !strayClose()) finish(true, 0);
+    });
 }
 
 void FieldEditor::showHint(const QString& text) {

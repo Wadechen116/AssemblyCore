@@ -4,6 +4,7 @@
 #include <functional>
 
 #include <QComboBox>
+#include <QElapsedTimer>
 
 namespace acide {
 
@@ -28,6 +29,10 @@ protected:
 
 private:
     void finish(bool keep, int navigate);
+    void showPopupWhenReleased(int tries);
+    bool strayClose();
+    bool shown_ = false;
+    QElapsedTimer shownClock_;
     void showHint(const QString& text);
     bool open_ = false, editable_ = true;
     std::function<QString(const QString&)> hint_;
