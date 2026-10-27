@@ -1,0 +1,283 @@
+{
+  "format": "acblk",
+  "version": 1,
+  "name": "demo",
+  "next_id": 46,
+  "sections": [
+    {
+      "domain": "",
+      "x": 0,
+      "y": 0,
+      "blocks": [
+        {
+          "id": "b1",
+          "type": "comment",
+          "fields": {"text": "13_block_editor - a small program to practise the block editor on (see README)."}
+        },
+        {
+          "id": "b2",
+          "type": "directive",
+          "fields": {"name": ".include", "args": "\"defs.inc\""}
+        },
+        {
+          "id": "b3",
+          "type": "raw",
+          "fields": {"text": "LIMIT EQU 5"},
+          "comment": "an 8051-style constant: a line the blocks do not cover is kept as text (a grey block)"
+        }
+      ]
+    },
+    {
+      "domain": "main",
+      "x": 0,
+      "y": 178,
+      "blocks": [
+        {
+          "id": "b5",
+          "type": "label",
+          "fields": {"name": "start"}
+        },
+        {
+          "id": "b6",
+          "type": "csr_write8",
+          "fields": {"csr": "AE_CTRL", "imm": "0x01"},
+          "comment": "switch the block on",
+          "parts": {
+            "csr": {
+              "id": "b11",
+              "type": "name",
+              "fields": {"name": "AE_CTRL"}
+            },
+            "imm": {
+              "id": "b12",
+              "type": "num",
+              "fields": {"value": "0x01", "kind": "", "sign": "", "width": ""}
+            }
+          }
+        },
+        {
+          "id": "b7",
+          "type": "mov",
+          "fields": {"src": "CONST(0, 2)", "dst": "MAIN_SCRATCHPAD[0..1]"},
+          "parts": {
+            "src": {
+              "id": "b13",
+              "type": "num",
+              "fields": {"value": "0", "kind": "", "sign": "", "width": "16"}
+            },
+            "dst": {
+              "id": "b14",
+              "type": "region_main_scratchpad",
+              "fields": {"alias": "", "first": "0", "last": "1"},
+              "parts": {
+                "first": {
+                  "id": "b15",
+                  "type": "num",
+                  "fields": {"value": "0", "kind": "", "sign": "", "width": ""}
+                },
+                "last": {
+                  "id": "b16",
+                  "type": "num",
+                  "fields": {"value": "1", "kind": "", "sign": "", "width": ""}
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "b8",
+          "type": "mov",
+          "fields": {"src": "CONST(1, 2)", "dst": "MAIN_SCRATCHPAD[2..3]"},
+          "parts": {
+            "src": {
+              "id": "b17",
+              "type": "num",
+              "fields": {"value": "1", "kind": "", "sign": "", "width": "16"}
+            },
+            "dst": {
+              "id": "b18",
+              "type": "region_main_scratchpad",
+              "fields": {"alias": "", "first": "2", "last": "3"},
+              "parts": {
+                "first": {
+                  "id": "b19",
+                  "type": "num",
+                  "fields": {"value": "2", "kind": "", "sign": "", "width": ""}
+                },
+                "last": {
+                  "id": "b20",
+                  "type": "num",
+                  "fields": {"value": "3", "kind": "", "sign": "", "width": ""}
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "b39",
+          "type": "loop",
+          "fields": {"mode": "for", "count": "5", "counter": ""},
+          "stacks": {
+            "BODY": [
+              {
+                "id": "b21",
+                "type": "mov",
+                "fields": {"src": "MAIN_SCRATCHPAD[0..1]", "dst": "ALU_OPA"},
+                "parts": {
+                  "src": {
+                    "id": "b22",
+                    "type": "region_main_scratchpad",
+                    "fields": {"alias": "", "first": "0", "last": "1"},
+                    "parts": {
+                      "first": {
+                        "id": "b23",
+                        "type": "num",
+                        "fields": {"value": "0", "kind": "", "sign": "", "width": ""}
+                      },
+                      "last": {
+                        "id": "b24",
+                        "type": "num",
+                        "fields": {"value": "1", "kind": "", "sign": "", "width": ""}
+                      }
+                    }
+                  },
+                  "dst": {
+                    "id": "b25",
+                    "type": "region_alu_opa",
+                    "fields": {"alias": ""}
+                  }
+                }
+              },
+              {
+                "id": "b26",
+                "type": "mov",
+                "fields": {"src": "MAIN_SCRATCHPAD[2..3]", "dst": "ALU_OPB"},
+                "parts": {
+                  "src": {
+                    "id": "b27",
+                    "type": "region_main_scratchpad",
+                    "fields": {"alias": "", "first": "2", "last": "3"},
+                    "parts": {
+                      "first": {
+                        "id": "b28",
+                        "type": "num",
+                        "fields": {"value": "2", "kind": "", "sign": "", "width": ""}
+                      },
+                      "last": {
+                        "id": "b29",
+                        "type": "num",
+                        "fields": {"value": "3", "kind": "", "sign": "", "width": ""}
+                      }
+                    }
+                  },
+                  "dst": {
+                    "id": "b30",
+                    "type": "region_alu_opb",
+                    "fields": {"alias": ""}
+                  }
+                }
+              },
+              {
+                "id": "b31",
+                "type": "alu",
+                "fields": {"op": "ADD", "amount": "", "mode": "unsigned"}
+              },
+              {
+                "id": "b32",
+                "type": "mov",
+                "fields": {"src": "ALU_OUT[0..1]", "dst": "MAIN_SCRATCHPAD[0..1]"},
+                "parts": {
+                  "src": {
+                    "id": "b33",
+                    "type": "region_alu_out",
+                    "fields": {"alias": "", "first": "0", "last": "1"},
+                    "parts": {
+                      "first": {
+                        "id": "b34",
+                        "type": "num",
+                        "fields": {"value": "0", "kind": "", "sign": "", "width": ""}
+                      },
+                      "last": {
+                        "id": "b35",
+                        "type": "num",
+                        "fields": {"value": "1", "kind": "", "sign": "", "width": ""}
+                      }
+                    }
+                  },
+                  "dst": {
+                    "id": "b36",
+                    "type": "region_main_scratchpad",
+                    "fields": {"alias": "", "first": "0", "last": "1"},
+                    "parts": {
+                      "first": {
+                        "id": "b37",
+                        "type": "num",
+                        "fields": {"value": "0", "kind": "", "sign": "", "width": ""}
+                      },
+                      "last": {
+                        "id": "b38",
+                        "type": "num",
+                        "fields": {"value": "1", "kind": "", "sign": "", "width": ""}
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "id": "b9",
+          "type": "label",
+          "fields": {"name": "done"}
+        },
+        {
+          "id": "b10",
+          "type": "jmp",
+          "fields": {"target": "done", "safe": ""}
+        }
+      ]
+    },
+    {
+      "domain": "floating",
+      "x": 900,
+      "y": 0,
+      "blocks": [
+        {
+          "id": "b40",
+          "type": "csr_set8",
+          "fields": {"csr": "AE_CTRL", "imm": "0x10"},
+          "parts": {
+            "csr": {
+              "id": "b41",
+              "type": "name",
+              "fields": {"name": "AE_CTRL"}
+            },
+            "imm": {
+              "id": "b42",
+              "type": "num",
+              "fields": {"value": "0x10", "kind": "", "sign": "", "width": ""}
+            }
+          }
+        },
+        {
+          "id": "b43",
+          "type": "csr_clr8",
+          "fields": {"csr": "AE_CTRL", "imm": "0x10"},
+          "parts": {
+            "csr": {
+              "id": "b44",
+              "type": "name",
+              "fields": {"name": "AE_CTRL"}
+            },
+            "imm": {
+              "id": "b45",
+              "type": "num",
+              "fields": {"value": "0x10", "kind": "", "sign": "", "width": ""}
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

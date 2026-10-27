@@ -1,6 +1,7 @@
 #include "blocks/block_layout.h"
 
 #include <algorithm>
+#include <unordered_set>
 #include <cctype>
 #include <cmath>
 
@@ -99,17 +100,17 @@ struct LayoutEngine::Run {
         for (SocketBox& s : b.sockets) { shift(s.rect, dx, dy); shift(s.labelRect, dx, dy); }
         for (SlotBox& s : b.slotBoxes) shift(s.rect, dx, dy);
     }
+    // Blocks are added in tree order (a block, then everything inside it), so what is inside a block is the run right after it, and its connection points are the
+    // ones added since it was: moving a block touches those only (not the whole stack: a long stack would make every move cost as much as the stack).
+    std::vector<size_t> pointStart;                  // for each block: how many connection points there were when it was added
     // a block and everything inside it (and the connection points that belong to them)
     void translate(int idx, double dx, double dy) {
         if (dx == 0 && dy == 0) return;
-        std::vector<char> moved(out.blocks.size(), 0);
-        moved[(size_t)idx] = 1;
         shiftBox(out.blocks[(size_t)idx], dx, dy);
-        std::vector<std::string> ids{out.blocks[(size_t)idx].id};
-        for (size_t j = (size_t)idx + 1; j < out.blocks.size(); j++)
-            if (isDescendant((int)j, idx)) { moved[j] = 1; shiftBox(out.blocks[j], dx, dy); ids.push_back(out.blocks[j].id); }
-        for (ConnectionPoint& p : out.points)
-            if (std::find(ids.begin(), ids.end(), p.blockId) != ids.end()) { p.pos.x += dx; p.pos.y += dy; }
+        std::unordered_set<std::string> ids{out.blocks[(size_t)idx].id};
+        for (size_t j = (size_t)idx + 1; j < out.blocks.size() && isDescendant((int)j, idx); j++) { shiftBox(out.blocks[j], dx, dy); ids.insert(out.blocks[j].id); }
+        for (size_t k = pointStart[(size_t)idx]; k < out.points.size(); k++)
+            if (ids.count(out.points[k].blockId)) { out.points[k].pos.x += dx; out.points[k].pos.y += dy; }
     }
 
     // The comment of a block as lines (a comment may have several), each with its "; " and shortened to fit. h is the height of all lines.
@@ -147,7 +148,10 @@ struct LayoutEngine::Run {
         for (FieldBox& f : b.fields) { f.rect.y += delta / 2; f.labelRect.y += delta / 2; }
         b.titleRect.y += delta / 2;
         b.commentRect.y += delta / 2;
-        for (ConnectionPoint& p : out.points) if (p.blockId == b.id && (p.kind == ConnectionPoint::Plug || p.kind == ConnectionPoint::Socket)) p.pos.y += delta / 2;
+        for (size_t k = pointStart[(size_t)idx]; k < out.points.size(); k++) {
+            ConnectionPoint& p = out.points[k];
+            if (p.blockId == b.id && (p.kind == ConnectionPoint::Plug || p.kind == ConnectionPoint::Socket)) p.pos.y += delta / 2;
+        }
         const double centre = b.rect.y + newH / 2;
         for (SocketBox& sb : b.sockets) {
             sb.labelRect.y += delta / 2;
@@ -216,6 +220,7 @@ struct LayoutEngine::Run {
         box.shape = info.shape;
         const int idx = (int)out.blocks.size();
         out.blocks.push_back(box);
+        pointStart.push_back(out.points.size());
         auto self = [&]() -> BlockBox& { return out.blocks[(size_t)idx]; };
         const double lh = e.m_.lineHeight(false), base = baseRow();
 

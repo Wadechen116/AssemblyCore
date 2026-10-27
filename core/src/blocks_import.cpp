@@ -1,5 +1,6 @@
 // Text -> blocks. A line that cannot be understood becomes a Raw block that keeps the text, so importing never fails and never loses anything.
 #include <algorithm>
+#include <cmath>
 #include <functional>
 #include <sstream>
 
@@ -336,6 +337,21 @@ Document importAsm(const std::string& text, const std::string& name, ImportStats
     // estimate; the editor's "tidy up" measures the real blocks.
     {
         double colY[2] = {0, 0}, lastY = -1;
+        // The right column starts beyond the widest block of the left one (a rough width from the texts: a long instruction with its comment would otherwise
+        // run under the Peri stack).
+        double leftW = 0;
+        std::function<void(const std::vector<Block>&)> widest = [&](const std::vector<Block>& v) {
+            for (const Block& b : v) {
+                double chars = 8, chips = 1;
+                for (const auto& f : b.fields) { chars += (double)f.second.size() + 5; chips += 1; }
+                if (b.type == "label" || b.type == "comment") chips = 0;
+                const double w = 30 + 8.6 * chars + 18 * chips + (b.comment.empty() ? 0 : 380);
+                leftW = std::max(leftW, w);
+                for (auto& st : b.stacks) widest(st.second);
+            }
+        };
+        for (const Section& s : im.doc.sections) if (s.domain != "peri") widest(s.blocks);
+        const double rightX = std::max(560.0, std::ceil((leftW + 80) / 40) * 40);
         for (Section& s : im.doc.sections) {
             const int col = s.domain == "peri" ? 1 : 0;
             size_t n = 0;
@@ -343,7 +359,7 @@ Document importAsm(const std::string& text, const std::string& name, ImportStats
             count(s.blocks);
             const double h = 48 + 30.0 * (double)n;
             const double y = std::max(colY[col], lastY + 1);
-            s.x = col ? 560 : 0;
+            s.x = col ? rightX : 0;
             s.y = y;
             colY[col] = y + h + 40;
             lastY = y;

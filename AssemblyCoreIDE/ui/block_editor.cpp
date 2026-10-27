@@ -18,6 +18,7 @@
 #include <QMimeData>
 #include <QClipboard>
 #include <QApplication>
+#include <QTimer>
 #include <QVBoxLayout>
 
 #include "blocks/block_tidy.h"
@@ -326,6 +327,27 @@ std::string BlockEditor::generatedPath() const { return acide::generatedPathFor(
 // debugger use them at once, Save All writes both). Loading a file writes nothing.
 void BlockEditor::syncToWorkspace() {
     if (loading_) return;
+    if (session_.document().blockCount() > 300) {                                        // big: after the last edit of a burst
+        if (!syncTimer_) {
+            syncTimer_ = new QTimer(this);
+            syncTimer_->setSingleShot(true);
+            connect(syncTimer_, &QTimer::timeout, this, [this] { doSync(); });
+        }
+        syncTimer_->start(250);
+        return;
+    }
+    doSync();
+}
+
+void BlockEditor::flushSync() {
+    if (syncTimer_ && syncTimer_->isActive()) {
+        syncTimer_->stop();
+        doSync();
+    }
+}
+
+void BlockEditor::doSync() {
+    if (loading_) return;
     if (!attached_ && ctx_.workspace.hasProject() && session_.document().output.empty()) {
         // A program that never said where its text goes, next to an assembler file the project already builds under the same name (a program made by an
         // older "show as blocks"): that file is the one it generates (as a conversion would), so the project does not get two copies of the same code.
@@ -376,6 +398,7 @@ void BlockEditor::setPage(Page p) {
     blocksRadio_->setChecked(p == Page::Blocks);
     codeRadio_->setChecked(p == Page::Code);
     zoomBar_->setVisible(p == Page::Blocks);
+    if (p == Page::Code && codeStale_) refreshCode();
     if (p == Page::Code) code_->setMarkedLines(session_.selectedLines(), true);
     else if (!session_.selection().empty()) view_->showBlock(scene_->blockRect(*session_.selection().begin()));
 }
@@ -667,7 +690,12 @@ void BlockEditor::beginCommentEdit(const BlockScene::CommentTarget& t) {
     commentEdit_->open(QRect(r.x(), r.y(), std::max(r.width(), (int)(190 * view_->zoom())), r.height()), QString::fromUtf8(t.text.c_str()), f, toQColor(th.canvas).lighter(125), toQColor(th.chipText), toQColor(th.selection));
 }
 
-void BlockEditor::refreshCode() { code_->setCode(QString::fromUtf8(session_.generated().text.c_str())); }
+// The assembly page is filled when it is shown (setting a thousand lines costs on every edit, and nobody looks at it while editing blocks).
+void BlockEditor::refreshCode() {
+    if (page() != Page::Code) { codeStale_ = true; return; }
+    codeStale_ = false;
+    code_->setCode(QString::fromUtf8(session_.generated().text.c_str()));
+}
 
 void BlockEditor::refreshInfo() {
     const BlockSession::Stats s = session_.stats();

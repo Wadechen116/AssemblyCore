@@ -2,6 +2,7 @@
 name = 01_hello_csr
 source = hello.asm
 include_dir = ../common
+block = hello.acblk
 scenario = hello.scn
 call_model = inline
 dataflow = warn

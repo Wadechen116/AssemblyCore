@@ -299,7 +299,8 @@ static void t_roundtrip() {
             const std::string text = slurp(p);
             ImportStats st;
             Document d = importAsm(text, p.filename().string(), &st);
-            const bool deliberateErrors = p.generic_string().find("/07_errors/") != std::string::npos;        // those files are full of lines no block should cover
+            const bool deliberateErrors = p.generic_string().find("/07_errors/") != std::string::npos ||        // those files are full of lines no block should cover,
+                                          p.generic_string().find("/13_block_editor/") != std::string::npos;     // and this one keeps a line on purpose (a grey block to practise on)
             if (!deliberateErrors) rawTotal += st.raw;
             if (st.raw && !deliberateErrors) rawNames += p.filename().string() + "(" + std::to_string(st.raw) + ") ";
             const std::string regenerated = generate(d).text;
@@ -330,7 +331,7 @@ static void t_roundtrip() {
     }
     check(files >= 15, "found the example and sample programs", std::to_string(files));
     check(same == files, "text -> blocks -> text assembles to the same images and the same diagnostics, and is stable", "differ: " + differing);
-    check(rawTotal == 0, "the Level 1 blocks cover every line of the working programs (no Raw blocks; the deliberately broken 07_errors files keep their bad lines as Raw)", rawNames);
+    check(rawTotal == 0, "the Level 1 blocks cover every line of the working programs (no Raw blocks; the deliberately broken 07_errors files and the practice sample 13 keep some lines as Raw)", rawNames);
     // the definition files too (they are directives, comments and blanks)
     int inc = 0, incOk = 0;
     for (auto& e : fs::recursive_directory_iterator(root / "sample")) {

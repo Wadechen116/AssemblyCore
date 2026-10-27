@@ -67,7 +67,7 @@ MainWindow::MainWindow(AppContext& ctx, PanelRegistry& panels, QWidget* parent) 
 
     buildTimer_.setSingleShot(true);
     buildTimer_.setInterval(ctx.settings.getInt("build.debounceMs", 300));
-    connect(&buildTimer_, &QTimer::timeout, this, [this] { ctx_.build.request(ctx_.workspace.snapshot()); buildLabel_->setText(tr("Building...")); });
+    connect(&buildTimer_, &QTimer::timeout, this, [this] { flushTabs(); ctx_.build.request(ctx_.workspace.snapshot()); buildLabel_->setText(tr("Building...")); });
 
     createActions();
     createPanels(panels);
@@ -191,11 +191,17 @@ void MainWindow::createActions() {
     act(file, tr("&Save"), QKeySequence::Save, [this] {
         CodeEditor* e = currentEditor();
         std::string err;
+        flushTabs();
         if (e && !ctx_.workspace.save(e->path(), err)) warn(tr("Save"), fromStd(err));
+        if (!e)                                                                              // a block program / a hardware description: every file the tab edits
+            if (auto* tab = dynamic_cast<DocumentTab*>(tabs_->currentWidget()))
+                for (const std::string& p : tab->workspacePaths())
+                    if (Document* d = ctx_.workspace.find(p)) if (d->dirty && !ctx_.workspace.save(p, err)) warn(tr("Save"), fromStd(err));
         updateTitle();
     });
     act(file, tr("Save &All"), QKeySequence("Ctrl+Shift+S"), [this] {
         std::string err;
+        flushTabs();
         if (!ctx_.workspace.saveAll(err)) warn(tr("Save"), fromStd(err));
         updateTitle();
     });
@@ -508,6 +514,12 @@ void MainWindow::refreshGeneratedMarks() {
     }
 }
 
+// Block programs that are big write to the workspace a moment after the last edit: whatever reads or saves the files asks them to do it now.
+void MainWindow::flushTabs() {
+    for (int i = 0; i < tabs_->count(); i++)
+        if (auto* tab = dynamic_cast<DocumentTab*>(tabs_->widget(i))) tab->prepareToClose();
+}
+
 bool MainWindow::closeDocTab(int index) {
     QWidget* w = tabs_->widget(index);
     auto* tab = dynamic_cast<DocumentTab*>(w);
@@ -564,6 +576,7 @@ bool MainWindow::maybeSaveAll() {
     if (r == QMessageBox::Cancel) return false;
     if (r == QMessageBox::Save) {
         std::string err;
+        flushTabs();
         if (!ctx_.workspace.saveAll(err)) { warn(tr("Save"), fromStd(err)); return false; }
     }
     return true;
@@ -725,6 +738,7 @@ bool MainWindow::checkedAction(const QString& group, const QString& text) const 
 }
 
 void MainWindow::flushBuildTimer() {
+    flushTabs();
     if (buildTimer_.isActive()) { buildTimer_.stop(); ctx_.build.request(ctx_.workspace.snapshot()); }
 }
 
@@ -733,9 +747,11 @@ void MainWindow::buildNow(bool writeOutputs) {
     buildTimer_.stop();
     if (writeOutputs) {
         std::string err;
+        flushTabs();
         if (!ctx_.workspace.saveAll(err)) warn(tr("Save"), fromStd(err));
     }
     buildLabel_->setText(tr("Building..."));
+    flushTabs();
     uint64_t id = ctx_.build.request(ctx_.workspace.snapshot());
     if (writeOutputs) explicitBuild_ = id;
 }

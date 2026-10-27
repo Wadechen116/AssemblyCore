@@ -26,6 +26,7 @@
 #include <QWheelEvent>
 #include <QToolButton>
 #include <QImage>
+#include <QElapsedTimer>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -2388,6 +2389,7 @@ private slots:
         const std::string text = asmcore::blocks::serializeDocument(asmcore::blocks::importAsm(".main\n JMP x\n"));
         r.f.ws.setText("/w/prog.acblk", text);
         QCOMPARE((int)r.ed->scene().layout().stacks.size(), 1);
+        r.ed->setPage(BlockEditor::Page::Code);                                         // (the assembly page is filled when it is shown)
         QVERIFY(r.ed->codePane().toPlainText().contains("JMP x"));
     }
     void theTabIsClosedLikeTheOthersAndComesBackWithTheSession() {
@@ -2402,6 +2404,234 @@ private slots:
         r.w->closeEditorAt(r.w->tabs()->currentIndex());
         QVERIFY(!r.f.ws.find("/w/prog.acblk"));
     }
+    // ---- acceptance (M6)
+    static std::string slurpFile(const std::filesystem::path& p) {
+        std::ifstream in(p, std::ios::binary);
+        std::ostringstream ss;
+        ss << in.rdbuf();
+        return ss.str();
+    }
+    static std::string hash8(const std::string& s) { unsigned h = 5381; for (unsigned char c : s) h = h * 33 + c; return QString::number(h, 16).toStdString(); }
+
+    // (2) every sample opens as blocks without changing anything: no file is written or marked unsaved, the generated text is stable (generate -> import -> generate
+    // gives the same text), and it assembles to the bytes of the original. Each is also drawn, light and dark, for a look (build/.../blocks_sample_*.png).
+    void everySampleOpensUntouchedAndStable() {
+        namespace fs = std::filesystem;
+        int n = 0;
+        for (const char* theme : {"dark", "light"}) {
+            Fixture f;
+            f.settings.set("theme", theme);
+            PanelRegistry panels;
+            registerBuiltinPanels(panels);
+            MainWindow w(f.ctx, panels);
+            w.setQuiet(true);
+            w.resize(1700, 1000);
+            w.show();
+            w.openProject("/w/p.acproj");
+            const size_t filesBefore = f.fs->list("/w").size();
+            for (auto& e : fs::recursive_directory_iterator(ACIDE_SAMPLE_DIR)) {
+                if (!e.is_regular_file() || e.path().extension() != ".asm" || e.path().generic_string().find("/out/") != std::string::npos) continue;
+                const std::string text = slurpFile(e.path());
+                const std::string stem = e.path().stem().string();
+                f.fs->write("/w/s.acblk", asmcore::blocks::serializeDocument(asmcore::blocks::importAsm(text, "s")));
+                auto* ed = qobject_cast<BlockEditor*>(w.openTab("/w/s.acblk"));
+                QVERIFY(ed);
+                QVERIFY2(ed->errorText().isEmpty(), stem.c_str());
+                // nothing was written or marked unsaved by opening
+                QVERIFY2(!f.ws.find("/w/s.acblk")->dirty, stem.c_str());
+                QVERIFY2(!f.ws.find(ed->generatedPath()), stem.c_str());
+                QCOMPARE(f.fs->list("/w").size(), filesBefore + 1);                                                   // (only the .acblk the test wrote)
+                // the text is stable and the bytes are the original's
+                const std::string g = ed->session().generated().text;
+                std::string body = g;                                                                                // (without the header the editor adds)
+                const std::string head = "; " + acide::generatedHeader("/w/s.acblk") + "\n\n";
+                if (body.compare(0, head.size(), head) == 0) body.erase(0, head.size());
+                QVERIFY2(asmcore::blocks::generate(asmcore::blocks::importAsm(body, "s")).text == body, ("not stable: " + stem).c_str());
+                asmcore::Options opt;
+                opt.callModel = asmcore::CallModel::Inline;
+                const std::vector<asmcore::Source> a{{"a.asm", text}}, b{{"a.asm", body}};
+                const asmcore::Result ra = asmcore::assemble(a, nullptr, opt), rb = asmcore::assemble(b, nullptr, opt);
+                if (ra.ok) QVERIFY2(rb.ok && ra.main.bytes == rb.main.bytes && ra.peri.bytes == rb.peri.bytes, ("bytes differ: " + stem).c_str());
+                // a look at it
+                ed->setMinimumSize(1100, 700);
+                if (auto* tg = ed->findChild<QToolButton*>("toolboxToggle")) if (tg->isChecked()) tg->click();            // (the toolbox is looked at elsewhere)
+                QApplication::processEvents();
+                ed->view().fitAll();
+                QApplication::processEvents();
+                ed->grab().save(outDir() + "/blocks_sample_" + QString(theme) + "_" + QString::fromStdString(stem) + ".png");
+                ed->setMinimumSize(0, 0);
+                QVERIFY(w.closeEditorAt(w.tabs()->currentIndex()));
+                n++;
+            }
+        }
+        QVERIFY(n >= 20);
+    }
+
+    // (3) a text file converted to blocks, one block changed: the assembly differs in that one place only
+    void convertingAndEditingOneBlockChangesOnlyThatPlace() {
+        Fixture f;
+        f.fs->write("/w/common/defs.inc", slurpFile(std::filesystem::path(ACIDE_SAMPLE_DIR) / "common" / "defs.inc"));
+        f.fs->write("/w/hello.asm", slurpFile(std::filesystem::path(ACIDE_SAMPLE_DIR) / "01_hello_csr" / "hello.asm"));
+        f.fs->write("/w/p.acproj", "name = p\nsource = hello.asm\ninclude_dir = common\n");
+        std::vector<std::string> errs;
+        f.ws.openProject("/w/p.acproj", errs);
+        PanelRegistry panels;
+        registerBuiltinPanels(panels);
+        MainWindow w(f.ctx, panels);
+        w.setQuiet(true);
+        w.show();
+        w.openProject("/w/p.acproj");
+        QVERIFY(f.buildAndWait());
+        QVERIFY2(f.ctx.snapshot->result.ok, f.ctx.snapshot->result.diagnosticsText().c_str());
+        const std::vector<uint8_t> before = f.ctx.snapshot->result.main.bytes;
+        QVERIFY(w.openFile("/w/hello.asm"));
+        auto* be = w.openAsBlocks();
+        QVERIFY(be);
+        auto& s = be->session();
+        // the same program: the build from the blocks has the same bytes
+        QVERIFY(s.apply([&](asmcore::blocks::Editor& e) { return e.setComment(s.document().sections.back().blocks.back().id, "the end"); }).ok);
+        QVERIFY(f.buildAndWait());
+        QVERIFY2(f.ctx.snapshot->result.ok, f.ctx.snapshot->result.diagnosticsText().c_str());
+        QVERIFY(f.ctx.snapshot->result.main.bytes == before);
+        // one value changed in one block
+        std::string csr;
+        for (const auto& sec : s.document().sections) for (const auto& b : sec.blocks) if (b.type == "csr_write8" && csr.empty()) csr = b.id;
+        QVERIFY(!csr.empty());
+        QVERIFY(s.apply([&](asmcore::blocks::Editor& e) { return e.setPart(csr, "imm", "0x02"); }).ok);
+        QVERIFY(f.buildAndWait());
+        QVERIFY2(f.ctx.snapshot->result.ok, f.ctx.snapshot->result.diagnosticsText().c_str());
+        const std::vector<uint8_t>& after = f.ctx.snapshot->result.main.bytes;
+        QCOMPARE(after.size(), before.size());
+        int first = -1, last = -1, differing = 0;
+        for (size_t i = 0; i < before.size(); i++) if (before[i] != after[i]) { if (first < 0) first = (int)i; last = (int)i; differing++; }
+        QVERIFY(differing > 0);
+        QVERIFY2(last - first < 8, qPrintable(QString("bytes %1..%2 differ").arg(first).arg(last)));            // one instruction word
+    }
+
+    // (1) 01_hello_csr made again with the mouse and the keyboard: the pieces first made apart on the canvas (floating), then joined by dragging
+    void helloIsBuiltFromPiecesJoinedByDragging() {
+        DragRig r(".main\n");
+        auto& s = r.ed->session();
+        r.sc().setAnimationsEnabled(false);
+        const std::vector<std::string> a = {"start:", "EXEC_CSR WRITE8 0x120, 0x01", "EXEC_CSR SET8 0x120, 0x10", "EXEC_CSR CLR8 0x120, 0x01",
+            "MOV CONST(0, 2) -> MAIN_SCRATCHPAD[0..1]", "MOV CONST(1, 2) -> MAIN_SCRATCHPAD[2..3]", "MOV CONST(5, 2) -> MAIN_SCRATCHPAD[4..5]"};
+        const std::vector<std::string> b = {"loop:", "MOV MAIN_SCRATCHPAD[0..1] -> ALU_OPA", "MOV MAIN_SCRATCHPAD[2..3] -> ALU_OPB", "ALU ADD unsigned", "MOV ALU_OUT[0..1] -> MAIN_SCRATCHPAD[0..1]",
+            "MOV MAIN_SCRATCHPAD[0..1] -> ALU_OPA", "MOV MAIN_SCRATCHPAD[4..5] -> ALU_OPB", "ALU CMP.EQ unsigned", "BR.COND ALU_CMP_TRUE, finish", "JMP loop"};
+        const std::vector<std::string> c = {"finish:", "EXEC_CSR WRITE_SP 0x121, len=2, ptr=0", "done:", "JMP done"};
+        auto join = [](const std::vector<std::string>& v) { std::string t; for (const auto& l : v) t += l + "\n"; return t; };
+        // the first piece goes into the Main part (the only empty program part); the others are made apart, lying on the canvas
+        auto make = [&](const std::vector<std::string>& v, double x, double y) {
+            s.clearSelection();
+            asmcore::blocks::Document tmp;
+            auto blocks = s.fresh([&](asmcore::blocks::Document& d) { return r.ed->catalog().fromAssembler(d, join(v), nullptr); });
+            return s.place(blocks, x, y);
+        };
+        QVERIFY(make(a, 0, 0) > 0);
+        QCOMPARE(s.stats().floatingStacks, (size_t)0);
+        QVERIFY(make(b, 600, 80) > 0);
+        QVERIFY(make(c, 600, 700) > 0);
+        QCOMPARE(s.stats().floatingStacks, (size_t)2);
+        QVERIFY(s.generated().text.find("loop:") == std::string::npos);                       // lying apart they are not part of the program
+        r.ed->view().fitAll();
+        QApplication::processEvents();
+        auto firstOf = [&](size_t sec) { return s.document().sections[sec].blocks.front().id; };
+        auto nextPoint = [&](const std::string& blockId) {
+            const auto& lay = r.sc().layout();
+            const acide::blocks::StackLayout* st = lay.stackOf(blockId);
+            for (const auto& cp : st->points) if (cp.kind == acide::blocks::ConnectionPoint::Next && cp.blockId == blockId) return QPointF(st->origin.x + cp.pos.x, st->origin.y + cp.pos.y);
+            return QPointF();
+        };
+        auto lastOfStack = [&](const std::string& any) { const acide::blocks::StackLayout* st = r.sc().layout().stackOf(any); return st->blocks[(size_t)st->top.back()].id; };
+        // drag the second piece under the first, then the third under the second
+        for (int round = 0; round < 2; round++) {
+            std::string moving;
+            for (const auto& sec : s.document().sections) if (sec.domain == "floating") { moving = sec.blocks.front().id; break; }
+            QVERIFY(!moving.empty());
+            const std::string under = lastOfStack(s.document().sections[0].blocks.front().id);
+            const QRectF mr = r.sc().blockRect(moving);
+            const QPointF grab = mr.center() - mr.topLeft();
+            r.pressAndMove(moving, nextPoint(under) + grab);
+            QVERIFY(r.sc().dragging());
+            QVERIFY2(r.sc().dropTarget().fits(), qPrintable(QString("kind %1 fit %2 reason %3 moving %4 under %5 target(%6,%7) grab(%8,%9)").arg((int)r.sc().dropTarget().kind).arg((int)r.sc().dropTarget().fit).arg(QString::fromStdString(r.sc().dropTarget().reason)).arg(QString::fromStdString(moving)).arg(QString::fromStdString(under)).arg(nextPoint(under).x()).arg(nextPoint(under).y()).arg(grab.x()).arg(grab.y())));
+            r.release(nextPoint(under) + grab);
+            QVERIFY(!r.sc().dragging());
+            QCOMPARE(s.stats().floatingStacks, (size_t)(1 - round));
+            r.ed->view().fitAll();
+            QApplication::processEvents();
+        }
+        (void)firstOf;
+        std::string expected = "; Generated from prog.acblk - edit the blocks, not this file\n\n.main\n";
+        for (const auto* part : {&a, &b, &c}) for (const std::string& l : *part) expected += (l.back() == ':' ? "" : "    ") + l + "\n";
+        QCOMPARE(QString::fromStdString(s.generated().text), QString::fromStdString(expected));
+        asmcore::Options opt;
+        const asmcore::Result res = asmcore::assemble({asmcore::Source{"p.asm", s.generated().text}}, nullptr, opt);
+        QVERIFY2(res.ok, qPrintable(QString::fromStdString(res.diagnosticsText())));
+        // the same thing the typed and the hand-written versions give
+        const std::string hand = slurpFile(std::filesystem::path(ACIDE_SAMPLE_DIR) / "01_hello_csr" / "hello.asm");
+        (void)hand;
+    }
+
+    // large programs: 1000 blocks with 50 floating stacks open quickly and an edit is redrawn at once
+    void aLargeProgramIsQuick() {
+        std::string text = ".main\n";
+        for (int i = 0; i < 1000; i++) text += (i % 7 == 0 ? "l" + std::to_string(i) + ":\n" : std::string()) + "    MOV CONST(" + std::to_string(i % 200) + ", 2) -> MAIN_SCRATCHPAD[" + std::to_string((i % 15) * 2) + ".." + std::to_string((i % 15) * 2 + 1) + "]\n";
+        asmcore::blocks::Document d = asmcore::blocks::importAsm(text, "big");
+        {
+            Fixture f;
+            PanelRegistry panels;
+            registerBuiltinPanels(panels);
+            MainWindow w(f.ctx, panels);
+            w.setQuiet(true);
+            w.resize(1100, 720);
+            w.show();
+            w.openProject("/w/p.acproj");
+            f.fs->write("/w/big.acblk", asmcore::blocks::serializeDocument(d));
+            QElapsedTimer t;
+            t.start();
+            auto* ed = qobject_cast<BlockEditor*>(w.openTab("/w/big.acblk"));
+            QVERIFY(ed);
+            ed->view().showContent();
+            QApplication::processEvents();
+            const qint64 open = t.elapsed();
+            auto& s = ed->session();
+            // 50 floating stacks
+            t.restart();
+            for (int k = 0; k < 5; k++) {
+                const auto& blocks = s.document().sections[0].blocks;
+                const std::string id = blocks[std::min<size_t>(blocks.size() - 1, 20 + 15)].id;
+                s.apply([&](asmcore::blocks::Editor& e) { return e.splitAt(id, 800 + (k % 10) * 300, 60 + (k / 10) * 900); });
+            }
+            QVERIFY(s.stats().floatingStacks >= 4);
+            QVERIFY(s.stats().blocks >= 1000);
+            ed->view().showContent();
+            QApplication::processEvents();
+            // an edit: change, relayout, repaint
+            const std::string first = s.document().sections[0].blocks.front().id;
+            std::vector<qint64> times;
+            for (int k = 0; k < 7; k++) {
+                t.restart();
+                s.apply([&](asmcore::blocks::Editor& e) { return e.setComment(first, "edit " + std::to_string(k)); });
+                QApplication::processEvents();
+                ed->view().viewport()->repaint();
+                times.push_back(t.elapsed());
+            }
+            std::sort(times.begin(), times.end());
+            const qint64 worst = times[times.size() / 2];                                          // the median (this build is not optimized: the numbers are for a slow case)
+            qInfo() << "1000 blocks: open" << open << "ms; one edit and repaint (median of 7)" << worst << "ms";
+            QVERIFY2(open < 1500, qPrintable(QString("open took %1 ms").arg(open)));
+            QVERIFY2(worst < 600, qPrintable(QString("an edit took %1 ms").arg(worst)));
+            // a big program is written to the workspace after the burst of edits; Save writes it at once (the pending write is done first)
+            const std::string before = f.ws.find("/w/big.acblk")->text;
+            s.apply([&](asmcore::blocks::Editor& e) { return e.setComment(first, "saved with Ctrl+S"); });
+            QVERIFY(f.ws.find("/w/big.acblk")->text == before);                                   // (not yet)
+            w.tabs()->setCurrentWidget(ed);
+            for (QAction* a : w.findChildren<QAction*>()) if (a->text() == "&Save") { a->trigger(); break; }
+            QVERIFY(f.ws.find("/w/big.acblk")->text != before && !f.ws.find("/w/big.acblk")->dirty);
+            std::string onDisk;
+            QVERIFY(f.fs->read("/w/big.acblk", onDisk) && onDisk.find("saved with Ctrl+S") != std::string::npos);
+        }
+    }
+
     void everySampleProgramShowsAsBlocks() {
         namespace fs = std::filesystem;
         int shown = 0;

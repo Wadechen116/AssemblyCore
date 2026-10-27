@@ -179,12 +179,16 @@ static void t_samples() {
 static void t_block_link() {
     std::printf("\nBlock programs in the workspace\n");
     auto fs = std::make_shared<MemoryFileSystem>();
-    fs->write("/p/prog.acproj", "name = prog\nsource = defs.inc\nblock = old.acblk\n");
+    fs->write("/p/prog.acproj", "name = prog\nsource = defs.inc\nblocks = old.acblk\n");
     Workspace ws(fs);
     std::vector<std::string> errs;
     ws.openProject("/p/prog.acproj", errs);
-    check(ws.project().blocks.size() == 1 && ws.project().blocks[0] == "old.acblk", "the project reads `block =`");
-    check(ws.project().serialize().find("block = old.acblk") != std::string::npos, "...and writes it back");
+    check(ws.project().blocks.size() == 1 && ws.project().blocks[0] == "old.acblk", "the project reads `blocks =`");
+    check(ws.project().serialize().find("blocks = old.acblk") != std::string::npos, "...and writes it back");
+    Project older;
+    std::vector<std::string> pe;
+    Project::parse("name = x\nblock = a.acblk\n", older, pe);
+    check(older.blocks.size() == 1 && older.blocks[0] == "a.acblk" && older.serialize().find("blocks = a.acblk") != std::string::npos, "the key an earlier build wrote (`block =`) is still read");
     asmcore::blocks::Document d;
     d.name = "hello";
     check(generatedPathFor("/p/hello.acblk", d) == "/p/hello.generated.asm", "the default name of the generated file");
@@ -199,7 +203,7 @@ static void t_block_link() {
     check(fs->exists("/p/hello.asm") && !ws.find("/p/hello.asm")->dirty, "...and attaching writes it: the project never names a file that is not there");
     check(ws.project().blocks.size() == 2 && ws.project().blocks[1] == "hello.acblk" && ws.project().sources.back() == "hello.asm", "the program is listed and its generated file is a source");
     std::string t;
-    check(fs->read("/p/prog.acproj", t) && t.find("block = hello.acblk") != std::string::npos, "...and the project file was saved");
+    check(fs->read("/p/prog.acproj", t) && t.find("blocks = hello.acblk") != std::string::npos, "...and the project file was saved");
     check(attachBlocks(ws, "/p/hello.acblk", "/p/hello.asm", err, &changed) && !changed && ws.project().sources.size() == 2, "attaching twice changes nothing");
     check(attachBlocks(ws, "/elsewhere/z.acblk", "/elsewhere/z.asm", err, &changed) && !changed && ws.project().blocks.size() == 2, "a program outside the project is left alone");
     // which files are generated

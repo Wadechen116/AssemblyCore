@@ -106,6 +106,7 @@ private:
     std::map<std::string, QWidget*> docTabs_;                // the tabs made by TabRegistry, by path
     bool closeDocTab(int index);
     void refreshGeneratedMarks();
+    void flushTabs();
     QAction* openHardwareAct_ = nullptr;
     QAction* blockFromAsmAct_ = nullptr;
     QAction* detachBlocksAct_ = nullptr;

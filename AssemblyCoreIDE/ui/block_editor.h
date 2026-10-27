@@ -46,6 +46,10 @@ public:
     // DocumentTab
     std::string tabPath() const override { return path_; }
     QString tabTitle() const override;
+    void prepareToClose() override { flushSync(); }
+    // A big program (more than 300 blocks) is written to the workspace a moment after the last edit (serializing it on every edit would be felt); this does it now.
+    // Everything that reads or writes files calls it first (saving, building, closing).
+    void flushSync();
     std::vector<std::string> workspacePaths() const override { return {path_, generatedPath()}; }
     // the assembler file generated from these blocks (the program's `output`, else NAME.generated.asm)
     std::string generatedPath() const;
@@ -133,8 +137,10 @@ private:
     std::map<QString, unsigned> jumpAt_;
     void applyBuildProblems();                               // the assembler's messages about the generated file become badges on the blocks that produced the lines
     SnapshotPtr snap_;
-    void syncToWorkspace();                                  // after an edit: the program and the generated file go into the workspace buffers (unsaved)
-    bool syncing_ = false, loading_ = true, attached_ = false;
+    void syncToWorkspace();
+    void doSync();
+    QTimer* syncTimer_ = nullptr;                                  // after an edit: the program and the generated file go into the workspace buffers (unsaved)
+    bool syncing_ = false, loading_ = true, attached_ = false, codeStale_ = true;
     std::string lastText_, syncedText_, symbolsFrom_;
 };
 

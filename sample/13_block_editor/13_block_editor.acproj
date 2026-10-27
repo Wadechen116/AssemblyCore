@@ -1,0 +1,9 @@
+# AssemblyCoreIDE project
+name = 13_block_editor
+source = demo.generated.asm
+include_dir = ../common
+blocks = demo.acblk
+call_model = inline
+dataflow = warn
+output_dir = out
+sample_expect = ok
