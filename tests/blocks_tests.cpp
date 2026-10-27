@@ -4,12 +4,14 @@
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <set>
 #include <sstream>
 
 #include "asmcore/asmcore.h"
 #include "asmcore/blocks.h"
 #include "asmcore/lang.h"
+#include "asmcore/sim.h"
 
 using namespace asmcore;
 using namespace asmcore::blocks;
@@ -346,6 +348,99 @@ static void t_roundtrip() {
     check(inc >= 2 && inc == incOk, "the .inc definition files round-trip as blocks too", std::to_string(incOk) + "/" + std::to_string(inc));
 }
 
+// A loop block: "for" counts with the scratchpad and the ALU, "forever" jumps back. The generated text assembles and runs the body the right number of times.
+static Document loopProgram(const std::string& mode, const std::string& count, const std::string& counter = "", int nested = 0) {
+    Document d = importAsm(".main\ns: MOV CONST(0, 2) -> MAIN_SCRATCHPAD[0..1]\n MOV CONST(1, 2) -> MAIN_SCRATCHPAD[2..3]\nh: JMP h\n", "loop");
+    Block body = importAsm(".main\nx: MOV MAIN_SCRATCHPAD[0..1] -> ALU_OPA\n MOV MAIN_SCRATCHPAD[2..3] -> ALU_OPB\n ALU ADD unsigned\n MOV ALU_OUT[0..1] -> MAIN_SCRATCHPAD[0..1]\n", "b").sections[0].blocks[0];
+    std::vector<Block> list = importAsm(".main\nx: MOV MAIN_SCRATCHPAD[0..1] -> ALU_OPA\n MOV MAIN_SCRATCHPAD[2..3] -> ALU_OPB\n ALU ADD unsigned\n MOV ALU_OUT[0..1] -> MAIN_SCRATCHPAD[0..1]\n", "b").sections[0].blocks;
+    list.erase(list.begin());                                                    // (without the label)
+    std::function<void(Block&)> clearIds = [&](Block& x) {                        // (they came from another document: new ids, components included)
+        x.id.clear();
+        for (auto& st : x.stacks) for (Block& c : st.second) clearIds(c);
+        for (auto& vl : x.values) for (Block& c : vl.second) clearIds(c);
+    };
+    for (Block& x : list) clearIds(x);
+    (void)body;
+    Block loop = d.make("loop");
+    loop.set("mode", mode);
+    loop.set("count", count);
+    loop.set("counter", counter);
+    *loop.stack("BODY", true) = list;
+    std::vector<Block>& top = d.sections[0].blocks;
+    Block cur = loop;
+    for (int i = 0; i < nested; i++) { Block outer = d.make("loop"); outer.set("count", "2"); outer.set("counter", ""); outer.stack("BODY", true)->push_back(cur); cur = outer; }
+    top.insert(top.begin() + 3, cur);
+    d.assignMissingIds();
+    return d;
+}
+static long long scratchWord(const Result& r, int at) {
+    sim::Simulator sm(r, sim::SimConfig());
+    sim::RunLimits lim;
+    lim.maxCycles = 100000;
+    lim.maxInstrs = 5000;
+    sm.run(lim);
+    int64_t v = 0;
+    std::string err;
+    sm.eval("scratch[" + std::to_string(at) + "] | (scratch[" + std::to_string(at + 1) + "] << 8)", v, err);
+    return v;
+}
+static void t_loop() {
+    std::printf("\nLoop blocks\n");
+    const Registry& reg = Registry::defaults();
+    const BlockDef* def = reg.find("loop");
+    check(def && def->category == "Control" && def->domains == kMain && def->stacks.size() == 1, "the loop block exists: a Control block of Main with a slot for its body");
+    Document d = loopProgram("for", "7");
+    const std::string text = generate(d).text;
+    check(text.find("MOV CONST(7, 2) -> MAIN_SCRATCHPAD[30..31]") != std::string::npos && text.find("BR.COND ALU_CMP_TRUE, loop_") != std::string::npos, "for 7 times: the limit is loaded and the loop exits on the compare", text);
+    Result r = assemble({Source{"p.asm", text}}, nullptr, Options());
+    check(r.ok, "the generated loop assembles", r.diagnosticsText());
+    check(r.ok && scratchWord(r, 0) == 7, "...and runs its body 7 times", std::to_string(scratchWord(r, 0)));
+    std::string vp;
+    for (const BlockProblem& p : validate(d, reg)) vp += p.message + " | ";
+    check(validate(d, reg).empty(), "a loop with a count has no problems", vp);
+    // the generated lines all belong to the loop block (a build message lands on it), the body's to the blocks inside
+    const Generated g = generate(d);
+    int onLoop = 0;
+    const std::string loopId = d.sections[0].blocks[3].id;
+    for (const GenLine& l : g.lines) onLoop += l.blockId == loopId;
+    check(onLoop >= 12, "the lines of the counting belong to the loop block", std::to_string(onLoop));
+    // forever
+    Document f = loopProgram("forever", "");
+    const std::string ft = generate(f).text;
+    check(ft.find("CONST(") != std::string::npos && ft.find("ALU CMP.EQ") == std::string::npos && ft.find("JMP loop_") != std::string::npos, "forever: just jumps back (no counting)", ft);
+    std::string fp = assemble({Source{"p.asm", ft}}, nullptr, Options()).diagnosticsText();
+    for (const BlockProblem& p : validate(f, reg)) fp += " | " + p.message;
+    check(assemble({Source{"p.asm", ft}}, nullptr, Options()).ok && validate(f, reg).empty(), "...and assembles (the line after it is reported unreachable, as it is)", fp);
+    // nesting: each loop gets its own counter bytes
+    Document n = loopProgram("for", "3", "", 1);
+    const std::string nt = generate(n).text;
+    check(nt.find("MAIN_SCRATCHPAD[26..27]") != std::string::npos && nt.find("MAIN_SCRATCHPAD[20..21]") != std::string::npos, "a loop inside a loop counts in other bytes (26, then 20)", nt);
+    Result nr = assemble({Source{"p.asm", nt}}, nullptr, Options());
+    check(nr.ok && validate(n, reg).empty(), "...and the nest assembles", nr.diagnosticsText());
+    check(nr.ok && scratchWord(nr, 0) == 6, "an inner body of 3 inside 2 outer rounds runs 6 times", std::to_string(scratchWord(nr, 0)));
+    // problems
+    Document bad = loopProgram("for", "5", "30");
+    bool tooHigh = false;
+    for (const BlockProblem& p : validate(bad, reg)) tooHigh |= p.message.find("0..26") != std::string::npos;
+    check(tooHigh, "a counter place outside the scratchpad is a problem");
+    Document clash = loopProgram("for", "3", "20", 1);
+    clash.sections[0].blocks[3].stack("BODY")->at(0).set("counter", "22");
+    bool overlap = false;
+    for (const BlockProblem& p : validate(clash, reg)) overlap |= p.message.find("overlaps") != std::string::npos;
+    check(overlap, "a loop inside a loop may not share its counter bytes");
+    Document noCount = loopProgram("for", "");
+    noCount.sections[0].blocks[3].set("count", "");
+    bool empty = false;
+    for (const BlockProblem& p : validate(noCount, reg)) empty |= p.message.find("times") != std::string::npos;
+    check(empty, "a counting loop without a count is a problem");
+    // the file keeps an empty body, and the mode / count
+    Document e = loopProgram("for", "9");
+    e.sections[0].blocks[3].stack("BODY")->clear();
+    Document back;
+    std::string err;
+    check(parseDocument(serializeDocument(e), back, err) && back.sections[0].blocks[3].type == "loop" && back.sections[0].blocks[3].get("count") == "9" && back.sections[0].blocks[3].stack("BODY") != nullptr, "the file keeps a loop with an empty body, its mode and its count", err);
+}
+
 int main() {
     std::printf("AssemblyCore block program tests\n");
     t_coverage();
@@ -355,6 +450,7 @@ int main() {
     t_validate();
     t_operands();
     t_roundtrip();
+    t_loop();
     std::printf("\n%s  %d passed, %d failed\n", g_fail ? "FAILED" : "OK    ", g_pass, g_fail);
     return g_fail ? 1 : 0;
 }

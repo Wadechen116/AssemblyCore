@@ -90,6 +90,9 @@ public:
     void undo() { if (scene_->dragging()) scene_->cancelDrag(); else session_.undo(); }       // (the Edit menu calls these)
     void redo() { session_.redo(); }
 
+protected:
+    bool eventFilter(QObject* o, QEvent* e) override;         // a click on the canvas closes an open editor, keeping what was typed
+
 private:
     void reload();
     void refreshCode();

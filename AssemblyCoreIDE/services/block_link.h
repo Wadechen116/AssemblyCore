@@ -16,7 +16,7 @@ std::string generatedPathFor(const std::string& acblkPath, const asmcore::blocks
 std::string generatedHeader(const std::string& acblkPath);
 
 // Makes the project use the program: `block = ...` and, if it is not a source yet, the generated file as a source (at the end). Does nothing without a project,
-// or for a program outside the project's folder. Saves the project. `changed` tells whether anything was edited.
+// or for a program outside the project's folder. Saves the project -- and the generated file if it is not on disk yet (the project never names a missing file). `changed` tells whether anything was edited.
 bool attachBlocks(Workspace& ws, const std::string& acblkPath, const std::string& generatedPath, std::string& error, bool* changed = nullptr);
 // Releases the program: `block = ...` goes, the generated file stays a source (it is a plain assembler file again).
 bool detachBlocks(Workspace& ws, const std::string& acblkPath, std::string& error);

@@ -154,7 +154,7 @@ BlockCatalog::BlockCatalog(const Registry& reg) : reg_(reg) {
         if (e.cls != "component") {
             const char* t = sampleText(d.type);
             e.text = t ? t : "";
-            if (!t && e.cls != "text") continue;                                  // a block with no known sample text is not offered (a test notices)
+            if (!t && e.cls != "text" && d.stacks.empty()) continue;              // a block with no known sample text is not offered (a test notices); one with a slot (a loop) is made from its definition
         }
         if (d.type == "blank" || d.type == "raw") continue;                         // (a blank line and raw text are not something to pick from a toolbox)
         builtin_.push_back(e);
@@ -325,6 +325,11 @@ std::vector<Block> BlockCatalog::instantiate(const CatalogEntry& e, Document& do
         return {doc.make("num")};
     }
     if (e.component()) return {makeComponent(doc, reg_, e.type)};
+    if (e.text.empty() && !e.type.empty()) {                                        // no assembler form (a loop): made from the definition, with its slots
+        Block b = doc.make(e.type);
+        if (const BlockDef* d = reg_.find(e.type)) for (const std::string& st : d->stacks) b.stack(st, true);
+        return {b};
+    }
     std::vector<Block> v = blocksFromText(doc, e.text, nullptr);
     if (v.empty()) v.push_back(doc.make(e.type.empty() ? "comment" : e.type));
     return v;

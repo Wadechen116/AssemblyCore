@@ -51,6 +51,8 @@ bool attachBlocks(Workspace& ws, const std::string& acblkPath, const std::string
     if (!gen.empty() && std::find(pr.sources.begin(), pr.sources.end(), gen) == pr.sources.end()) { pr.sources.push_back(gen); edited = true; }
     if (!edited) return true;
     if (changed) *changed = true;
+    // the project must not name a file that is not there: a generated file that exists only as an unsaved buffer is written now
+    if (!gen.empty() && !ws.fileSystem()->exists(generatedPath) && ws.find(generatedPath) && !ws.save(generatedPath, error)) return false;
     if (!ws.saveProject(error)) return false;
     ws.projectEdited();
     return true;

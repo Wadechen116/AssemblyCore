@@ -2,6 +2,7 @@
 #include "asmcore/blocks.h"
 
 #include <algorithm>
+#include <cstdlib>
 #include <set>
 #include <sstream>
 
@@ -201,6 +202,26 @@ const Registry& Registry::defaults() {
             p.help = "A subroutine: CALL name ... RET.";
             r.add(p);
         }
+        {
+            // A repeat: the body between a label and a jump back. "for" counts with the scratchpad and the ALU (the way sample 01 does by hand), "forever" just jumps back.
+            BlockDef l;
+            l.type = "loop"; l.title = "loop"; l.category = "Control"; l.domains = kMain;
+            FieldDef mode = F("mode", "repeat", FieldKind::Choice);
+            mode.options = {"for", "forever"};
+            mode.def = "for";
+            FieldDef count = F("count", "times", FieldKind::Int, 1, 65535);
+            count.def = "10";
+            count.when = "mode=for";
+            FieldDef counter = F("counter", "counter at", FieldKind::Int, 0, 26);
+            counter.optional = true;
+            counter.when = "mode=for";
+            counter.help = "The first of 6 scratchpad bytes the count uses (counter, step, limit). Empty: chosen for you (26, then 20, 14 ... for loops inside loops).";
+            l.fields = {mode, count, counter};
+            l.stacks = {"BODY"};
+            l.structural = true;
+            l.help = "Repeats the blocks inside: a number of times (the count lives in 6 scratchpad bytes, the ALU does the counting) or forever.";
+            r.add(l);
+        }
         def("label", "label", "Structure", kBoth, {F("name", "name")}, "{name}:", "");
         def("vector", "event vector", "Structure", kBoth, {F("id", "event"), F("label", "handler")}, ".vector {id}, {label}", "16");
         def("wcet", "WCET query", "Structure", kMain, {F("name", "name"), F("from", "from"), F("to", "to")}, ".wcet {name}, {from}, {to}", "");
@@ -302,10 +323,52 @@ std::vector<std::string> commentLines(const std::string& comment) {
     return lines;
 }
 
+// The first scratchpad byte of the 6 a counting loop uses: what the block says, else chosen by how deep the loop is (26, 20, 14, 8, 2). -1: not a usable number.
+int loopCounterBase(const Block& b, int depth) {
+    const std::string t = trim(b.get("counter"));
+    if (t.empty()) return depth <= 4 ? 26 - 6 * depth : -1;
+    char* end = nullptr;
+    const long long v = std::strtoll(t.c_str(), &end, 0);
+    return end && *end == 0 && v >= 0 && v <= 26 ? (int)v : -1;
+}
+
 struct Gen {
     const Registry& reg;
     Generated out;
     int line = 0;
+    int loopDepth = 0;
+    std::string sp(int a, int z) { return "MAIN_SCRATCHPAD[" + std::to_string(a) + ".." + std::to_string(z) + "]"; }
+    void loopBlock(const Block& b) {
+        const bool forever = b.get("mode") == "forever";
+        const std::string top = "loop_" + b.id, end = top + "_end";
+        if (b.disabled) { emit("; loop " + std::string(forever ? "forever" : "for " + trim(b.get("count")) + " times") + " (turned off)", b.id); return; }
+        const int c = forever ? 0 : std::max(0, loopCounterBase(b, loopDepth));            // (a bad value is a problem of validate(); here the default keeps the text sane)
+        std::string n = trim(b.get("count"));
+        if (n.empty()) n = "1";
+        if (forever) {
+            emitWithComment(top + ":", b.comment, b.id, 0);
+        } else {
+            emitWithComment("    MOV CONST(0, 2) -> " + sp(c, c + 1), b.comment, b.id, 4);
+            emit("    MOV CONST(1, 2) -> " + sp(c + 2, c + 3), b.id);
+            emit("    MOV CONST(" + n + ", 2) -> " + sp(c + 4, c + 5), b.id);
+            emit(top + ":", b.id);
+        }
+        loopDepth++;
+        if (const std::vector<Block>* body = b.stack("BODY")) for (const Block& x : *body) block(x);
+        loopDepth--;
+        if (!forever) {
+            emit("    MOV " + sp(c, c + 1) + " -> ALU_OPA", b.id);
+            emit("    MOV " + sp(c + 2, c + 3) + " -> ALU_OPB", b.id);
+            emit("    ALU ADD unsigned", b.id);
+            emit("    MOV ALU_OUT[0..1] -> " + sp(c, c + 1), b.id);
+            emit("    MOV " + sp(c, c + 1) + " -> ALU_OPA", b.id);
+            emit("    MOV " + sp(c + 4, c + 5) + " -> ALU_OPB", b.id);
+            emit("    ALU CMP.EQ unsigned", b.id);
+            emit("    BR.COND ALU_CMP_TRUE, " + end, b.id);
+        }
+        emit("    JMP " + top, b.id);
+        if (!forever) emit(end + ":", b.id);
+    }
     // a line that ends in the comment, and the lines that continue it
     void emitWithComment(const std::string& text, const std::string& comment, const std::string& id, int indent) {
         const std::vector<std::string> ls = commentLines(comment);
@@ -325,6 +388,9 @@ struct Gen {
         if (b.type == "raw") {
             stmt = b.get("text");
             indent = !stmt.empty() && stmt[0] == '.' ? 0 : 4;
+        } else if (b.type == "loop") {
+            loopBlock(b);
+            return;
         } else if (b.type == "proc") {
             emitWithComment(".proc " + b.get("name"), b.comment, b.id, 0);
             if (const std::vector<Block>* body = b.stack("BODY")) for (const Block& c : *body) block(c);
@@ -474,7 +540,7 @@ void checkBlock(const Block& b, const std::string& domain, bool inProc, bool asV
     for (const FieldDef& f : d->fields) {
         const std::string v2 = partText(b, *d, f.name, reg);
         if (f.kind == FieldKind::Flag) continue;
-        if (!partVisible(f.when, b)) { if (!v2.empty() && !f.optional) err("'" + f.label + "' is not used here", false); continue; }
+        if (!partVisible(f.when, b)) { if (!v2.empty() && !f.optional && b.type != "loop") err("'" + f.label + "' is not used here", false); continue; }
         if (v2.empty() && !f.optional && b.type != "raw") err("'" + f.label + "' is empty");
         if (f.kind == FieldKind::Choice && !f.open && !v2.empty() && std::find(f.options.begin(), f.options.end(), v2) == f.options.end()) err("'" + v2 + "' is not one of the choices for '" + f.label + "'");
     }
@@ -508,12 +574,37 @@ void checkBlock(const Block& b, const std::string& domain, bool inProc, bool asV
 }
 }  // namespace
 
+namespace {
+// The counting loops: the 6 scratchpad bytes must be a real place, and a loop inside a loop must not use the bytes of the loop around it.
+void checkLoops(const std::vector<Block>& v, int depth, std::vector<int>& bases, std::vector<BlockProblem>& out) {
+    for (const Block& b : v) {
+        if (b.disabled) continue;
+        const bool loop = b.type == "loop";
+        const bool counting = loop && b.get("mode") != "forever";
+        if (counting) {
+            const int c = loopCounterBase(b, depth);
+            if (c < 0) {
+                out.push_back({true, b.id, trim(b.get("counter")).empty() ? "loops nested this deep (more than 5) need a counter place of their own" : "the counter must be a plain number 0..26 (it uses 6 scratchpad bytes from there)", "structure"});
+            } else {
+                for (int o : bases)
+                    if (std::abs(o - c) < 6) { out.push_back({true, b.id, "this loop's counter (scratchpad bytes " + std::to_string(c) + ".." + std::to_string(c + 5) + ") overlaps the counter of the loop around it", "structure"}); break; }
+                bases.push_back(c);
+            }
+        }
+        for (const auto& st : b.stacks) checkLoops(st.second, loop ? depth + 1 : depth, bases, out);
+        if (counting && !bases.empty()) bases.pop_back();
+    }
+}
+}  // namespace
+
 std::vector<BlockProblem> validate(const Document& doc, const Registry& reg, const SymbolTable* extra) {
     std::vector<BlockProblem> out;
     std::set<std::string> ids;
     for (const Section& s : doc.sections) {
         if (s.domain != "" && s.domain != "main" && s.domain != "peri" && s.domain != "floating") out.push_back({true, "", "unknown section '" + s.domain + "' (main, peri or floating)"});
         checkList(s.blocks, s.domain, false, reg, out, ids);
+        std::vector<int> bases;
+        checkLoops(s.blocks, 0, bases, out);
     }
     SymbolTable table;
     table.addDocument(doc);
@@ -562,7 +653,7 @@ json::Value toJson(const Block& b, const Registry& reg) {
         v.set("parts", vs);
     }
     bool anyStack = false;
-    for (const auto& st : b.stacks) if (!st.second.empty() || b.type == "proc") anyStack = true;
+    for (const auto& st : b.stacks) if (!st.second.empty() || b.type == "proc" || b.type == "loop") anyStack = true;
     if (anyStack) {
         json::Value s = json::Value::makeObject();
         for (const auto& st : b.stacks) {

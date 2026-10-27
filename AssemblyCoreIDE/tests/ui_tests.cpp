@@ -1391,7 +1391,8 @@ private slots:
         QVERIFY(!ws.find("/w/prog.acblk")->dirty);
         // an edit: both buffers are updated, unsaved
         emit r.ed->toolbox().activated("type:jmp");
-        QVERIFY(ws.find(gen) && ws.find(gen)->dirty);
+        QVERIFY(ws.find(gen));
+        QVERIFY(r.f.fs->exists(gen));                                          // (listing it in the project wrote it: the project never names a missing file)
         QCOMPARE(QString::fromStdString(ws.find(gen)->text), QString::fromStdString(s.generated().text));
         QVERIFY(ws.find(gen)->text.find("Generated from prog.acblk") != std::string::npos);
         QVERIFY(ws.find("/w/prog.acblk")->dirty);
@@ -1409,6 +1410,7 @@ private slots:
         QVERIFY(used);
         // a floating stack is not in the generated text; an undo takes the edit out of both
         QVERIFY(s.undo());
+        QVERIFY(ws.find("/w/prog.acblk")->dirty);                               // (a later edit is unsaved again; the floating stack is not in the generated text)
         QCOMPARE(QString::fromStdString(ws.find(gen)->text), QString::fromStdString(s.generated().text));
         QVERIFY(ws.find(gen)->text.find("JMP start\n    JMP") == std::string::npos);
         // the tab counts both files; Save All writes both
@@ -1558,6 +1560,116 @@ private slots:
         QVERIFY(!after || !after->isReadOnly());
         QVERIFY(f.buildAndWait());
         QVERIFY(f.ctx.snapshot->result.ok);
+    }
+
+    void aProgramNextToItsAssemblerFileAdoptsThatFile() {
+        Fixture f;
+        PanelRegistry panels;
+        registerBuiltinPanels(panels);
+        const std::string original = ".csr C = 0x120\n.main\nstart: EXEC_CSR WRITE8 C, 1\n    ALU ADD unsigned\nh: JMP h\n";
+        f.fs->write("/w/main.asm", original);
+        f.fs->write("/w/main.acblk", asmcore::blocks::serializeDocument(asmcore::blocks::importAsm(original, "main")));          // (made before programs said where they write)
+        MainWindow w(f.ctx, panels);
+        w.setQuiet(true);
+        w.show();
+        w.openProject("/w/p.acproj");
+        auto* be = w.openBlocks("/w/main.acblk");
+        QVERIFY(be);
+        QVERIFY(be->session().document().output.empty());
+        // opening changes nothing
+        QCOMPARE((int)f.ws.project().sources.size(), 1);
+        QVERIFY(f.ws.project().blocks.empty());
+        QVERIFY(be->session().apply([&](asmcore::blocks::Editor& e) { return e.setComment(be->session().document().sections.back().blocks.back().id, "x"); }).ok);
+        // the first edit: it writes main.asm (not a second copy of the program), the project lists the program and still has one source, the old text is kept
+        QCOMPARE(QString::fromStdString(be->generatedPath()), QString("/w/main.asm"));
+        QCOMPARE((int)f.ws.project().sources.size(), 1);
+        QCOMPARE((int)f.ws.project().blocks.size(), 1);
+        std::string t;
+        QVERIFY(f.fs->read("/w/main.asm.bak", t));
+        QCOMPARE(QString::fromStdString(t), QString::fromStdString(original));
+        std::string proj;
+        QVERIFY(f.fs->read("/w/p.acproj", proj));
+        QVERIFY2(proj.find("generated") == std::string::npos, proj.c_str());
+        QVERIFY(f.buildAndWait());
+        QVERIFY(f.ctx.snapshot->result.ok);
+    }
+
+    void aLoopBlockTakesAModeAndACount() {
+        DragRig r(".main\ntop: MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]\n JMP top\n");
+        auto& s = r.ed->session();
+        r.sc().setAnimationsEnabled(false);
+        s.select({s.document().sections[0].blocks[1].id});
+        emit r.ed->toolbox().activated("type:loop");
+        std::string loop;
+        for (const auto& b : s.document().sections[0].blocks) if (b.type == "loop") loop = b.id;
+        QVERIFY(!loop.empty());
+        QVERIFY(s.generated().text.find("MOV CONST(10, 2) -> MAIN_SCRATCHPAD[30..31]") != std::string::npos);
+        auto target = [&](const char* part) {
+            for (const auto& t : r.sc().editTargets()) if (t.blockId == loop && t.part == part) return t;
+            return BlockScene::EditTarget();
+        };
+        QVERIFY(!target("mode").blockId.empty() && !target("count").blockId.empty() && !target("counter").blockId.empty());
+        QCOMPARE(target("mode").options.size(), size_t(2));
+        // the count: double click, type, Enter -> the generated text follows, the editor goes
+        auto* fe = r.ed->findChild<acide::FieldEditor*>("fieldEditor");
+        QTest::mouseDClick(r.v().viewport(), Qt::LeftButton, Qt::NoModifier, r.at(target("count").rect.center()));
+        QVERIFY(fe->isVisible());
+        fe->lineEdit()->selectAll();
+        QTest::keyClicks(fe->lineEdit(), "25");
+        QTest::keyClick(fe->lineEdit(), Qt::Key_Return);
+        QVERIFY(!fe->isVisible());
+        QVERIFY(s.generated().text.find("MOV CONST(25, 2)") != std::string::npos);
+        // the mode: choose "forever" from the list -> no counting, the count and counter go away
+        QTest::mouseDClick(r.v().viewport(), Qt::LeftButton, Qt::NoModifier, r.at(target("mode").rect.center()));
+        QVERIFY(fe->isVisible());
+        const int i = fe->findText("forever");
+        QVERIFY(i >= 0);
+        fe->setCurrentIndex(i);
+        emit fe->activated(i);
+        QVERIFY(!fe->isVisible());
+        QVERIFY(s.generated().text.find("ALU CMP.EQ") == std::string::npos && s.generated().text.find("JMP loop_") != std::string::npos);
+        QVERIFY(target("count").blockId.empty());
+        s.select({loop});
+        r.ed->resize(900, 600);
+        QApplication::processEvents();
+        r.ed->grab().save(outDir() + "/blocks_loop.png");
+        // a block dragged into the body is part of the loop
+        s.apply([&](asmcore::blocks::Editor& e) { return e.setField(loop, "mode", "for"); });
+        QVERIFY(!target("count").blockId.empty());
+    }
+
+    void aLabelNameEditorClosesAfterEveryWayOfFinishing() {
+        DragRig r(".main\nloop: MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]\n JMP loop\n");
+        auto& s = r.ed->session();
+        r.sc().setAnimationsEnabled(false);
+        auto* fe = r.ed->findChild<acide::FieldEditor*>("fieldEditor");
+        QVERIFY(fe);
+        std::string label;
+        for (const auto& b : s.document().sections[0].blocks) if (b.type == "label") label = b.id;
+        QVERIFY(!label.empty());
+        auto dbl = [&] {
+            for (const auto& t : r.sc().editTargets()) if (t.blockId == label) {
+                const QPoint p = r.at(t.rect.center());
+                QTest::mouseDClick(r.v().viewport(), Qt::LeftButton, Qt::NoModifier, p);
+                return true;
+            }
+            return false;
+        };
+        QVERIFY(dbl());
+        QVERIFY(fe->isVisible());
+        QTest::keyClicks(fe->lineEdit(), "again");
+        QTest::keyClick(fe->lineEdit(), Qt::Key_Return);
+        QVERIFY2(!fe->isVisible(), "Enter");
+        QVERIFY(s.generated().text.find("again:") != std::string::npos);
+        QVERIFY(dbl());
+        QVERIFY(fe->isVisible());
+        QTest::keyClick(fe->lineEdit(), Qt::Key_Escape);
+        QVERIFY2(!fe->isVisible(), "Esc");
+        QVERIFY(dbl());
+        QTest::keyClick(fe->lineEdit(), Qt::Key_Tab);
+        QVERIFY2(!fe->isVisible() || fe->isOpen(), "Tab");
+        QTest::mouseClick(r.v().viewport(), Qt::LeftButton, Qt::NoModifier, r.at(QPointF(900, 520)));              // a click elsewhere on the canvas
+        QVERIFY2(!fe->isVisible() && !fe->isOpen(), "click elsewhere");
     }
 
     void aChoiceFromTheListClosesTheEditor() {

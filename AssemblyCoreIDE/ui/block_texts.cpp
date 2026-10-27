@@ -120,6 +120,10 @@ const char* const* blockTextsForTranslation(int& count) {
         QT_TRANSLATE_NOOP("CustomBlockCheck", "There is already a block with this name in the drawer"),
         QT_TRANSLATE_NOOP("CustomBlockCheck", "Nothing in the text makes a block"),
         QT_TRANSLATE_NOOP("CustomBlockCheck", "The text is not an operand (a number, an expression, or a range such as MAIN_SCRATCHPAD[4..7])"),
+        QT_TRANSLATE_NOOP("BlockTitle", "loop"),
+        QT_TRANSLATE_NOOP("BlockField", "repeat"),
+        QT_TRANSLATE_NOOP("BlockField", "times"),
+        QT_TRANSLATE_NOOP("BlockField", "counter at"),
     };
     count = (int)(sizeof(texts) / sizeof(texts[0]));
     return texts;

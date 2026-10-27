@@ -251,6 +251,18 @@ Drag it to change the order; double-click the end of it to write a comment</sour
         <source>value</source>
         <translation>值</translation>
     </message>
+    <message>
+        <source>repeat</source>
+        <translation>重複</translation>
+    </message>
+    <message>
+        <source>times</source>
+        <translation>次數</translation>
+    </message>
+    <message>
+        <source>counter at</source>
+        <translation>計數器位置</translation>
+    </message>
 </context>
 <context>
     <name>BlockPattern</name>
@@ -476,6 +488,10 @@ Drag it to change the order; double-click the end of it to write a comment</sour
     <message>
         <source>write CSR from scratchpad</source>
         <translation>由暫存區寫入 CSR</translation>
+    </message>
+    <message>
+        <source>loop</source>
+        <translation>迴圈</translation>
     </message>
 </context>
 <context>
@@ -1195,6 +1211,10 @@ Drag it to change the order; double-click the end of it to write a comment</sour
         <translation>
             <numerusform>%n 個問題</numerusform>
         </translation>
+    </message>
+    <message>
+        <source>%1 is now generated from %2 (the earlier text is kept as %3)</source>
+        <translation>%1 現在由 %2 產生（原本的文字備份為 %3）</translation>
     </message>
 </context>
 <context>

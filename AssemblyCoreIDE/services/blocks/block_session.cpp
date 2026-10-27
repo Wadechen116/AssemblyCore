@@ -322,6 +322,13 @@ const std::vector<BlockProblem>& BlockSession::problems() const {
     return problems_;
 }
 
+void BlockSession::setOutput(const std::string& output) {
+    if (doc_.output == output) return;
+    doc_.output = output;
+    invalidate();
+    changed.fire();
+}
+
 void BlockSession::setBuildProblems(std::vector<BlockProblem> p) {
     auto same = [](const BlockProblem& a, const BlockProblem& b) { return a.blockId == b.blockId && a.message == b.message && a.error == b.error; };
     if (p.size() == build_.size() && std::equal(p.begin(), p.end(), build_.begin(), same)) return;

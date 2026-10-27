@@ -66,6 +66,7 @@ public:
     const asmcore::blocks::Generated& generated() const;
     const std::vector<asmcore::blocks::BlockProblem>& problems() const;
     // What the assembler said about the generated text, as problems of the blocks (kind "build"); they are listed after the structure checks. Fires `changed` only if the set changed.
+    void setOutput(const std::string& output);               // the file the blocks generate (document metadata: not an undo step)
     void setBuildProblems(std::vector<asmcore::blocks::BlockProblem> p);
     size_t buildProblemCount() const { return build_.size(); }
     // Symbols defined outside the document (the hardware description): the names components may use, and the "not defined" checks know them.

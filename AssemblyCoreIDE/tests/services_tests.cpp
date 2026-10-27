@@ -193,7 +193,10 @@ static void t_block_link() {
     check(generatedHeader("/p/hello.acblk").find("hello.acblk") != std::string::npos, "the header names the program");
     std::string err;
     bool changed = false;
+    ws.setText("/p/hello.asm", ".main\nh: JMP h\n");                                            // (only a buffer so far)
+    check(!fs->exists("/p/hello.asm"), "the generated file is not on disk yet");
     check(attachBlocks(ws, "/p/hello.acblk", "/p/hello.asm", err, &changed) && changed, "attach", err);
+    check(fs->exists("/p/hello.asm") && !ws.find("/p/hello.asm")->dirty, "...and attaching writes it: the project never names a file that is not there");
     check(ws.project().blocks.size() == 2 && ws.project().blocks[1] == "hello.acblk" && ws.project().sources.back() == "hello.asm", "the program is listed and its generated file is a source");
     std::string t;
     check(fs->read("/p/prog.acproj", t) && t.find("block = hello.acblk") != std::string::npos, "...and the project file was saved");

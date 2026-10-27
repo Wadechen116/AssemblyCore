@@ -259,6 +259,7 @@ BlockEditor::BlockEditor(AppContext& ctx, const std::string& path, QWidget* pare
         view_->setFocus();
     });
     connect(commentEdit_, &CommentEdit::cancelled, this, [this] { view_->setFocus(); });
+    view_->viewport()->installEventFilter(this);
     conns_->add(scene_->blockClicked, [this](const std::string& id, Qt::KeyboardModifiers m) { onBlockClicked(id, m); });
     conns_->add(scene_->emptyClicked, [this](Qt::KeyboardModifiers m) { if (!(m & Qt::ControlModifier)) session_.clearSelection(); });
     conns_->add(session_.changed, [this] { refreshCode(); refreshInfo(); syncToWorkspace(); applyBuildProblems(); });
@@ -311,12 +312,37 @@ void BlockEditor::applyBuildProblems() {
     session_.setBuildProblems(v);
 }
 
+bool BlockEditor::eventFilter(QObject* o, QEvent* e) {
+    if (view_ && o == view_->viewport() && e->type() == QEvent::MouseButtonPress && fieldEditor_ && fieldEditor_->isOpen()) {
+        const QPoint at = static_cast<QMouseEvent*>(e)->pos();
+        if (!fieldEditor_->geometry().contains(view_->viewport()->mapTo(this, at))) fieldEditor_->commit();                  // (not when the click is on the editor itself)
+    }
+    return QWidget::eventFilter(o, e);
+}
+
 std::string BlockEditor::generatedPath() const { return acide::generatedPathFor(path_, session_.document()); }
 
 // The blocks are the truth. Each edit puts the serialized program and the text generated from it into the workspace (as unsaved buffers: the build and the
 // debugger use them at once, Save All writes both). Loading a file writes nothing.
 void BlockEditor::syncToWorkspace() {
     if (loading_) return;
+    if (!attached_ && ctx_.workspace.hasProject() && session_.document().output.empty()) {
+        // A program that never said where its text goes, next to an assembler file the project already builds under the same name (a program made by an
+        // older "show as blocks"): that file is the one it generates (as a conversion would), so the project does not get two copies of the same code.
+        const size_t slash = path_.find_last_of('/'), dot = path_.find_last_of('.');
+        const std::string sibling = path_.substr(0, dot != std::string::npos && dot > slash ? dot : path_.size()) + ".asm";
+        bool inProject = false;
+        for (const std::string& s : ctx_.workspace.project().sources) inProject |= ctx_.workspace.project().absolute(s) == sibling;
+        if (inProject) {
+            const std::string backup = sibling + ".bak";
+            if (!ctx_.workspace.fileSystem()->exists(backup)) { std::string old; if (const Document* d = ctx_.workspace.find(sibling)) old = d->text; else ctx_.workspace.fileSystem()->read(sibling, old); ctx_.workspace.fileSystem()->write(backup, old); }
+            const bool was = loading_;
+            loading_ = true;
+            session_.setOutput(sibling.substr(sibling.find_last_of('/') + 1));
+            loading_ = was;
+            ctx_.log.fire(tr("%1 is now generated from %2 (the earlier text is kept as %3)").arg(QString::fromStdString(sibling)).arg(QString::fromStdString(path_)).arg(QString::fromStdString(backup)));
+        }
+    }
     const std::string text = asmcore::blocks::serializeDocument(session_.document());
     if (text == syncedText_) return;                                                     // not an edit (the names known to the checks changed, ...)
     syncedText_ = text;
