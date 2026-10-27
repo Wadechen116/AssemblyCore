@@ -124,6 +124,18 @@ const char* const* blockTextsForTranslation(int& count) {
         QT_TRANSLATE_NOOP("BlockField", "repeat"),
         QT_TRANSLATE_NOOP("BlockField", "times"),
         QT_TRANSLATE_NOOP("BlockField", "counter at"),
+        QT_TRANSLATE_NOOP("BlockDrawer", "Hardware CSR"),
+        QT_TRANSLATE_NOOP("BlockDrawer", "Hardware Devices"),
+        QT_TRANSLATE_NOOP("BlockDrawer", "Hardware Services"),
+        QT_TRANSLATE_NOOP("BlockDrawer", "Hardware Data"),
+        QT_TRANSLATE_NOOP("BlockDrawer", "Hardware Names"),
+        QT_TRANSLATE_NOOP("BlockHardware", "set bits"),
+        QT_TRANSLATE_NOOP("BlockHardware", "clear bits"),
+        QT_TRANSLATE_NOOP("BlockHardware", "write"),
+        QT_TRANSLATE_NOOP("BlockHardware", "read"),
+        QT_TRANSLATE_NOOP("BlockHardware", "publish"),
+        QT_TRANSLATE_NOOP("BlockHardware", "load"),
+        QT_TRANSLATE_NOOP("BlockHardware", " (several bytes)"),
     };
     count = (int)(sizeof(texts) / sizeof(texts[0]));
     return texts;

@@ -23,6 +23,19 @@ using blocks::CatalogEntry;
 
 static QString tr2(const char* ctx, const std::string& s) { return QCoreApplication::translate(ctx, s.c_str()); }
 
+// "write AE_CTRL", "set bits AE_CTRL", "read DEV_IMU (several bytes)": the verb is translated, the name of the part never is.
+static QString hardwareTitle(const std::string& title) {
+    static const char* verbs[] = {"set bits", "clear bits", "write", "read", "publish", "load"};
+    for (const char* v : verbs) {
+        const std::string vs = v;
+        if (title.compare(0, vs.size() + 1, vs + " ") != 0) continue;
+        QString rest = QString::fromStdString(title.substr(vs.size() + 1));
+        rest.replace(" (several bytes)", QCoreApplication::translate("BlockHardware", " (several bytes)"));
+        return QCoreApplication::translate("BlockHardware", v) + " " + rest;
+    }
+    return QString::fromStdString(title);
+}
+
 QMimeData* SampleTree::mimeData(const QList<QTreeWidgetItem*>& items) const {
     if (items.isEmpty() || items[0]->data(0, Qt::UserRole).toString().isEmpty()) return nullptr;
     auto* m = new QMimeData;
@@ -177,7 +190,7 @@ void BlockToolbox::build() {
         }
         for (const CatalogEntry* e : d.entries) {
             auto* it = new QTreeWidgetItem(top);
-            QString title = e->custom ? QString::fromStdString(e->title) : pattern ? tr2("BlockPattern", e->title) : tr2("BlockTitle", e->title);
+            QString title = e->hardware ? hardwareTitle(e->title) : e->custom ? QString::fromStdString(e->title) : pattern ? tr2("BlockPattern", e->title) : tr2("BlockTitle", e->title);
             if (e->domains == asmcore::blocks::kMain && !e->component()) title += "  [Main]";
             else if (e->domains == asmcore::blocks::kPeri && !e->component()) title += "  [Peri]";
             it->setText(0, title);

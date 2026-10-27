@@ -768,6 +768,60 @@ static void t_custom_blocks() {
     check(cat.entries().size() == before && !cat.find(e->id), "removing them all brings the toolbox back to what it was");
 }
 
+static std::string slurp(const fs::path& p);
+
+// The blocks the project's hardware description brings: a CSR, a device, a service, a constant, a name each get their own.
+static void t_hardware_drawers() {
+    section("blocks from the hardware description");
+    asmcore::Hardware hw;
+    std::vector<std::string> perr;
+    const bool parsed = asmcore::parseHardware(slurp(fs::path(ACIDE_SAMPLE_DIR) / "11_hardware_designer" / "board.achw"), hw, perr);
+    check(parsed && !hw.csrs.empty() && !hw.devices.empty() && !hw.services.empty(), "the sample description reads", perr.empty() ? "" : perr[0]);
+    BlockCatalog cat;
+    const size_t before = cat.entries().size();
+    check(cat.setHardware(hw) && cat.hardwareCount() > 10 && cat.entries().size() == before + cat.hardwareCount(), "the entries are added");
+    check(!cat.setHardware(hw), "the same description again changes nothing (the toolbox is not built again)");
+    auto has = [&](const std::string& id) { return cat.find(id) != nullptr; };
+    check(has("hw:Hardware CSR/write AE_CTRL") && has("hw:Hardware CSR/set bits AE_CTRL") && has("hw:Hardware CSR/clear bits AE_CTRL") && has("hw:Hardware CSR/read AE_CTRL"), "a RAM CSR: write, set bits, clear bits, read back");
+    check(has("hw:Hardware CSR/write POLL_CTRL") && !has("hw:Hardware CSR/read POLL_CTRL"), "an action CSR can be written but not read");
+    check(has("hw:Hardware Devices/read DEV_IMU") && has("hw:Hardware Devices/write DEV_IMU"), "a device: read and write by its DeviceMap name");
+    check(has("hw:Hardware Services/publish SID_IMU_GYRO_RAW"), "a service: publish");
+    const CatalogEntry* equ = cat.find("hw:Hardware Names/PERI_DONE");
+    check(equ && equ->cls == "component" && equ->operand && equ->hardware, "a name of the description is a component");
+    const CatalogEntry* wr = cat.find("hw:Hardware CSR/write AE_CTRL");
+    const CatalogEntry* rd = cat.find("hw:Hardware Devices/read DEV_IMU");
+    check(wr && wr->domains == asmcore::blocks::kBoth && rd && rd->domains == asmcore::blocks::kPeri, "Main-only / Peri-only follows the block (a device is read by Peri)");
+    // they are in the drawers, right after the patterns
+    std::vector<std::string> order;
+    for (const auto& d : cat.drawers()) order.push_back(d.name);
+    size_t pat = std::find(order.begin(), order.end(), "Patterns") - order.begin(), csr = std::find(order.begin(), order.end(), "Hardware CSR") - order.begin(), data = std::find(order.begin(), order.end(), "Data") - order.begin();
+    check(csr == pat + 1 && csr < data, "the hardware drawers come right after the patterns");
+    // every one makes blocks (no Raw), and the line it says assembles with the generated include
+    const std::string inc = asmcore::generateInc(hw);
+    int made = 0, bad = 0;
+    std::string why;
+    for (const CatalogEntry& e : cat.entries()) {
+        if (!e.hardware) continue;
+        Document doc;
+        std::vector<Block> v = cat.instantiate(e, doc);
+        bool raw = v.empty();
+        for (const Block& b : v) raw |= b.type == "raw";
+        if (raw) { bad++; why += e.title + " (raw) "; continue; }
+        made++;
+        if (e.operand) continue;
+        const bool peri = e.domains == asmcore::blocks::kPeri;
+        const std::string prog = peri ? ".main\nm: JMP m\n.peri\nstart: " + e.text + "\np: BR.ALWAYS p\n" : ".main\nstart: " + e.text + "\nh: JMP h\n";
+        asmcore::Options opt;
+        const asmcore::Result res = asmcore::assemble({asmcore::Source{"defs.inc", inc}, asmcore::Source{"p.asm", prog}}, nullptr, opt);
+        bool err = false;
+        for (const asmcore::Diagnostic& d : res.diags) if (d.sev == asmcore::Diagnostic::Error) { err = true; why += e.title + ": " + d.code + " " + d.msg + " | "; }
+        if (err) bad++;
+    }
+    check(made > 10 && bad == 0, "every block of the description makes blocks and its line assembles", why);
+    check(cat.search("AE_CTRL").size() >= 4 && cat.search("gyro").size() >= 1, "Typeblock finds them by the name of the part");
+    check(cat.clearHardware() && cat.hardwareCount() == 0 && cat.entries().size() == before, "without a description the toolbox is as it was");
+}
+
 static void t_tidy() {
     section("tidy up: nothing overlaps, the program stays what it was");
     FakeMetrics m;
@@ -1060,6 +1114,7 @@ int main() {
     t_drop();
     t_catalog();
     t_custom_blocks();
+    t_hardware_drawers();
     t_tidy();
     t_clipboard();
     t_session();

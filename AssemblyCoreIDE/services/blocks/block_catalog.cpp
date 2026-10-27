@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdio>
 #include <functional>
 #include <map>
 #include <set>
@@ -95,6 +96,7 @@ const Pattern kPatterns[] = {
 // the order of the drawers
 const char* kInstructionDrawers[] = {"Data", "Math", "CSR", "Control", "Peripheral"};
 const char* kComponentDrawers[] = {"Values", "Regions", "Options", "References"};
+const char* kHardwareDrawers[] = {"Hardware CSR", "Hardware Devices", "Hardware Services", "Hardware Data"};      // (and "Hardware Names": components)
 
 }  // namespace
 
@@ -164,6 +166,7 @@ BlockCatalog::BlockCatalog(const Registry& reg) : reg_(reg) {
 
 void BlockCatalog::rebuild() {
     entries_ = builtin_;
+    entries_.insert(entries_.end(), hardware_.begin(), hardware_.end());
     for (const CustomBlock& c : custom_) {
         CatalogEntry e;
         e.id = customId(c);
@@ -180,6 +183,73 @@ void BlockCatalog::rebuild() {
         }
         entries_.push_back(e);
     }
+}
+
+bool BlockCatalog::setHardware(const asmcore::Hardware& hw) {
+    std::vector<CatalogEntry> v;
+    auto upper = [](std::string s) { for (char& ch : s) ch = (char)std::toupper((unsigned char)ch); return s; };
+    auto add = [&](const std::string& category, const std::string& title, const std::string& text, const std::string& what, bool operand = false) {
+        CatalogEntry e;
+        e.id = "hw:" + category + "/" + title;
+        e.title = title;
+        e.category = category;
+        e.cls = operand ? "component" : "instruction";
+        e.text = text;
+        e.description = what;
+        e.hardware = true;
+        e.operand = operand;
+        if (!operand) {                                                              // Main-only / Peri-only follows the first block
+            Document tmp;
+            std::vector<Block> blocks = blocksFromText(tmp, text, nullptr);
+            if (!blocks.empty()) if (const BlockDef* d = reg_.find(blocks[0].type)) e.domains = d->domains;
+        }
+        v.push_back(e);
+    };
+    char hex[16];
+    for (const asmcore::HwCsr& c : hw.csrs) {
+        if (c.name.empty()) continue;
+        std::snprintf(hex, sizeof hex, "0x%03X", c.addr < 0 ? 0 : c.addr);
+        const std::string what = (c.description.empty() ? std::string() : c.description + " - ") + "CSR " + hex + " (" + c.kind + ")";
+        const bool writable = c.kind == "ram" || c.kind == "value" || c.kind == "action", readable = c.kind != "action";
+        if (writable) {
+            add("Hardware CSR", "write " + c.name, "EXEC_CSR WRITE8 " + c.name + ", 0", what);
+            add("Hardware CSR", "set bits " + c.name, "EXEC_CSR SET8 " + c.name + ", 1", what);
+            add("Hardware CSR", "clear bits " + c.name, "EXEC_CSR CLR8 " + c.name + ", 1", what);
+        }
+        if (readable) add("Hardware CSR", "read " + c.name, "EXEC_CSR READ8 " + c.name + " -> MAIN_CSR_DATA_BUF[0]", what);
+    }
+    for (const asmcore::HwDevice& d : hw.devices) {
+        if (d.index < 0) continue;                                                   // not in the DeviceMap: EXEC_XFER cannot name it
+        const std::string sym = d.symbol.empty() ? "DEV_" + upper(d.name) : d.symbol;
+        std::snprintf(hex, sizeof hex, "0x%02X", d.addr);
+        const std::string what = (d.description.empty() ? std::string() : d.description + " - ") + "I2C device at " + hex;
+        add("Hardware Devices", "read " + sym, "EXEC_XFER READ dev=" + sym + ", addr=0, addrlen=1, ptr=0", what);
+        add("Hardware Devices", "read " + sym + " (several bytes)", "EXEC_XFER READ dev=" + sym + ", len=2, ptr=0, ext=[0]", what);
+        add("Hardware Devices", "write " + sym, "EXEC_XFER WRITE dev=" + sym + ", addr=0, addrlen=1, data=0", what);
+    }
+    for (const asmcore::HwService& s : hw.services) {
+        if (s.name.empty()) continue;
+        const int len = s.len >= 1 && s.len <= 32 ? s.len : 1;
+        add("Hardware Services", "publish " + s.name, "EXEC_PUB service=" + s.name + ", src=0, len=" + std::to_string(len), (s.description.empty() ? std::string() : s.description + " - ") + "service " + std::to_string(s.id));
+    }
+    for (const asmcore::HwConst& k : hw.consts) {
+        if (k.name.empty()) continue;
+        const int bytes = std::max(1, std::min(32, k.width * (int)std::max<size_t>(1, k.values.size())));
+        add("Hardware Data", "load " + k.name, "MOV MAIN_CONST_POOL[@" + k.name + "] -> MAIN_SCRATCHPAD[0.." + std::to_string(bytes - 1) + "]", (k.description.empty() ? std::string() : k.description + " - ") + "constant of " + std::to_string(bytes) + " byte(s)");
+    }
+    for (const asmcore::HwEqu& q : hw.equs) {
+        if (q.name.empty()) continue;
+        add("Hardware Names", q.name, q.name, (q.description.empty() ? std::string() : q.description + " - ") + "= " + q.value, true);
+    }
+    auto same = [](const std::vector<CatalogEntry>& a, const std::vector<CatalogEntry>& b) {
+        if (a.size() != b.size()) return false;
+        for (size_t i = 0; i < a.size(); i++) if (a[i].id != b[i].id || a[i].text != b[i].text || a[i].description != b[i].description) return false;
+        return true;
+    };
+    if (same(v, hardware_)) return false;
+    hardware_ = std::move(v);
+    rebuild();
+    return true;
 }
 
 void BlockCatalog::setCustom(std::vector<CustomBlock> c) {
@@ -240,6 +310,8 @@ std::vector<BlockCatalog::Drawer> BlockCatalog::drawers() const {
         if (!d.entries.empty()) out.push_back(d);
     };
     drawer("Patterns", "pattern");
+    for (const char* n : kHardwareDrawers) drawer(n, "instruction");                    // what the project's hardware description brings: right after the patterns
+    drawer("Hardware Names", "component");
     for (const char* n : kInstructionDrawers) drawer(n, "instruction");
     drawer("Structure", "structure");
     drawer("Definitions", "definition");
@@ -319,7 +391,7 @@ Block makeComponent(Document& doc, const Registry& reg, const std::string& type)
 }  // namespace
 
 std::vector<Block> BlockCatalog::instantiate(const CatalogEntry& e, Document& doc) const {
-    if (e.custom && e.component()) {                                                // the text is an operand
+    if ((e.custom || e.operand) && e.component()) {                                 // the text is an operand
         Block b;
         if (operandFromText(doc, reg_, e.text, b)) return {b};
         return {doc.make("num")};

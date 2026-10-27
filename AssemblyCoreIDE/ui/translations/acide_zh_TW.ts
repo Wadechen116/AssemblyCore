@@ -88,6 +88,26 @@ Drag it to change the order; double-click the end of it to write a comment</sour
         <source>Patterns</source>
         <translation>範式</translation>
     </message>
+    <message>
+        <source>Hardware CSR</source>
+        <translation>硬體 CSR</translation>
+    </message>
+    <message>
+        <source>Hardware Devices</source>
+        <translation>硬體裝置</translation>
+    </message>
+    <message>
+        <source>Hardware Services</source>
+        <translation>硬體服務</translation>
+    </message>
+    <message>
+        <source>Hardware Data</source>
+        <translation>硬體資料</translation>
+    </message>
+    <message>
+        <source>Hardware Names</source>
+        <translation>硬體名稱</translation>
+    </message>
 </context>
 <context>
     <name>BlockField</name>
@@ -262,6 +282,37 @@ Drag it to change the order; double-click the end of it to write a comment</sour
     <message>
         <source>counter at</source>
         <translation>計數器位置</translation>
+    </message>
+</context>
+<context>
+    <name>BlockHardware</name>
+    <message>
+        <source>set bits</source>
+        <translation>設定位元</translation>
+    </message>
+    <message>
+        <source>clear bits</source>
+        <translation>清除位元</translation>
+    </message>
+    <message>
+        <source>write</source>
+        <translation>寫入</translation>
+    </message>
+    <message>
+        <source>read</source>
+        <translation>讀取</translation>
+    </message>
+    <message>
+        <source>publish</source>
+        <translation>發佈</translation>
+    </message>
+    <message>
+        <source>load</source>
+        <translation>載入</translation>
+    </message>
+    <message>
+        <source> (several bytes)</source>
+        <translation>（多個位元組）</translation>
     </message>
 </context>
 <context>

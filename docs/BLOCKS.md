@@ -177,6 +177,10 @@ asmblk blocks                              列出所有積木與欄位
 
 > 操作說明（快速鍵、疑難排解）：`docs/BLOCKS_EDITOR.md`；練習專案：`sample/13_block_editor`。
 
+### 硬體抽屜（B2）
+
+專案有硬體描述（`.achw`）時，工具箱多出「Hardware CSR／Devices／Services／Data／Names」抽屜（見 `docs/BLOCKS_EDITOR.md` 第 4 節）：每個 CSR 自動有寫入／設位元／清位元／讀回，裝置有讀／寫，服務有發佈，常數有載入，`.equ` 名稱是元件。名稱已填好，描述一改抽屜即時更新（含未存檔的緩衝區）。`BlockCatalog::setHardware(hw)` 產生它們（核心不知道 Qt；測試用 `sample/11_hardware_designer/board.achw`，每個積木的一行都用描述產生的 `.inc` 組譯過）。
+
 ### 迴圈積木（loop）
 
 Control 抽屜的 **loop**（只在 Main）：有一個放積木的 C 形槽，標題上是**下拉選單「repeat」**：

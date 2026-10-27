@@ -40,6 +40,13 @@
 ## 4. 工具箱與 Typeblock
 
 - **工具箱**（左側，可用「Toolbox」按鈕收起）：範式、五個指令抽屜、結構、定義、文字，以及四個元件抽屜；上方搜尋框即時過濾。**拖**到畫布，或**雙擊／Enter** 接在選取的積木後面。每個抽屜標題的 **＋**（或右鍵 →「新增積木…」）可以加上**自己的積木**，並可由選取的積木存成新積木；自己的積木以斜體加 ★ 顯示，存在設定檔裡，下次還在。
+- **硬體抽屜**（專案有硬體描述 `.achw` 時，緊接在「範式」後面）：描述裡每個元件自動有專屬積木，**名稱已經填好**，拖出來就能用；描述一改（不必存檔）抽屜立刻跟著變，專案沒有描述時就沒有這些抽屜。
+  - **Hardware CSR**：每個 CSR 有 `write`／`set bits`／`clear bits`（action 與 ram／value 種類）和 `read`（除 action 之外）；唯讀的 status／const 只有 `read`。
+  - **Hardware Devices**：每個在 DeviceMap 的裝置有 `read`、`read (several bytes)`、`write`（Peri），用它的 DeviceMap 名稱（如 `DEV_IMU`）。
+  - **Hardware Services**：每個服務有 `publish`（Peri，長度取服務宣告的長度）。
+  - **Hardware Data**：每個 `.const` 有 `load`（把常數池搬進暫存區，長度依內容）。
+  - **Hardware Names**：每個 `.equ` 名稱是一個可以插進任何數字插槽的元件。
+  - 滑鼠停在積木上看說明（位址、種類、描述）；Typeblock 也能用部件名稱找到它們（打 `AE_CTRL` 就列出它的四個積木）。每個積木產生的那一行都測試過能用該描述產生的定義組譯。
 - **Typeblock**：在畫布上**直接打字**（或 Ctrl+Space）：打積木名稱，或**一整行組譯器**（`ALU ADD unsigned`、`start:`、`.equ X = 1`），Enter 插入；↑↓／Tab 選候選、Esc 取消。有選取的指令就接在它下面，所以**一行一行連續打就是整個程式**（只靠鍵盤可以打出 `01_hello_csr`）。
 - **loop**（Control 抽屜，只在 Main）：標題上的下拉選 `for`（再填「times」次數，選填「counter at」）或 `forever`；展開成暫存區計數的迴圈。計數器位置留空＝自動，巢狀迴圈互不覆蓋。
 

@@ -1692,6 +1692,50 @@ private slots:
         QVERIFY2(!fe->isVisible() && !fe->isOpen(), "click elsewhere");
     }
 
+    void theToolboxHasDrawersOfTheHardwareDescription() {
+        DragRig r(".main\nstart: MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]\n JMP start\n");
+        auto& s = r.ed->session();
+        auto& tb = r.ed->toolbox();
+        auto drawerNames = [&] { return tb.drawerNames(); };
+        auto has = [&](const std::string& n) { const auto v = drawerNames(); return std::find(v.begin(), v.end(), n) != v.end(); };
+        QVERIFY(!has("Hardware CSR"));                                               // no description: none
+        const std::string text = slurpFile(std::filesystem::path(ACIDE_SAMPLE_DIR) / "11_hardware_designer" / "board.achw");
+        r.f.fs->write("/w/board.achw", text);
+        r.f.ws.project().hardware = "board.achw";
+        r.f.ws.projectEdited();
+        QApplication::processEvents();
+        QVERIFY(has("Hardware CSR") && has("Hardware Devices") && has("Hardware Services") && has("Hardware Names"));
+        const auto names = drawerNames();
+        const auto at = [&](const std::string& n) { return std::find(names.begin(), names.end(), n) - names.begin(); };
+        QCOMPARE(at("Hardware CSR"), at("Patterns") + 1);                          // right after the patterns
+        QVERIFY(tb.catalogHas("hw:Hardware CSR/write AE_CTRL") && tb.catalogHas("hw:Hardware Devices/read DEV_IMU"));
+        for (int i = 0; i < tb.tree()->topLevelItemCount(); i++) if (tb.tree()->topLevelItem(i)->data(0, Qt::UserRole + 2).toString().startsWith("Hardware")) tb.tree()->topLevelItem(i)->setExpanded(true);
+        r.ed->resize(1000, 760);
+        QApplication::processEvents();
+        r.ed->grab().save(outDir() + "/blocks_hardware_toolbox.png");
+        // a block of the drawer goes in like any: after the selected block, with the name of the part in it
+        s.select({s.document().sections[0].blocks[1].id});
+        emit tb.activated("hw:Hardware CSR/write AE_CTRL");
+        QVERIFY2(s.generated().text.find("EXEC_CSR WRITE8 AE_CTRL, 0") != std::string::npos, s.generated().text.c_str());
+        QVERIFY(r.ed->errorText().isEmpty());
+        // Typeblock finds it by the name of the part
+        QVERIFY(!r.ed->catalog().search("AE_CTRL").empty());
+        // the drawers follow the description: a new CSR appears (the description is a buffer: no save needed), a removed one goes
+        QVERIFY(!tb.catalogHas("hw:Hardware CSR/write NEW_ONE"));
+        std::string more = text + "\n[csr NEW_ONE]\naddr = 0x3F0\nkind = ram\n";
+        r.f.ws.setText("/w/board.achw", more);
+        QApplication::processEvents();
+        QVERIFY(tb.catalogHas("hw:Hardware CSR/write NEW_ONE") && tb.catalogHas("hw:Hardware CSR/read NEW_ONE"));
+        r.f.ws.setText("/w/board.achw", text);
+        QApplication::processEvents();
+        QVERIFY(!tb.catalogHas("hw:Hardware CSR/write NEW_ONE"));
+        // leaving the description takes the drawers away
+        r.f.ws.project().hardware.clear();
+        r.f.ws.projectEdited();
+        QApplication::processEvents();
+        QVERIFY(!has("Hardware CSR"));
+    }
+
     void aClosedChoiceIsPickedFromAMenuThatStays() {
         DragRig r(".main\ntop: MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]\n JMP top\n");
         auto& s = r.ed->session();

@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "asmcore/blocks.h"
+#include "asmcore/hardware.h"
 
 namespace acide {
 namespace blocks {
@@ -27,6 +28,8 @@ struct CatalogEntry {
     std::string text;                  // the assembler text of the sample: what a fresh block (or a pattern) is made from ("" for a component)
     std::string description;
     bool custom = false;               // made by the user (can be edited and deleted)
+    bool hardware = false;             // made from the hardware description of the project (follows it; shown with the name of the part in it)
+    bool operand = false;              // a component whose `text` is an operand (a name, a range): custom components and the names of the description
     bool component() const { return cls == "component"; }
     bool pattern() const { return cls == "pattern"; }
 };
@@ -37,6 +40,13 @@ public:
 
     const std::vector<CatalogEntry>& entries() const { return entries_; }
     const CatalogEntry* find(const std::string& id) const;
+
+    // ---- the hardware description of the project: every part of it brings its own blocks (a CSR: write / set bits / clear bits / read back; a device: read / write;
+    // a service: publish; a constant: load it; a name: the name itself). Drawers "Hardware CSR", "Hardware Devices", "Hardware Services", "Hardware Data", "Hardware Names".
+    // Returns whether the entries changed (the toolbox is built again only then).
+    bool setHardware(const asmcore::Hardware& hw);
+    bool clearHardware() { return setHardware(asmcore::Hardware()); }
+    size_t hardwareCount() const { return hardware_.size(); }
 
     // ---- the user's own blocks
     void setCustom(std::vector<CustomBlock> c);                       // replaces them all; the entries are rebuilt
@@ -74,7 +84,7 @@ public:
 private:
     void rebuild();
     const asmcore::blocks::Registry& reg_;
-    std::vector<CatalogEntry> builtin_, entries_;
+    std::vector<CatalogEntry> builtin_, hardware_, entries_;
     std::vector<CustomBlock> custom_;
 };
 

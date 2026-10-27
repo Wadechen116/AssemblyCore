@@ -137,6 +137,7 @@ private:
     std::unique_ptr<ConnectionBag> conns_ = std::make_unique<ConnectionBag>();      // released first in the destructor
     std::vector<std::string> blocksFor(const QString& kind) const;
     std::map<QString, unsigned> jumpAt_;
+    void refreshHardwareDrawers(const std::string& achwPath);
     void showChoiceMenu(const BlockScene::EditTarget& t);
     void beginTextEdit(const BlockScene::EditTarget& t);
     void applyFieldValue(const BlockScene::EditTarget& t, const QString& text);

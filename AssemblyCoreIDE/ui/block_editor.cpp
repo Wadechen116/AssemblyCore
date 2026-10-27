@@ -438,10 +438,19 @@ void BlockEditor::refreshSymbols() {
         achw = (slash == std::string::npos ? std::string() : path_.substr(0, slash + 1)) + achw;
     }
     if (achw.empty() && ctx_.workspace.hasProject() && !ctx_.workspace.project().hardware.empty()) achw = ctx_.workspace.project().absolute(ctx_.workspace.project().hardware);
-    if (achw.empty() || achw.size() < 5) { symbolsFrom_.clear(); return; }
+    if (achw.empty() || achw.size() < 5) { symbolsFrom_.clear(); refreshHardwareDrawers(std::string()); return; }
     symbolsFrom_ = achw;
     asmcore::blocks::SymbolTable table;
     if (hardwareSymbols(ctx_.workspace, achw, table)) session_.setExternalSymbols(table);
+    refreshHardwareDrawers(achw);
+}
+
+// The toolbox has drawers of what the description defines (a CSR to write, a device to read ...); they follow every change of it.
+void BlockEditor::refreshHardwareDrawers(const std::string& achw) {
+    asmcore::Hardware hw;
+    std::vector<std::string> errors;
+    const bool ok = !achw.empty() && loadHardware(ctx_.workspace, achw, hw, errors);
+    if (catalog_.setHardware(ok ? hw : asmcore::Hardware())) toolbox_->refresh();
 }
 
 void BlockEditor::tidy() {
