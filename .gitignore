@@ -7,3 +7,5 @@ sample/*/out/
 docs/MicroISA_Spec_v31.pdf
 docs/MicroISA_v31_assembly_compiler_handoff.md
 docs/isa_seq_v1.6_r10_detailed_spec_v24_zhTW.docx
+# backups the IDE keeps when blocks take over an assembler file
+*.asm.bak
