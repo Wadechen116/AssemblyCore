@@ -2,6 +2,7 @@
 // The tab of a .acblk file: one program that can be looked at in two pages -- the blocks, or the assembler text they generate. A pair of
 // radio buttons at the top switches the page. Both pages show the same BlockSession, so a block selected on one is the line marked on the
 // other. (M2: looking only; editing arrives with the next milestone.)
+#include <map>
 #include <memory>
 #include <string>
 
@@ -45,7 +46,9 @@ public:
     // DocumentTab
     std::string tabPath() const override { return path_; }
     QString tabTitle() const override;
-    std::vector<std::string> workspacePaths() const override { return {path_}; }
+    std::vector<std::string> workspacePaths() const override { return {path_, generatedPath()}; }
+    // the assembler file generated from these blocks (the program's `output`, else NAME.generated.asm)
+    std::string generatedPath() const;
     QWidget* widget() override { return this; }
 
     enum class Page { Blocks, Code };
@@ -70,7 +73,8 @@ public:
     void deleteCustomBlock(const QString& entryId);
     CustomBlockDialog* customDialog() const { return customDialog_; }
     QString errorText() const;                       // why the file could not be shown ("" if fine)
-    QString infoText() const;                        // the summary line
+    QString infoText() const;
+    void jumpTo(const QString& kind);                         // "floating" / "raw" / "problems": select the next such block and show it (the counts of the status line are links)                        // the summary line
     void selectBlock(const std::string& id, bool reveal = true);
     // ---- what Edit > Cut / Copy / Paste ... and the context menu do to the selection
     void setClipboard(std::shared_ptr<IBlockClipboard> c) { clipboard_ = std::move(c); }
@@ -122,8 +126,13 @@ private:
     QWidget* zoomBar_;
     QLabel *info_, *banner_, *zoomLabel_;
     std::unique_ptr<ConnectionBag> conns_ = std::make_unique<ConnectionBag>();      // released first in the destructor
-    bool syncing_ = false;
-    std::string lastText_, symbolsFrom_;
+    std::vector<std::string> blocksFor(const QString& kind) const;
+    std::map<QString, unsigned> jumpAt_;
+    void applyBuildProblems();                               // the assembler's messages about the generated file become badges on the blocks that produced the lines
+    SnapshotPtr snap_;
+    void syncToWorkspace();                                  // after an edit: the program and the generated file go into the workspace buffers (unsaved)
+    bool syncing_ = false, loading_ = true, attached_ = false;
+    std::string lastText_, syncedText_, symbolsFrom_;
 };
 
 }  // namespace acide

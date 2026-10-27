@@ -3,6 +3,11 @@
 #include <QAbstractItemView>
 #include <QApplication>
 #include <QContextMenuEvent>
+#include <QFileInfo>
+#include <QFrame>
+#include <QHBoxLayout>
+#include <QLabel>
+#include <QPushButton>
 #include <QHelpEvent>
 #include <QInputDialog>
 #include <QMenu>
@@ -13,6 +18,7 @@
 #include <QTextBlock>
 #include <QToolTip>
 
+#include "block_link.h"
 #include "editing.h"
 #include "text_util.h"
 
@@ -274,11 +280,55 @@ int CodeEditor::lineNumberAreaWidth() const {
     for (int n = std::max(1, blockCount()); n >= 10; n /= 10) digits++;
     return 26 + fontMetrics().horizontalAdvance(QLatin1Char('9')) * std::max(3, digits);
 }
-void CodeEditor::updateGutterWidth() { setViewportMargins(lineNumberAreaWidth(), 0, 0, 0); }
+int CodeEditor::bannerHeight() const { return banner_ && !banner_->isHidden() ? banner_->sizeHint().height() : 0; }
+void CodeEditor::updateGutterWidth() { setViewportMargins(lineNumberAreaWidth(), bannerHeight(), 0, 0); }
+
+// A generated file is not edited as text: the blocks are the truth. Reading, searching, breakpoints and the debugger work as always.
+void CodeEditor::setGeneratedFrom(const std::string& acblkPath) {
+    if (acblkPath == generatedFrom_) return;
+    generatedFrom_ = acblkPath;
+    setReadOnly(!acblkPath.empty());
+    if (acblkPath.empty()) {
+        if (banner_) banner_->hide();
+    } else {
+        if (!banner_) {
+            auto* f = new QFrame(this);
+            f->setObjectName("generatedBanner");
+            f->setAutoFillBackground(true);
+            QPalette pal = f->palette();
+            pal.setColor(QPalette::Window, QColor("#fff4d6"));
+            pal.setColor(QPalette::WindowText, QColor("#5a4300"));
+            f->setPalette(pal);
+            auto* l = new QHBoxLayout(f);
+            l->setContentsMargins(8, 3, 6, 3);
+            auto* text = new QLabel(f);
+            text->setObjectName("generatedBannerText");
+            l->addWidget(text, 1);
+            auto* b = new QPushButton(tr("Open the blocks"), f);
+            b->setObjectName("openBlocks");
+            l->addWidget(b);
+            connect(b, &QPushButton::clicked, this, [this] { emit openBlocksRequested(QString::fromStdString(generatedFrom_)); });
+            banner_ = f;
+        }
+        banner_->findChild<QLabel*>("generatedBannerText")->setText(tr("This file is generated from %1. Edit the blocks, not this file.").arg(QFileInfo(QString::fromStdString(acblkPath)).fileName()));
+        banner_->show();
+    }
+    updateGutterWidth();
+    QResizeEvent ev(size(), size());
+    resizeEvent(&ev);
+}
+
+bool CodeEditor::refuseIfGenerated() {
+    if (generatedFrom_.empty()) return false;
+    ctx_.status.fire(tr("This file is generated from %1: edit the blocks").arg(QFileInfo(QString::fromStdString(generatedFrom_)).fileName()));
+    return true;
+}
 void CodeEditor::resizeEvent(QResizeEvent* e) {
     QPlainTextEdit::resizeEvent(e);
     QRect cr = contentsRect();
-    gutter_->setGeometry(QRect(cr.left(), cr.top(), lineNumberAreaWidth(), cr.height()));
+    const int bh = bannerHeight();
+    if (banner_) banner_->setGeometry(QRect(cr.left(), cr.top(), cr.width(), bh));
+    gutter_->setGeometry(QRect(cr.left(), cr.top() + bh, lineNumberAreaWidth(), cr.height() - bh));
 }
 void CodeEditor::lineNumberAreaPaint(QPaintEvent* ev) {
     QPainter p(gutter_);
@@ -507,7 +557,7 @@ void CodeEditor::findReferences() {
 }
 
 void CodeEditor::renameSymbol() {
-    if (!snap_) return;
+    if (!snap_ || refuseIfGenerated()) return;
     Pos p = posOf(textCursor());
     const asmcore::IndexSymbol* s = snap_->index.at(path_, p.line, p.byteCol);
     if (!s) { ctx_.status.fire(QString("no symbol under the cursor")); return; }
@@ -522,11 +572,21 @@ void CodeEditor::renameSymbol() {
     std::string problem;
     auto edits = renameEdits(snap_->index, *s, toStd(nn), texts, problem);
     if (edits.empty()) { QMessageBox::warning(this, tr("Rename"), fromStd(problem)); return; }
+    {                                                                                    // a generated file is not renamed in: the blocks are
+        const std::map<std::string, std::string> gen = generatedFiles(ctx_.workspace);
+        for (auto& kv : edits) {
+            auto g = gen.find(kv.first);
+            if (g == gen.end()) continue;
+            QMessageBox::warning(this, tr("Rename"), tr("%1 is used in %2, which is generated from %3. Rename it in the blocks instead.").arg(fromStd(s->name)).arg(QFileInfo(fromStd(kv.first)).fileName()).arg(QFileInfo(fromStd(g->second)).fileName()));
+            return;
+        }
+    }
     for (auto& kv : edits) ctx_.workspace.setText(kv.first, kv.second);
     ctx_.status.fire(tr("Renamed in %1 file(s)").arg(edits.size()));
 }
 
 void CodeEditor::toggleComment() {
+    if (refuseIfGenerated()) return;
     QTextCursor c = textCursor();
     int a = document()->findBlock(c.selectionStart()).blockNumber(), b = document()->findBlock(c.selectionEnd()).blockNumber();
     if (c.hasSelection() && c.selectionEnd() == document()->findBlockByNumber(b).position() && b > a) b--;     // a selection ending at a line start
@@ -555,6 +615,7 @@ void CodeEditor::toggleComment() {
 }
 
 void CodeEditor::duplicateLine() {
+    if (refuseIfGenerated()) return;
     QTextCursor c = textCursor();
     QString t = c.block().text();
     c.beginEditBlock();
@@ -565,6 +626,7 @@ void CodeEditor::duplicateLine() {
 }
 
 void CodeEditor::moveLines(int delta) {
+    if (refuseIfGenerated()) return;
     QTextCursor c = textCursor();
     int a = document()->findBlock(c.selectionStart()).blockNumber(), b = document()->findBlock(c.selectionEnd()).blockNumber();
     int other = delta < 0 ? a - 1 : b + 1;

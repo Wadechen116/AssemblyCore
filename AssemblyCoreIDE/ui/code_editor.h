@@ -31,6 +31,11 @@ public:
     void duplicateLine();
     void moveLines(int delta);                             // -1 up, +1 down
     void gotoLineDialog();
+    // A file generated from a block program: read-only, with a banner that says where it comes from and a button that opens the blocks. "" = an ordinary file.
+    void setGeneratedFrom(const std::string& acblkPath);
+    const std::string& generatedFrom() const { return generatedFrom_; }
+    QWidget* generatedBanner() const { return banner_; }
+    bool refuseIfGenerated();                              // says why an edit is not possible and returns true for a generated file
     void gutterClicked(int y);                             // a click in the line-number area: toggle a breakpoint
 
     // used by the line number area
@@ -47,6 +52,7 @@ public:
 
 signals:
     void caretLineChanged(int line);
+    void openBlocksRequested(const QString& acblkPath);
 
 protected:
     void resizeEvent(QResizeEvent* e) override;
@@ -61,6 +67,7 @@ private:
     asmcore::lang::Dom domainOf(const QTextBlock& b) const;
     void updateExtra();
     void updateGutterWidth();
+    int bannerHeight() const;
     void onContentsChanged();
     void insertCompletion(const QString& insert);
     QList<asmcore::Diagnostic> diagnosticsAt(int line, int byteCol, bool wholeLineIfNoColumn) const;
@@ -72,6 +79,8 @@ private:
     Theme theme_;
     SyntaxHighlighter* hl_;
     QWidget* gutter_;
+    QWidget* banner_ = nullptr;
+    std::string generatedFrom_;
     QCompleter* completer_;
     QStandardItemModel* model_;
     QString prefix_;

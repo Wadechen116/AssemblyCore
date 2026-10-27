@@ -33,7 +33,7 @@ FindBar::FindBar(QWidget* parent) : QWidget(parent) {
     connect(next, &QPushButton::clicked, this, [this] { findNext(false); });
     connect(prev, &QPushButton::clicked, this, [this] { findNext(true); });
     connect(rep, &QPushButton::clicked, this, [this] {
-        if (!editor_) return;
+        if (!editor_ || editor_->isReadOnly()) return;
         QTextCursor c = editor_->textCursor();
         if (c.hasSelection()) {
             QString sel = c.selectedText();
@@ -89,7 +89,7 @@ bool FindBar::findNext(bool backwards) {
 }
 
 int FindBar::replaceAll() {
-    if (!editor_ || find_->text().isEmpty()) return 0;
+    if (!editor_ || find_->text().isEmpty() || editor_->isReadOnly()) return 0;
     int n = 0;
     QTextCursor c = editor_->textCursor();
     c.beginEditBlock();

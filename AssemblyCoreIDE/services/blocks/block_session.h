@@ -65,6 +65,9 @@ public:
     void setGenerateOptions(const asmcore::blocks::GenerateOptions& o);
     const asmcore::blocks::Generated& generated() const;
     const std::vector<asmcore::blocks::BlockProblem>& problems() const;
+    // What the assembler said about the generated text, as problems of the blocks (kind "build"); they are listed after the structure checks. Fires `changed` only if the set changed.
+    void setBuildProblems(std::vector<asmcore::blocks::BlockProblem> p);
+    size_t buildProblemCount() const { return build_.size(); }
     // Symbols defined outside the document (the hardware description): the names components may use, and the "not defined" checks know them.
     void setExternalSymbols(const asmcore::blocks::SymbolTable& t);
     // The symbols of the document and the outside together (cached until the next change): what a name drop-down offers.
@@ -105,6 +108,7 @@ private:
     mutable bool haveGenerated_ = false, haveProblems_ = false, haveSymbols_ = false;
     mutable asmcore::blocks::Generated generated_;
     mutable std::vector<asmcore::blocks::BlockProblem> problems_;
+    std::vector<asmcore::blocks::BlockProblem> build_;
 };
 
 }  // namespace blocks

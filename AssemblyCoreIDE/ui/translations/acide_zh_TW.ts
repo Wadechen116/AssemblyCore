@@ -798,6 +798,18 @@ Drag it to change the order; double-click the end of it to write a comment</sour
         <source>Hardware</source>
         <translation>硬體</translation>
     </message>
+    <message>
+        <source>Generated from %1 - edit the blocks, not this file</source>
+        <translation>由 %1 產生 - 請編輯積木，不要改這個檔案</translation>
+    </message>
+    <message>
+        <source>  (generated)</source>
+        <translation>（產生）</translation>
+    </message>
+    <message>
+        <source>Blocks</source>
+        <translation>積木</translation>
+    </message>
 </context>
 <context>
     <name>QObject</name>
@@ -1055,24 +1067,6 @@ Drag it to change the order; double-click the end of it to write a comment</sour
         </translation>
     </message>
     <message numerus="yes">
-        <source>, %n floating stack(s)</source>
-        <translation>
-            <numerusform>，%n 組浮動積木</numerusform>
-        </translation>
-    </message>
-    <message numerus="yes">
-        <source>, %n text line(s)</source>
-        <translation>
-            <numerusform>，%n 行文字</numerusform>
-        </translation>
-    </message>
-    <message numerus="yes">
-        <source>, %n problem(s)</source>
-        <translation>
-            <numerusform>，%n 個問題</numerusform>
-        </translation>
-    </message>
-    <message numerus="yes">
         <source> · %n selected</source>
         <translation>
             <numerusform> · 已選取 %n 個</numerusform>
@@ -1180,6 +1174,28 @@ Drag it to change the order; double-click the end of it to write a comment</sour
         <source>Save the selection as a new block...</source>
         <translation>將選取的積木存成新積木...</translation>
     </message>
+    <message>
+        <source>Cannot add the block program to the project: %1</source>
+        <translation>無法把積木程式加入專案：%1</translation>
+    </message>
+    <message numerus="yes">
+        <source>%n floating stack(s)</source>
+        <translation>
+            <numerusform>%n 串浮動積木</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <source>%n text line(s)</source>
+        <translation>
+            <numerusform>%n 行以文字保留</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <source>%n problem(s)</source>
+        <translation>
+            <numerusform>%n 個問題</numerusform>
+        </translation>
+    </message>
 </context>
 <context>
     <name>acide::BlockToolbox</name>
@@ -1257,6 +1273,22 @@ Drag it to change the order; double-click the end of it to write a comment</sour
     <message>
         <source>Rename Symbol	F2</source>
         <translation>重新命名符號	F2</translation>
+    </message>
+    <message>
+        <source>Open the blocks</source>
+        <translation>開啟積木</translation>
+    </message>
+    <message>
+        <source>This file is generated from %1. Edit the blocks, not this file.</source>
+        <translation>這個檔案由 %1 產生，請編輯積木，不要直接改檔案。</translation>
+    </message>
+    <message>
+        <source>This file is generated from %1: edit the blocks</source>
+        <translation>這個檔案由 %1 產生：請編輯積木</translation>
+    </message>
+    <message>
+        <source>%1 is used in %2, which is generated from %3. Rename it in the blocks instead.</source>
+        <translation>%1 用在 %2，而它是由 %3 產生的。請改在積木裡重新命名。</translation>
     </message>
 </context>
 <context>
@@ -2358,6 +2390,26 @@ An IDE for the Sensor Micro-Sequencer ISA, built on the AssemblyCore assembler.<
     <message>
         <source>Created %1 from %2: %3 blocks, %4 lines kept as text</source>
         <translation>已由 %2 建立 %1：%3 個積木，%4 行保留為文字</translation>
+    </message>
+    <message>
+        <source>Convert to &amp;Text (Detach)</source>
+        <translation>轉成文字（解除積木管理）(&amp;T)</translation>
+    </message>
+    <message>
+        <source>Open a block program first.</source>
+        <translation>請先開啟一個積木程式。</translation>
+    </message>
+    <message>
+        <source>Convert to text</source>
+        <translation>轉成文字</translation>
+    </message>
+    <message>
+        <source>%1 becomes an ordinary assembler file again and %2 leaves the project (the file stays on disk). Continue?</source>
+        <translation>%1 會變回一般的組譯器檔案，%2 會離開專案（檔案仍留在磁碟上）。要繼續嗎？</translation>
+    </message>
+    <message>
+        <source>%1 is plain assembler text again; %2 is no longer part of the project</source>
+        <translation>%1 已是一般組譯器文字；%2 不再屬於專案</translation>
     </message>
 </context>
 <context>

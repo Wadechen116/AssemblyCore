@@ -15,6 +15,7 @@
 #include <QTreeWidget>
 #include <QVBoxLayout>
 
+#include "block_link.h"
 #include "panel_registry.h"
 #include "text_util.h"
 #include "theme.h"
@@ -348,16 +349,29 @@ private:
         if (!ctx_.workspace.hasProject()) return;
         auto* root = new QTreeWidgetItem(tree_, {fromStd(p.name)});
         root->setExpanded(true);
+        const std::map<std::string, std::string> generated = generatedFiles(ctx_.workspace);       // generated file -> its block program
         auto group = [&](const QString& name, const std::vector<std::string>& v) {
             if (v.empty()) return;
             auto* g = new QTreeWidgetItem(root, {name});
             g->setExpanded(true);
             for (const std::string& f : v) {
-                auto* it = new QTreeWidgetItem(g, {fromStd(f)});
+                const QString label = fromStd(f);
+                auto* it = new QTreeWidgetItem(g, {label});
                 it->setData(0, Qt::UserRole, fromStd(p.absolute(f)));
+                it->setData(0, Qt::UserRole + 1, label);
+                auto gi = generated.find(p.absolute(f));
+                if (gi != generated.end()) {                                                           // generated: not edited as text
+                    QFont font = it->font(0);
+                    font.setItalic(true);
+                    it->setFont(0, font);
+                    it->setToolTip(0, tr("Generated from %1 - edit the blocks, not this file").arg(QFileInfo(fromStd(gi->second)).fileName()));
+                    it->setText(0, label + tr("  (generated)"));
+                    it->setData(0, Qt::UserRole + 1, label + tr("  (generated)"));
+                }
             }
         };
         group(tr("Sources"), p.sources);
+        group(tr("Blocks"), p.blocks);
         group(tr("Scenarios"), p.scenarios);
         if (!p.hardware.empty()) group(tr("Hardware"), {p.hardware});
         std::vector<std::string> misc;
@@ -373,8 +387,7 @@ private:
             if (path.isEmpty()) continue;
             Document* d = ctx_.workspace.find(toStd(path));
             QString base = QFileInfo(path).fileName();
-            QString rel = (*it)->text(0);
-            if (rel.endsWith(QString::fromUtf8(" \xE2\x80\xA2"))) rel.chop(2);
+            QString rel = (*it)->data(0, Qt::UserRole + 1).toString();
             (*it)->setText(0, d && d->dirty ? rel + QString::fromUtf8(" \xE2\x80\xA2") : rel);
             (void)base;
         }

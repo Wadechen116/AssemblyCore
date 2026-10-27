@@ -32,6 +32,7 @@
 
 #include "app_shell.h"
 #include "block_editor.h"
+#include "block_link.h"
 #include "document_tab.h"
 #include "asmcore/blocks.h"
 #include "asmcore/blocks_edit.h"
@@ -1378,6 +1379,187 @@ private slots:
         QVERIFY(seen);
     }
 
+    void editsGoIntoTheWorkspaceAndTheBuild() {
+        DragRig r(".main\nstart: MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]\n JMP start\n");
+        auto& s = r.ed->session();
+        auto& ws = r.f.ctx.workspace;
+        r.sc().setAnimationsEnabled(false);
+        const std::string gen = "/w/prog.generated.asm";
+        QCOMPARE(QString::fromStdString(r.ed->generatedPath()), QString::fromStdString(gen));
+        // opening wrote nothing: neither the program nor a generated file is dirty / present
+        QVERIFY(!ws.find(gen));
+        QVERIFY(!ws.find("/w/prog.acblk")->dirty);
+        // an edit: both buffers are updated, unsaved
+        emit r.ed->toolbox().activated("type:jmp");
+        QVERIFY(ws.find(gen) && ws.find(gen)->dirty);
+        QCOMPARE(QString::fromStdString(ws.find(gen)->text), QString::fromStdString(s.generated().text));
+        QVERIFY(ws.find(gen)->text.find("Generated from prog.acblk") != std::string::npos);
+        QVERIFY(ws.find("/w/prog.acblk")->dirty);
+        asmcore::blocks::Document back;
+        std::string err;
+        QVERIFY(asmcore::blocks::parseDocument(ws.find("/w/prog.acblk")->text, back, err));
+        QCOMPARE((int)back.blockCount(), (int)s.document().blockCount());
+        // the project lists the program and the generated file is a source
+        QVERIFY(std::find(ws.project().blocks.begin(), ws.project().blocks.end(), std::string("prog.acblk")) != ws.project().blocks.end());
+        QVERIFY(std::find(ws.project().sources.begin(), ws.project().sources.end(), std::string("prog.generated.asm")) != ws.project().sources.end());
+        // the build uses the unsaved generated text
+        const auto input = ws.snapshot();
+        bool used = false;
+        for (const auto& src : input.sources) if (src.name.find("prog.generated.asm") != std::string::npos && src.text == s.generated().text) used = true;
+        QVERIFY(used);
+        // a floating stack is not in the generated text; an undo takes the edit out of both
+        QVERIFY(s.undo());
+        QCOMPARE(QString::fromStdString(ws.find(gen)->text), QString::fromStdString(s.generated().text));
+        QVERIFY(ws.find(gen)->text.find("JMP start\n    JMP") == std::string::npos);
+        // the tab counts both files; Save All writes both
+        const auto paths = r.ed->workspacePaths();
+        QVERIFY(paths.size() == 2 && paths[1] == gen);
+        std::string e2;
+        QVERIFY(ws.saveAll(e2));
+        QVERIFY(r.f.fs->exists(gen));
+        QVERIFY(!ws.find(gen)->dirty && !ws.find("/w/prog.acblk")->dirty);
+        // changed from outside: the editor shows it and the generated buffer follows, nothing is marked unsaved by the loading
+        asmcore::blocks::Document other = asmcore::blocks::importAsm(".main\nx: JMP x\n", "prog");
+        r.f.fs->write("/w/prog.acblk", asmcore::blocks::serializeDocument(other));
+        ws.reload("/w/prog.acblk");
+        QCOMPARE((int)s.document().blockCount(), (int)other.blockCount());
+        QVERIFY(ws.find(gen)->text.find("x:") != std::string::npos);
+        QVERIFY(!ws.find("/w/prog.acblk")->dirty);
+    }
+
+    void theCountsInTheStatusLineJumpToTheirBlocks() {
+        DragRig r(".main\nstart: MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]\n frobnicate one\n JMP start\n frobnicate two\n");
+        auto& s = r.ed->session();
+        r.sc().setAnimationsEnabled(false);
+        s.clearSelection();
+        emit r.ed->toolbox().activated("type:jmp");                                     // (nothing selected: it lies on the canvas)
+        QVERIFY(r.ed->infoText().contains("floating") && r.ed->infoText().contains("href=\"floating\""));
+        QVERIFY(r.ed->infoText().contains("href=\"raw\""));
+        // each click goes on to the next
+        r.ed->jumpTo("raw");
+        QCOMPARE((int)s.selection().size(), 1);
+        const std::string first = *s.selection().begin();
+        QCOMPARE(QString::fromStdString(s.document().find(first)->type), QString("raw"));
+        r.ed->jumpTo("raw");
+        QVERIFY(*s.selection().begin() != first);
+        r.ed->jumpTo("raw");
+        QCOMPARE(*s.selection().begin(), first);                                       // (round again)
+        r.ed->jumpTo("floating");
+        QCOMPARE((int)s.selection().size(), 1);
+        bool inFloating = false;
+        for (const auto& sec : s.document().sections) if (sec.domain == "floating") for (const auto& b : sec.blocks) inFloating |= s.isSelected(b.id);
+        QVERIFY(inFloating);
+        // nothing to jump to: nothing happens
+        r.ed->jumpTo("problems");
+    }
+
+    void buildErrorsAppearOnTheBlocksThatCausedThem() {
+        DragRig r(".main\ntop: MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]\n JMP top\n");
+        auto& s = r.ed->session();
+        auto& ws = r.f.ctx.workspace;
+        r.sc().setAnimationsEnabled(false);
+        // a block whose text the assembler rejects: a jump to a label that is nowhere
+        std::string jmp;
+        for (const auto& b : s.document().sections[0].blocks) if (b.type == "jmp") jmp = b.id;
+        QVERIFY(!jmp.empty());
+        QVERIFY(s.apply([&](asmcore::blocks::Editor& e) { return e.setField(jmp, "target", "nowhere"); }).ok);
+        QVERIFY(ws.find(r.ed->generatedPath()));
+        QVERIFY(r.f.buildAndWait());
+        QVERIFY(!r.f.ctx.snapshot->result.ok);
+        QVERIFY(r.sc().problems().count(jmp) || s.buildProblemCount() > 0);
+        bool onJmp = false;
+        for (const auto& p : s.problems()) if (p.kind == "build" && p.blockId == jmp && p.message.find("nowhere") != std::string::npos) onJmp = true;
+        QVERIFY(onJmp);
+        // fixing it takes the badge away (at once for the old build: the lines may have moved), and the next build is clean
+        QVERIFY(s.apply([&](asmcore::blocks::Editor& e) { return e.setField(jmp, "target", "top"); }).ok);
+        QCOMPARE((int)s.buildProblemCount(), 0);
+        QVERIFY(r.f.buildAndWait());
+        QVERIFY(r.f.ctx.snapshot->result.ok);
+        for (const auto& p : s.problems()) QVERIFY2(!(p.kind == "build" && p.error), p.message.c_str());       // (warnings may remain: they are badges too)
+    }
+
+    void aGeneratedFileIsReadOnlyAndPointsToItsBlocks() {
+        DragRig r(".main\nstart: MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]\n JMP start\n");
+        auto& ws = r.f.ctx.workspace;
+        r.sc().setAnimationsEnabled(false);
+        emit r.ed->toolbox().activated("type:jmp");                              // (the first edit lists the program in the project)
+        const std::string gen = "/w/prog.generated.asm";
+        QVERIFY(ws.save(gen, *new std::string));
+        auto* e = r.w->openFile(gen);
+        QVERIFY(e);
+        QVERIFY(e->isReadOnly());
+        QCOMPARE(QString::fromStdString(e->generatedFrom()), QString("/w/prog.acblk"));
+        QVERIFY(e->generatedBanner() && !e->generatedBanner()->isHidden());
+        // typing, replacing and rename do nothing
+        const QString before = e->toPlainText();
+        e->moveCursor(QTextCursor::Start);
+        QTest::keyClicks(e, "zzz");
+        QCOMPARE(e->toPlainText(), before);
+        e->toggleComment();
+        e->duplicateLine();
+        QCOMPARE(e->toPlainText(), before);
+        // the button opens the blocks
+        auto* open = e->generatedBanner()->findChild<QPushButton*>("openBlocks");
+        QVERIFY(open);
+        r.w->tabs()->setCurrentWidget(e);
+        open->click();
+        QVERIFY(qobject_cast<BlockEditor*>(r.w->tabs()->currentWidget()));
+        // the project tree: a Blocks group, and the generated source is marked
+        bool group = false, marked = false;
+        for (QTreeWidgetItemIterator it(r.w->findChild<QTreeWidget*>("projectTree")); *it; ++it) {
+            if ((*it)->text(0) == "Blocks") group = true;
+            if ((*it)->text(0).contains("prog.generated.asm") && (*it)->text(0).contains("generated")) marked = true;
+        }
+        QVERIFY(group && marked);
+        // an ordinary file is not affected; releasing the program makes the file ordinary again
+        auto* main = r.w->openFile("/w/main.asm");
+        QVERIFY(main && !main->isReadOnly());
+        std::string err;
+        QVERIFY(acide::detachBlocks(ws, "/w/prog.acblk", err));
+        QVERIFY(!e->isReadOnly() && e->generatedBanner()->isHidden());
+    }
+
+    void convertingKeepsTheFileNameAndDetachingGivesTheTextBack() {
+        Fixture f;
+        QVERIFY(f.fs->exists("/w/main.asm"));
+        PanelRegistry panels;
+        registerBuiltinPanels(panels);
+        MainWindow w(f.ctx, panels);
+        w.setQuiet(true);
+        w.show();
+        w.openProject("/w/p.acproj");
+        const std::string original = ".csr C = 0x120\n.main\nstart: EXEC_CSR WRITE8 C, 1\n    ALU ADD unsigned\nh: JMP h\n";
+        f.fs->write("/w/main.asm", original);
+        QVERIFY(w.openFile("/w/main.asm"));
+        auto* be = w.openAsBlocks();
+        QVERIFY(be);
+        // the blocks generate the very file they came from; the original text is kept aside; nothing else changed yet
+        QCOMPARE(QString::fromStdString(be->generatedPath()), QString("/w/main.asm"));
+        std::string t;
+        QVERIFY(f.fs->read("/w/main.asm.bak", t));
+        QCOMPARE(QString::fromStdString(t), QString::fromStdString(original));
+        QVERIFY(f.ws.project().sources.size() == 1 && f.ws.project().sources[0] == "main.asm");
+        // the first edit: the project lists the program, the file becomes generated (and read-only in the text editor)
+        auto& s = be->session();
+        const std::string last = s.document().sections.back().blocks.back().id;
+        QVERIFY(s.apply([&](asmcore::blocks::Editor& e2) { return e2.setComment(last, "the end"); }).ok);
+        QVERIFY(std::find(f.ws.project().blocks.begin(), f.ws.project().blocks.end(), std::string("main.acblk")) != f.ws.project().blocks.end());
+        QCOMPARE((int)f.ws.project().sources.size(), 1);
+        auto* ed = w.openFile("/w/main.asm");
+        QVERIFY(ed && ed->isReadOnly());
+        // detaching: plain text again, without the header, saved; the program leaves the project
+        w.tabs()->setCurrentWidget(be);
+        QVERIFY(w.detachBlocks());
+        QVERIFY(f.fs->read("/w/main.asm", t));
+        QVERIFY2(t.find("Generated from") == std::string::npos && t.find(".main") != std::string::npos, t.c_str());
+        QVERIFY(std::find(f.ws.project().blocks.begin(), f.ws.project().blocks.end(), std::string("main.acblk")) == f.ws.project().blocks.end());
+        QVERIFY(f.fs->exists("/w/main.acblk"));
+        auto* after = w.openFile("/w/main.asm");
+        QVERIFY(!after || !after->isReadOnly());
+        QVERIFY(f.buildAndWait());
+        QVERIFY(f.ctx.snapshot->result.ok);
+    }
+
     void aChoiceFromTheListClosesTheEditor() {
         DragRig r(".peri\nstart: EXEC_XFER READ dev=0, addr=0, addrlen=1, ptr=0\n");
         auto& s = r.ed->session();
@@ -1671,7 +1853,7 @@ private slots:
             QTest::keyClicks(tb.edit(), QString::fromStdString(line));
             QTest::keyClick(tb.edit(), Qt::Key_Return);
         }
-        std::string expected = ".main\n";
+        std::string expected = "; Generated from prog.acblk - edit the blocks, not this file\n\n.main\n";
         for (const std::string& l : lines) expected += (l.back() == ':' ? "" : "    ") + l + "\n";
         QCOMPARE(QString::fromStdString(s.generated().text), QString::fromStdString(expected));
         QCOMPARE((int)s.document().sections.size(), 1);                                    // all in the Main part: nothing floats

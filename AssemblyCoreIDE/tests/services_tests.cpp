@@ -8,6 +8,7 @@
 #include <string>
 
 #include "artifacts.h"
+#include "block_link.h"
 #include "build.h"
 #include "debugger.h"
 #include "hardware_link.h"
@@ -172,6 +173,38 @@ static void t_samples() {
     }
     check(n >= 10, "found the sample projects", std::to_string(n));
 #endif
+}
+
+// The block programs' bridge: the project lists them, the generated file is a source and a workspace buffer.
+static void t_block_link() {
+    std::printf("\nBlock programs in the workspace\n");
+    auto fs = std::make_shared<MemoryFileSystem>();
+    fs->write("/p/prog.acproj", "name = prog\nsource = defs.inc\nblock = old.acblk\n");
+    Workspace ws(fs);
+    std::vector<std::string> errs;
+    ws.openProject("/p/prog.acproj", errs);
+    check(ws.project().blocks.size() == 1 && ws.project().blocks[0] == "old.acblk", "the project reads `block =`");
+    check(ws.project().serialize().find("block = old.acblk") != std::string::npos, "...and writes it back");
+    asmcore::blocks::Document d;
+    d.name = "hello";
+    check(generatedPathFor("/p/hello.acblk", d) == "/p/hello.generated.asm", "the default name of the generated file");
+    d.output = "hello.asm";
+    check(generatedPathFor("/p/sub/hello.acblk", d) == "/p/sub/hello.asm" && generatedPathFor("/p/x.acblk", asmcore::blocks::Document()) == "/p/x.generated.asm", "`output` is relative to the program");
+    check(generatedHeader("/p/hello.acblk").find("hello.acblk") != std::string::npos, "the header names the program");
+    std::string err;
+    bool changed = false;
+    check(attachBlocks(ws, "/p/hello.acblk", "/p/hello.asm", err, &changed) && changed, "attach", err);
+    check(ws.project().blocks.size() == 2 && ws.project().blocks[1] == "hello.acblk" && ws.project().sources.back() == "hello.asm", "the program is listed and its generated file is a source");
+    std::string t;
+    check(fs->read("/p/prog.acproj", t) && t.find("block = hello.acblk") != std::string::npos, "...and the project file was saved");
+    check(attachBlocks(ws, "/p/hello.acblk", "/p/hello.asm", err, &changed) && !changed && ws.project().sources.size() == 2, "attaching twice changes nothing");
+    check(attachBlocks(ws, "/elsewhere/z.acblk", "/elsewhere/z.asm", err, &changed) && !changed && ws.project().blocks.size() == 2, "a program outside the project is left alone");
+    // which files are generated
+    d.output = "hello.asm";
+    fs->write("/p/hello.acblk", asmcore::blocks::serializeDocument(d));
+    auto gen = generatedFiles(ws);
+    check(gen.size() == 1 && gen["/p/hello.asm"] == "/p/hello.acblk", "the generated files of the project (an unreadable program is skipped)");
+    check(detachBlocks(ws, "/p/hello.acblk", err) && ws.project().blocks.size() == 1 && ws.project().sources.back() == "hello.asm" && generatedFiles(ws).empty(), "detach: the program goes, the file stays a source and is plain text again", err);
 }
 
 // The Hardware Designer's bridge: description, generated files and the project are kept in step, and the build uses them unsaved.
@@ -777,6 +810,7 @@ int main() {
     t_project();
     t_workspace();
     t_build();
+    t_block_link();
     t_hardware_link();
     t_samples();
     t_service();

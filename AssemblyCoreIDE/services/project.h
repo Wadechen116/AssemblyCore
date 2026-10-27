@@ -16,6 +16,7 @@ struct Project {
     std::string profile;                           // profile .ini
     std::string environment;                       // simulator environment file
     std::string hardware;                          // hardware description (.achw) the Hardware Designer edits; "" = none
+    std::vector<std::string> blocks;               // block programs (.acblk): each generates one of the sources
     std::vector<std::string> scenarios;
     asmcore::CallModel callModel = asmcore::CallModel::Inline;
     asmcore::DataflowMode dataflow = asmcore::DataflowMode::Warn;

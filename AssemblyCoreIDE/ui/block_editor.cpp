@@ -21,6 +21,8 @@
 #include <QVBoxLayout>
 
 #include "blocks/block_tidy.h"
+#include "asmcore/diagnostics.h"
+#include "block_link.h"
 #include "hardware_link.h"
 
 namespace acide {
@@ -63,6 +65,9 @@ BlockEditor::BlockEditor(AppContext& ctx, const std::string& path, QWidget* pare
     bl->addSpacing(16);
     info_ = new QLabel(bar);
     info_->setObjectName("blockInfo");
+    info_->setTextFormat(Qt::RichText);
+    info_->setTextInteractionFlags(Qt::LinksAccessibleByMouse);
+    connect(info_, &QLabel::linkActivated, this, [this](const QString& kind) { jumpTo(kind); });
     bl->addWidget(info_, 1);
     zoomBar_ = new QWidget(bar);
     auto* zl = new QHBoxLayout(zoomBar_);
@@ -256,7 +261,9 @@ BlockEditor::BlockEditor(AppContext& ctx, const std::string& path, QWidget* pare
     connect(commentEdit_, &CommentEdit::cancelled, this, [this] { view_->setFocus(); });
     conns_->add(scene_->blockClicked, [this](const std::string& id, Qt::KeyboardModifiers m) { onBlockClicked(id, m); });
     conns_->add(scene_->emptyClicked, [this](Qt::KeyboardModifiers m) { if (!(m & Qt::ControlModifier)) session_.clearSelection(); });
-    conns_->add(session_.changed, [this] { refreshCode(); refreshInfo(); });
+    conns_->add(session_.changed, [this] { refreshCode(); refreshInfo(); syncToWorkspace(); applyBuildProblems(); });
+    snap_ = ctx.snapshot;
+    conns_->add(ctx.snapshotChanged, [this](SnapshotPtr s) { snap_ = s; applyBuildProblems(); });
     conns_->add(session_.selectionChanged, [this] {
         if (!syncing_) code_->setMarkedLines(session_.selectedLines(), page() == Page::Code);
         refreshInfo();
@@ -267,7 +274,62 @@ BlockEditor::BlockEditor(AppContext& ctx, const std::string& path, QWidget* pare
     });
 
     conns_->add(ctx.workspace.projectChanged, [this] { refreshSymbols(); });                    // a hardware description was attached / changed
+    {
+        asmcore::blocks::GenerateOptions go;
+        go.header = generatedHeader(path_);
+        session_.setGenerateOptions(go);
+    }
     reload();
+    loading_ = false;
+}
+
+// Diagnostics of the generated file -> the block that produced the line (the part "from the blocks to the build and back"). Only while the build is of the
+// text the blocks generate now: after an edit the lines may have moved, so the badges go until the next build.
+void BlockEditor::applyBuildProblems() {
+    std::vector<asmcore::blocks::BlockProblem> v;
+    const std::string gen = generatedPath();
+    if (snap_) {
+        const std::string* built = nullptr;
+        for (const asmcore::Source& s : snap_->sources) if (s.name == gen) built = &s.text;
+        if (built && *built == session_.generated().text) {
+            for (const asmcore::Diagnostic& d : snap_->diagnosticsFor(gen)) {
+                if (d.sev == asmcore::Diagnostic::Note) continue;
+                const std::string id = session_.blockAtLine(d.loc.line);
+                if (id.empty()) continue;
+                asmcore::blocks::BlockProblem p;
+                p.error = d.sev == asmcore::Diagnostic::Error;
+                p.blockId = id;
+                p.kind = "build";
+                p.message = d.code + ": " + d.msg;
+                const std::string ex = asmcore::explainDiagnostic(d.code);                      // "...\n  fix: ..." : the way out
+                const size_t fix = ex.find("fix:");
+                if (fix != std::string::npos) p.message += "\n" + ex.substr(fix, ex.find('\n', fix) == std::string::npos ? std::string::npos : ex.find('\n', fix) - fix);
+                v.push_back(p);
+            }
+        }
+    }
+    session_.setBuildProblems(v);
+}
+
+std::string BlockEditor::generatedPath() const { return acide::generatedPathFor(path_, session_.document()); }
+
+// The blocks are the truth. Each edit puts the serialized program and the text generated from it into the workspace (as unsaved buffers: the build and the
+// debugger use them at once, Save All writes both). Loading a file writes nothing.
+void BlockEditor::syncToWorkspace() {
+    if (loading_) return;
+    const std::string text = asmcore::blocks::serializeDocument(session_.document());
+    if (text == syncedText_) return;                                                     // not an edit (the names known to the checks changed, ...)
+    syncedText_ = text;
+    lastText_ = text;
+    ctx_.workspace.setText(path_, text);
+    const std::string gen = generatedPath();
+    const Document* old = ctx_.workspace.find(gen);
+    if (!old || old->text != session_.generated().text) ctx_.workspace.setText(gen, session_.generated().text);
+    if (!attached_) {
+        attached_ = true;
+        std::string err;
+        if (!attachBlocks(ctx_.workspace, path_, gen, err)) ctx_.log.fire(tr("Cannot add the block program to the project: %1").arg(QString::fromStdString(err)));
+    }
 }
 
 // The scene listens to the session, which is a member of this class and so dies before the (child) scene would: take the views down first.
@@ -300,6 +362,8 @@ void BlockEditor::reload() {
     if (!doc) return;
     if (doc->text == lastText_ && !lastText_.empty()) return;          // our own change coming back
     lastText_ = doc->text;
+    const bool firstLoad = syncedText_.empty();
+    struct Quiet { bool& f; bool was; explicit Quiet(bool& x) : f(x), was(x) { f = true; } ~Quiet() { f = was; } } quiet(loading_);     // loading is not an edit: nothing is written back
     std::string err;
     if (!session_.load(doc->text, err)) {
         banner_->setText(tr("This file cannot be shown as blocks: %1").arg(QString::fromStdString(err)));
@@ -309,9 +373,18 @@ void BlockEditor::reload() {
     }
     banner_->hide();
     refreshSymbols();
+    {                                                                          // (the header names this program)
+        asmcore::blocks::GenerateOptions go;
+        go.header = generatedHeader(path_);
+        session_.setGenerateOptions(go);
+    }
+    syncedText_ = asmcore::blocks::serializeDocument(session_.document());     // what is in the editor now: only a change from this is an edit
     view_->showContent();
     refreshCode();
     refreshInfo();
+    // a program changed from outside: the generated file, if it is in the workspace, follows
+    const Document* old = ctx_.workspace.find(generatedPath());
+    if (!firstLoad && old && old->text != session_.generated().text) ctx_.workspace.setText(generatedPath(), session_.generated().text);        // (opening a program changes no file)
 }
 
 // The program's hardware description (the one the file names, else the project's) defines names; they are known to the checks.
@@ -573,11 +646,44 @@ void BlockEditor::refreshCode() { code_->setCode(QString::fromUtf8(session_.gene
 void BlockEditor::refreshInfo() {
     const BlockSession::Stats s = session_.stats();
     QString t = tr("%n block(s)", nullptr, (int)s.blocks);
-    if (s.floatingStacks) t += tr(", %n floating stack(s)", nullptr, (int)s.floatingStacks);
-    if (s.rawBlocks) t += tr(", %n text line(s)", nullptr, (int)s.rawBlocks);
-    if (s.problems) t += tr(", %n problem(s)", nullptr, (int)s.problems);
+    auto link = [](const char* kind, const QString& text) { return QString("<a href=\"%1\">%2</a>").arg(kind, text); };         // each count jumps to the blocks it counts
+    if (s.floatingStacks) t += ", " + link("floating", tr("%n floating stack(s)", nullptr, (int)s.floatingStacks));
+    if (s.rawBlocks) t += ", " + link("raw", tr("%n text line(s)", nullptr, (int)s.rawBlocks));
+    if (s.problems) t += ", " + link("problems", tr("%n problem(s)", nullptr, (int)s.problems));
     if (!session_.selection().empty()) t += tr(" \xC2\xB7 %n selected", nullptr, (int)session_.selection().size());
     info_->setText(t);
+}
+
+// The blocks a count in the status line stands for ("floating": the first block of each floating stack; "raw": the text blocks; "problems": the blocks with a
+// badge), in program order.
+std::vector<std::string> BlockEditor::blocksFor(const QString& kind) const {
+    std::vector<std::string> ids;
+    std::function<void(const std::vector<asmcore::blocks::Block>&)> walk = [&](const std::vector<asmcore::blocks::Block>& v) {
+        for (const asmcore::blocks::Block& b : v) {
+            if (kind == "raw" && b.type == "raw") ids.push_back(b.id);
+            for (auto& st : b.stacks) walk(st.second);
+        }
+    };
+    if (kind == "problems") {
+        for (const asmcore::blocks::BlockProblem& p : session_.problems()) if (!p.blockId.empty() && std::find(ids.begin(), ids.end(), p.blockId) == ids.end()) ids.push_back(p.blockId);
+    } else {
+        for (const asmcore::blocks::Section& s : session_.document().sections) {
+            if (kind == "floating") { if (s.domain == "floating" && !s.blocks.empty()) ids.push_back(s.blocks[0].id); }
+            else walk(s.blocks);
+        }
+    }
+    return ids;
+}
+
+// Selects the next of them (a click again goes on to the one after) and brings it into view.
+void BlockEditor::jumpTo(const QString& kind) {
+    const std::vector<std::string> ids = blocksFor(kind);
+    if (ids.empty()) return;
+    unsigned& at = jumpAt_[kind];
+    const std::string id = ids[at++ % ids.size()];
+    if (page() != Page::Blocks) setPage(Page::Blocks);
+    selectBlock(id, true);
+    view_->setFocus();
 }
 
 void BlockEditor::onBlockClicked(const std::string& id, Qt::KeyboardModifiers m) {

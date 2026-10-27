@@ -18,6 +18,7 @@
 #include "asmcore/blocks.h"
 #include "block_editor.h"
 #include "document_tab.h"
+#include "block_link.h"
 #include "hardware_designer.h"
 #include "hardware_link.h"
 #include "i18n.h"
@@ -53,7 +54,7 @@ MainWindow::MainWindow(AppContext& ctx, PanelRegistry& panels, QWidget* parent) 
     lay->addWidget(find_);
     setCentralWidget(central);
     connect(tabs_, &QTabWidget::tabCloseRequested, this, [this](int i) { closeEditor(i); });
-    connect(tabs_, &QTabWidget::currentChanged, this, [this](int) { find_->setEditor(currentEditor()); updateTitle(); });
+    connect(tabs_, &QTabWidget::currentChanged, this, [this](int) { find_->setEditor(currentEditor()); updateTitle(); if (detachBlocksAct_) detachBlocksAct_->setEnabled(qobject_cast<BlockEditor*>(tabs_->currentWidget()) != nullptr); });
 
     buildLabel_ = new QLabel(tr("No build yet"));
     buildLabel_->setObjectName("buildStatus");
@@ -75,7 +76,7 @@ MainWindow::MainWindow(AppContext& ctx, PanelRegistry& panels, QWidget* parent) 
     conns_.add(ctx.status, [this](const QString& m) { statusBar()->showMessage(m, 5000); });
     conns_.add(ctx.requestBuild, [this] { buildNow(false); });
     conns_.add(ctx.workspace.documentChanged, [this](const std::string&) { scheduleBuild(); updateTitle(); });
-    conns_.add(ctx.workspace.projectChanged, [this] { scheduleBuild(); updateTitle(); syncBuildMenu(); });
+    conns_.add(ctx.workspace.projectChanged, [this] { scheduleBuild(); updateTitle(); syncBuildMenu(); refreshGeneratedMarks(); });
     conns_.add(ctx.build.finished, [this](SnapshotPtr s) { onSnapshot(s); });
     conns_.add(ctx.debugger.updated, [this](const SimUpdate&) { updateDebugActions(); });
     conns_.add(ctx.debugger.stopped, [this](const SimUpdate& u, const DebugLocation& w) { onStopped(u, w); });
@@ -128,6 +129,7 @@ void MainWindow::createActions() {
     closeProjectAct_->setEnabled(ctx_.workspace.hasProject());
     QMenu* blk = file->addMenu(tr("&Block Program"));
     blockFromAsmAct_ = act(blk, tr("Show Current File as &Blocks"), QKeySequence("Ctrl+Alt+B"), [this] { openAsBlocks(); });
+    detachBlocksAct_ = act(blk, tr("Convert to &Text (Detach)"), QKeySequence(), [this] { detachBlocks(); });
     act(blk, tr("&Open Block Program..."), QKeySequence(), [this] {
         QString f = QFileDialog::getOpenFileName(this, tr("Open block program"), fromStd(ctx_.workspace.hasProject() ? ctx_.workspace.project().baseDir() : std::string()), tr("Block programs (*.acblk)"));
         if (!f.isEmpty()) openBlocks(norm(f));
@@ -402,12 +404,39 @@ BlockEditor* MainWindow::openAsBlocks() {
     if (!ctx_.workspace.fileSystem()->exists(blkPath) && !ctx_.workspace.find(blkPath)) {
         asmcore::blocks::ImportStats st;
         asmcore::blocks::Document d = asmcore::blocks::importAsm(e->toPlainText().toStdString(), QFileInfo(fromStd(base)).fileName().toStdString(), &st);
+        d.output = QFileInfo(fromStd(asmPath)).fileName().toStdString();      // the file the blocks generate is the one they came from: the project and every .include stay as they are
+        const std::string backup = asmPath + ".bak";                           // (the original text is kept once, the first time blocks replace it)
+        if (!ctx_.workspace.fileSystem()->exists(backup)) ctx_.workspace.fileSystem()->write(backup, e->toPlainText().toStdString());
         ctx_.workspace.setText(blkPath, asmcore::blocks::serializeDocument(d));
         std::string err;
         if (!ctx_.workspace.save(blkPath, err)) { warn(tr("Blocks"), fromStd(err)); return nullptr; }
         ctx_.log.fire(tr("Created %1 from %2: %3 blocks, %4 lines kept as text").arg(fromStd(blkPath)).arg(QFileInfo(fromStd(asmPath)).fileName()).arg(st.blocks).arg(st.raw));
     }
     return openBlocks(blkPath);
+}
+
+// Releases the block program of the current tab: the generated file becomes an ordinary assembler file again (without the "generated" header), the
+// program stays on disk but leaves the project. The text editor of the file opens.
+bool MainWindow::detachBlocks() {
+    auto* be = qobject_cast<BlockEditor*>(tabs_->currentWidget());
+    if (!be) { warn(tr("Blocks"), tr("Open a block program first.")); return false; }
+    const std::string blk = be->tabPath(), gen = be->generatedPath();
+    if (ask(tr("Convert to text"), tr("%1 becomes an ordinary assembler file again and %2 leaves the project (the file stays on disk). Continue?").arg(QFileInfo(fromStd(gen)).fileName()).arg(QFileInfo(fromStd(blk)).fileName()),
+            QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes) != QMessageBox::Yes) return false;
+    std::string text = be->session().generated().text;
+    const std::string head = "; " + generatedHeader(blk) + "\n";
+    if (text.compare(0, head.size(), head) == 0) { text.erase(0, head.size()); if (!text.empty() && text[0] == '\n') text.erase(0, 1); }
+    std::string err;
+    be->prepareToClose();
+    if (!ctx_.workspace.save(blk, err)) { warn(tr("Blocks"), fromStd(err)); return false; }
+    ctx_.workspace.setText(gen, text);
+    if (!ctx_.workspace.save(gen, err)) { warn(tr("Blocks"), fromStd(err)); return false; }
+    if (!acide::detachBlocks(ctx_.workspace, blk, err)) { warn(tr("Blocks"), fromStd(err)); return false; }
+    closeDocTab(tabs_->indexOf(be));
+    ctx_.log.fire(tr("%1 is plain assembler text again; %2 is no longer part of the project").arg(fromStd(gen)).arg(fromStd(blk)));
+    openFile(gen);
+    refreshGeneratedMarks();
+    return true;
 }
 
 bool MainWindow::newBlocks(const QString& file) {
@@ -452,6 +481,12 @@ CodeEditor* MainWindow::openFile(const std::string& path) {
     }
     auto* e = new CodeEditor(ctx_, path);
     editors_[path] = e;
+    connect(e, &CodeEditor::openBlocksRequested, this, [this](const QString& acblk) { openBlocks(toStd(acblk)); });
+    {
+        const auto gen = generatedFiles(ctx_.workspace);
+        auto g = gen.find(path);
+        if (g != gen.end()) e->setGeneratedFrom(g->second);
+    }
     int idx = tabs_->addTab(e, QFileInfo(fromStd(path)).fileName());
     tabs_->setTabToolTip(idx, fromStd(path));
     tabs_->setCurrentIndex(idx);
@@ -462,6 +497,15 @@ CodeEditor* MainWindow::openFile(const std::string& path) {
     find_->setEditor(e);
     e->setFocus();
     return e;
+}
+
+// Text editors of files generated from blocks are read-only (and say where the file comes from); the others are ordinary again.
+void MainWindow::refreshGeneratedMarks() {
+    const auto gen = generatedFiles(ctx_.workspace);
+    for (auto& kv : editors_) {
+        auto g = gen.find(kv.first);
+        kv.second->setGeneratedFrom(g == gen.end() ? std::string() : g->second);
+    }
 }
 
 bool MainWindow::closeDocTab(int index) {

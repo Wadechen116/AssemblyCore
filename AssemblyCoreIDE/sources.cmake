@@ -10,6 +10,7 @@ set(ACIDE_SERVICE_SOURCES
   ${CMAKE_CURRENT_LIST_DIR}/services/sim_session.cpp
   ${CMAKE_CURRENT_LIST_DIR}/services/debugger.cpp
   ${CMAKE_CURRENT_LIST_DIR}/services/hardware_link.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/services/block_link.cpp
   ${CMAKE_CURRENT_LIST_DIR}/services/blocks/block_theme.cpp
   ${CMAKE_CURRENT_LIST_DIR}/services/blocks/block_shapes.cpp
   ${CMAKE_CURRENT_LIST_DIR}/services/blocks/block_layout.cpp

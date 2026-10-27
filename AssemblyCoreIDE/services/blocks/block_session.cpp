@@ -316,9 +316,18 @@ const Generated& BlockSession::generated() const {
 const std::vector<BlockProblem>& BlockSession::problems() const {
     if (!haveProblems_) {
         problems_ = validate(doc_, reg_, &external_);
+        problems_.insert(problems_.end(), build_.begin(), build_.end());
         haveProblems_ = true;
     }
     return problems_;
+}
+
+void BlockSession::setBuildProblems(std::vector<BlockProblem> p) {
+    auto same = [](const BlockProblem& a, const BlockProblem& b) { return a.blockId == b.blockId && a.message == b.message && a.error == b.error; };
+    if (p.size() == build_.size() && std::equal(p.begin(), p.end(), build_.begin(), same)) return;
+    build_ = std::move(p);
+    haveProblems_ = false;
+    changed.fire();
 }
 
 BlockSession::Stats BlockSession::stats() const {

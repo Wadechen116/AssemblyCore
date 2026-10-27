@@ -15,6 +15,7 @@ SERVICE_SOURCES = \
     $$IDE_DIR/services/sim_session.cpp \
     $$IDE_DIR/services/debugger.cpp \
     $$IDE_DIR/services/hardware_link.cpp \
+    $$IDE_DIR/services/block_link.cpp \
     $$IDE_DIR/services/blocks/block_theme.cpp \
     $$IDE_DIR/services/blocks/block_shapes.cpp \
     $$IDE_DIR/services/blocks/block_layout.cpp \
