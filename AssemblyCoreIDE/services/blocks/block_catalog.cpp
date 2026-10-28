@@ -94,8 +94,8 @@ const Pattern kPatterns[] = {
 };
 
 // the order of the drawers
-const char* kInstructionDrawers[] = {"Data", "Math", "CSR", "Control", "Peripheral"};
-const char* kComponentDrawers[] = {"Values", "Regions", "Options", "References"};
+const char* kInstructionDrawers[] = {"Data", "Variables", "Math", "CSR", "Control", "Peripheral"};
+const char* kComponentDrawers[] = {"Values", "Expressions", "Regions", "Options", "References"};
 const char* kHardwareDrawers[] = {"Hardware CSR", "Hardware Devices", "Hardware Services", "Hardware Data"};      // (and "Hardware Names": components)
 
 }  // namespace
@@ -156,7 +156,7 @@ BlockCatalog::BlockCatalog(const Registry& reg) : reg_(reg) {
         if (e.cls != "component") {
             const char* t = sampleText(d.type);
             e.text = t ? t : "";
-            if (!t && e.cls != "text" && d.stacks.empty()) continue;              // a block with no known sample text is not offered (a test notices); one with a slot (a loop) is made from its definition
+            if (!t && e.cls != "text" && d.stacks.empty() && !d.structural) continue;       // a block with no known sample text is not offered (a test notices); one with a slot or its own generator (a loop, set) is made from its definition
         }
         if (d.type == "blank" || d.type == "raw") continue;                         // (a blank line and raw text are not something to pick from a toolbox)
         builtin_.push_back(e);
@@ -399,7 +399,18 @@ std::vector<Block> BlockCatalog::instantiate(const CatalogEntry& e, Document& do
     if (e.component()) return {makeComponent(doc, reg_, e.type)};
     if (e.text.empty() && !e.type.empty()) {                                        // no assembler form (a loop): made from the definition, with its slots
         Block b = doc.make(e.type);
-        if (const BlockDef* d = reg_.find(e.type)) for (const std::string& st : d->stacks) b.stack(st, true);
+        if (const BlockDef* d = reg_.find(e.type)) {
+            for (const std::string& st : d->stacks) b.stack(st, true);
+            for (const InputDef& in : d->inputs) {                                      // what has to be there comes with a 0 plugged in (a "set" is complete at once)
+                if (in.optional || !in.derive.empty()) continue;
+                bool mirror = false;
+                for (const FieldDef& f : d->fields) if (f.name == in.name) mirror = true;
+                if (mirror) continue;
+                bool numberFits = false;
+                for (const std::string& a : in.accepts) numberFits |= a == kTypeInt;
+                if (numberFits) { Block n = doc.make("num"); n.set("value", "0"); b.setValue(in.name, n); }
+            }
+        }
         return {b};
     }
     std::vector<Block> v = blocksFromText(doc, e.text, nullptr);

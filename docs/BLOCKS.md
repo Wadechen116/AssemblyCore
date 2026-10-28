@@ -177,6 +177,16 @@ asmblk blocks                              列出所有積木與欄位
 
 > 操作說明（快速鍵、疑難排解）：`docs/BLOCKS_EDITOR.md`；練習專案：`sample/13_block_editor`。
 
+### 變數與運算式（B4 第二批）
+
+- **變數** = 暫存區的 2 個位元組，**位置由產生器挑**：從最低的空位元組往上，**避開**其他積木用名字指到的位元組（任何文字裡的 `MAIN_SCRATCHPAD[a..b]`、`WRITE_SP` 的視窗）以及計數 loop 的 6 個位元組；運算中途的暫存值也用空位元組、語句結束就還回去。32 位元組放不下時，積木上標「no room in the scratchpad…」並說哪個變數。
+- **指令**（Variables 抽屜，Main）：**set 變數 to 運算式**、**change 變數 by 運算式**（x ＝ x ＋ 值）。放出來就帶著 0，不會是殘缺的。
+- **運算式**（Expressions 抽屜）：**variable**（讀變數）、**calculation**（`+ - * & | ^ << >>`，加減乘與位移可選 unsigned／signed）、**comparison**（`< <= == != >= >`，是 *bool*，只能插進 `test` 插槽）。數字、`.equ` 名稱直接當字面值。
+- **降階**：運算元先放進 ALU 的 A／B（常數要先經過暫存區，這是 ISA 的規則），`ALU`，再把 `ALU_OUT` 存回變數；巢狀運算式的內層結果放暫存值。位移的右邊必須是 0…31 的數字。`>`、`<=` 用對調運算元的 `CMP.LT`／`CMP.GE` 做（ALU 只有 EQ／NE／LT／GE）。
+- **if／while／wait until 的 test 插槽**：插一個 comparison，積木自己在 `BR.COND` 前面算好比較（條件固定 `ALU_CMP_TRUE`），不用再手放 ALU 積木，也不會有 W506 提示。
+- **提示**：從來沒有被 set 的變數被讀 → 警告；變數名稱不是識別字、位移不是數字、暫存區用完 → 錯誤，都標在那個積木上。
+- 全部行為用模擬器驗證過（賦值、巢狀運算、六種比較、`while`／`wait until`、和手寫位元組與 loop 計數共存）。
+
 ### 結構化控制流（B4 第一批）
 
 Control 抽屜的三個容器積木（只在 Main）。`BR.COND` 只在條件成立時跳，所以都降階成「標籤＋`BR.COND`＋`JMP`」；條件讀的是它**前一個**積木留下的結果，和手寫分支一樣（`ALU_CMP_TRUE` 前面要有 ALU 比較，否則 W506 提示）。條件預設 `ALU_CMP_TRUE`，可改成任何 Main 條件。

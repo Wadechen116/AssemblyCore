@@ -167,6 +167,26 @@ size_t BlockSession::place(std::vector<Block> blocks, double x, double y) {
             }
             if (!ids.empty()) break;
         }
+        // no empty socket: one that holds only the placeholder 0 (a fresh "set" comes with one) gives its place to the new block, and the 0 goes
+        if (ids.empty()) {
+            for (const std::string& sid : selection_) {
+                const Block* host = doc_.find(sid);
+                const BlockDef* hd = host ? reg_.find(host->type) : nullptr;
+                if (!hd) continue;
+                for (const InputDef& in : hd->inputs) {
+                    const Block* occ = host->value(in.name);
+                    if (!occ || occ->type != "num" || occ->get("value") != "0" || !occ->get("kind").empty() || !occ->get("sign").empty() || !occ->get("width").empty()) continue;
+                    if (checkSocket(in, blocks[0], reg_).fit == Fit::No) continue;
+                    const std::string occId = occ->id;
+                    o = apply([&](Editor& e) { return e.plugValue(sid, in.name, blocks[0]); });      // (the 0 is put out as a floating block ...)
+                    if (!o.ok) continue;
+                    ids = o.ids;
+                    apply([&](Editor& e) { return e.removeBlocks({occId}); });                     // ... and then thrown away: it was only a placeholder
+                    break;
+                }
+                if (!ids.empty()) break;
+            }
+        }
     } else if (!component) {
         // under the last selected instruction
         const Block* lastSel = nullptr;

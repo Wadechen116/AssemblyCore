@@ -143,6 +143,18 @@ const char* const* blockTextsForTranslation(int& count) {
         QT_TRANSLATE_NOOP("BlockSlot", "else"),
         QT_TRANSLATE_NOOP("BlockSlot", "cond"),
         QT_TRANSLATE_NOOP("BlockSlot", "body"),
+        QT_TRANSLATE_NOOP("BlockTitle", "set"),
+        QT_TRANSLATE_NOOP("BlockTitle", "change"),
+        QT_TRANSLATE_NOOP("BlockTitle", "variable"),
+        QT_TRANSLATE_NOOP("BlockTitle", "calculation"),
+        QT_TRANSLATE_NOOP("BlockTitle", "comparison"),
+        QT_TRANSLATE_NOOP("BlockField", "variable"),
+        QT_TRANSLATE_NOOP("BlockField", "to"),
+        QT_TRANSLATE_NOOP("BlockField", "by"),
+        QT_TRANSLATE_NOOP("BlockField", "test"),
+        QT_TRANSLATE_NOOP("BlockField", "as"),
+        QT_TRANSLATE_NOOP("BlockDrawer", "Variables"),
+        QT_TRANSLATE_NOOP("BlockDrawer", "Expressions"),
     };
     count = (int)(sizeof(texts) / sizeof(texts[0]));
     return texts;

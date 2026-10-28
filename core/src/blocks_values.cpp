@@ -153,6 +153,19 @@ void addComponentDefs(Registry& r, const lang::Language& L) {
         r.edit("expr_un")->semantic = "unop";
         r.edit("expr_paren")->semantic = "paren";
     }
+    // ---- runtime values (type "val") and comparisons (type "bool"): what the variable blocks calculate with; they become ALU operations (see Gen::evalValue)
+    {
+        const std::vector<std::string> vals = {"val", kTypeInt};
+        FieldDef as = choice("mode", "as", {"", "unsigned", "signed"});
+        as.optional = true;
+        FieldDef varName = field("name", "");
+        varName.def = "x";
+        value("v_var", "variable", "Expressions", kMain, "val", {varName}, {}, "{name}");
+        value("v_bin", "calculation", "Expressions", kMain, "val", {choice("op", "", {"+", "-", "*", "&", "|", "^", "<<", ">>"}), as}, {input("a", "", vals), input("b", "", vals)}, "{a} {op} {b}");
+        value("v_cmp", "comparison", "Expressions", kMain, "bool", {choice("op", "", {"<", "<=", "==", "!=", ">=", ">"}), as}, {input("a", "", vals), input("b", "", vals)}, "{a} {op} {b}");
+        for (const char* t : {"if", "while", "wait"})
+            if (BlockDef* d = r.edit(t)) d->inputs.push_back(InputDef("test", "test", {"bool"}, true));
+    }
     // ---- regions (one block per region, from the ISA table: direction and size are the table's)
     for (const isa::RegionInfo& ri : isa::kRegions) {
         std::vector<std::string> names = {ri.name};

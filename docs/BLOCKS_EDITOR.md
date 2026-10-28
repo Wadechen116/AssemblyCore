@@ -48,6 +48,7 @@
   - **Hardware Names**：每個 `.equ` 名稱是一個可以插進任何數字插槽的元件。
   - 滑鼠停在積木上看說明（位址、種類、描述）；Typeblock 也能用部件名稱找到它們（打 `AE_CTRL` 就列出它的四個積木）。每個積木產生的那一行都測試過能用該描述產生的定義組譯。
 - **Typeblock**：在畫布上**直接打字**（或 Ctrl+Space）：打積木名稱，或**一整行組譯器**（`ALU ADD unsigned`、`start:`、`.equ X = 1`），Enter 插入；↑↓／Tab 選候選、Esc 取消。有選取的指令就接在它下面，所以**一行一行連續打就是整個程式**（只靠鍵盤可以打出 `01_hello_csr`）。
+- **變數與運算式**：Variables 抽屜的 **set**／**change**，Expressions 抽屜的 **variable**／**calculation**／**comparison**。把 calculation 拖進 set 的值（占位的 0 會被換掉），再往裡面放 variable、數字。變數是暫存區的 2 位元組，位置自動挑、避開你手寫的位元組與 loop 計數。comparison 插進 if／while／wait until 的 **test** 就不必自己放 ALU 比較。
 - **if／while／wait until**（Control 抽屜，只在 Main）：if 有 then／else 兩個槽；while 有 cond（算條件）與 body；wait until 有 cond。條件預設 `ALU_CMP_TRUE`，要在它**前面**放 ALU 比較（`if`）或讓 cond 的最後一個積木是 ALU 運算（`while`／`wait until`），否則積木上會有 W506 提示。
 - **loop**（Control 抽屜，只在 Main）：標題上的下拉選 `for`（再填「times」次數，選填「counter at」）或 `forever`；展開成暫存區計數的迴圈。計數器位置留空＝自動，巢狀迴圈互不覆蓋。
 

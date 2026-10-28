@@ -144,9 +144,15 @@ struct GenLine {
     int line = 0;                            // 1-based line in `text`
     std::string blockId;                     // "" for generated structure (a .main line)
 };
+struct BlockProblem {
+    bool error = true;
+    std::string blockId, message;
+    std::string kind = "structure";          // "structure": the block is built wrongly; "reference": a name that is undefined, of the wrong kind, out of reach, or recursion
+};
 struct Generated {
     std::string text;
     std::vector<GenLine> lines;
+    std::vector<BlockProblem> problems;                         // what the generator could not do (no room for a variable, a shift by something that is not a number ...)
     const GenLine* atLine(int line) const;                      // which block produced a line
     std::vector<int> linesOf(const std::string& blockId) const;
 };
@@ -160,11 +166,7 @@ Generated generate(const Document& doc, const Registry& reg = Registry::defaults
 std::vector<size_t> programOrder(const Document& doc);
 
 // ---- checking ------------------------------------------------------------------------------------------------------------------------
-struct BlockProblem {
-    bool error = true;
-    std::string blockId, message;
-    std::string kind = "structure";          // "structure": the block is built wrongly; "reference": a name that is undefined, of the wrong kind, out of reach, or recursion
-};
+
 // Structure only (known type, required fields, a block in a domain it exists in, choices). Whether the program is right is the assembler's
 // job: assemble the generated text.
 class SymbolTable;

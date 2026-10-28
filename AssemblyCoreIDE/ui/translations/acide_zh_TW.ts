@@ -108,6 +108,14 @@ Drag it to change the order; double-click the end of it to write a comment</sour
         <source>Hardware Names</source>
         <translation>硬體名稱</translation>
     </message>
+    <message>
+        <source>Variables</source>
+        <translation>變數</translation>
+    </message>
+    <message>
+        <source>Expressions</source>
+        <translation>運算式</translation>
+    </message>
 </context>
 <context>
     <name>BlockField</name>
@@ -282,6 +290,14 @@ Drag it to change the order; double-click the end of it to write a comment</sour
     <message>
         <source>counter at</source>
         <translation>計數器位置</translation>
+    </message>
+    <message>
+        <source>variable</source>
+        <translation>變數</translation>
+    </message>
+    <message>
+        <source>test</source>
+        <translation>測試</translation>
     </message>
 </context>
 <context>
@@ -574,6 +590,26 @@ Drag it to change the order; double-click the end of it to write a comment</sour
     <message>
         <source>wait until</source>
         <translation>等待直到</translation>
+    </message>
+    <message>
+        <source>set</source>
+        <translation>設定</translation>
+    </message>
+    <message>
+        <source>change</source>
+        <translation>變更</translation>
+    </message>
+    <message>
+        <source>variable</source>
+        <translation>變數</translation>
+    </message>
+    <message>
+        <source>calculation</source>
+        <translation>運算</translation>
+    </message>
+    <message>
+        <source>comparison</source>
+        <translation>比較</translation>
     </message>
 </context>
 <context>

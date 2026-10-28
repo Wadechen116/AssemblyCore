@@ -531,6 +531,113 @@ static void t_structured() {
     check(bb && bb->type == "if" && bb->get("cond") == "PERI_RESULT_VALID" && bb->stack("THEN") && bb->stack("ELSE"), "the file keeps an if with empty slots and its condition", err);
 }
 
+// Variables and expressions: the generator picks the scratchpad bytes; the program is run in the simulator and the values are read back.
+namespace vb {
+Block num(Document& d, const std::string& v) { Block b = d.make("num"); b.set("value", v); return b; }
+Block var(Document& d, const std::string& n) { Block b = d.make("v_var"); b.set("name", n); return b; }
+Block bin(Document& d, const std::string& op, Block a, Block b2, const std::string& mode = "") {
+    Block b = d.make("v_bin");
+    b.set("op", op);
+    if (!mode.empty()) b.set("mode", mode);
+    b.setValue("a", a);
+    b.setValue("b", b2);
+    return b;
+}
+Block cmp(Document& d, const std::string& op, Block a, Block b2) { Block b = d.make("v_cmp"); b.set("op", op); b.setValue("a", a); b.setValue("b", b2); return b; }
+Block set(Document& d, const std::string& n, Block v) { Block b = d.make("set"); b.set("name", n); b.setValue("value", v); return b; }
+Block change(Document& d, const std::string& n, Block v) { Block b = d.make("change"); b.set("name", n); b.setValue("value", v); return b; }
+// ".main s: <the blocks> h: JMP h"
+Document program(const std::function<std::vector<Block>(Document&)>& make, const std::string& before = "") {
+    Document d = importAsm(".main\ns:\n" + before + "h: JMP h\n", "v");
+    std::vector<Block> blocks = make(d);
+    std::vector<Block>& top = d.sections[0].blocks;
+    size_t at = top.size() - 1;
+    for (size_t i = 0; i < top.size(); i++) if (top[i].type == "label" && top[i].get("name") == "h") at = i;
+    top.insert(top.begin() + (long)at, blocks.begin(), blocks.end());
+    d.assignMissingIds();
+    return d;
+}
+}  // namespace vb
+
+static void t_variables() {
+    std::printf("\nVariables and expressions\n");
+    using namespace vb;
+    const Registry& reg = Registry::defaults();
+    for (const char* ty : {"set", "change"}) { const BlockDef* d = reg.find(ty); check(d && d->category == "Variables" && d->domains == kMain && d->inputs.size() == 1 && !d->inputs[0].optional, std::string("the '") + ty + "' block exists: a value is needed"); }
+    for (const char* ty : {"v_var", "v_bin", "v_cmp"}) { const BlockDef* d = reg.find(ty); check(d && d->category == "Expressions" && !d->valueType.empty(), std::string("the '") + ty + "' component exists"); }
+    check(reg.find("v_cmp")->valueType == "bool" && reg.find("v_bin")->valueType == "val", "a comparison is a bool, a calculation a val (a comparison does not fit where a number is wanted)");
+    // x = 5; y = x + 3; change x by 2  ->  x = 7, y = 8
+    Document a = program([](Document& d) { return std::vector<Block>{set(d, "x", num(d, "5")), set(d, "y", bin(d, "+", var(d, "x"), num(d, "3"))), change(d, "x", num(d, "2"))}; });
+    const std::string ta = generate(a).text;
+    check(runWord(ta, 0) == 7 && runWord(ta, 2) == 8, "set / change: x = 5, y = x + 3, x += 2 gives x = 7 and y = 8", ta);
+    check(validate(a, reg).empty(), "...with no problems");
+    // nested: z = (x + y) * 2 (the inner result is a working value), and the other operations
+    Document b = program([](Document& d) {
+        return std::vector<Block>{set(d, "x", num(d, "5")), set(d, "y", num(d, "6")), set(d, "z", bin(d, "*", bin(d, "+", var(d, "x"), var(d, "y")), num(d, "2"))),
+                                  set(d, "m", bin(d, "&", var(d, "z"), num(d, "0x0F"))), set(d, "s", bin(d, "<<", var(d, "x"), num(d, "3"))), set(d, "d", bin(d, "-", var(d, "z"), num(d, "1"), "signed"))};
+    });
+    const std::string tb = generate(b).text;
+    check(runWord(tb, 4) == 22 && runWord(tb, 6) == (22 & 15) && runWord(tb, 8) == 40 && runWord(tb, 10) == 21, "nested expressions: (x+y)*2 = 22, & 0x0F = 6, x << 3 = 40, z - 1 = 21", tb);
+    check(validate(b, reg).empty(), "...with no problems");
+    // if with a comparison plugged into "test"
+    auto ifProgram = [](const std::string& op) {
+        return program([&](Document& d) {
+            Block f = d.make("if");
+            f.setValue("test", cmp(d, op, var(d, "x"), var(d, "y")));
+            *f.stack("THEN", true) = {set(d, "r", num(d, "1"))};
+            *f.stack("ELSE", true) = {set(d, "r", num(d, "2"))};
+            return std::vector<Block>{set(d, "x", num(d, "3")), set(d, "y", num(d, "5")), f};
+        });
+    };
+    check(runWord(generate(ifProgram("<")).text, 4) == 1 && runWord(generate(ifProgram(">")).text, 4) == 2 && runWord(generate(ifProgram("<=")).text, 4) == 1 && runWord(generate(ifProgram(">=")).text, 4) == 2 &&
+          runWord(generate(ifProgram("==")).text, 4) == 2 && runWord(generate(ifProgram("!=")).text, 4) == 1, "if with a comparison: < > <= >= == != all pick the right branch (x = 3, y = 5)");
+    check(validate(ifProgram("<"), reg).empty(), "an if with a plugged test needs no ALU operation before it (no W506)");
+    // while x < 10: x += 3  ->  12
+    Document w = program([](Document& d) {
+        Block l = d.make("while");
+        l.setValue("test", cmp(d, "<", var(d, "x"), num(d, "10")));
+        *l.stack("BODY", true) = {change(d, "x", num(d, "3"))};
+        return std::vector<Block>{set(d, "x", num(d, "0")), l};
+    });
+    check(runWord(generate(w).text, 0) == 12, "while x < 10: x += 3 ends with x = 12", generate(w).text);
+    // wait until: the work in COND, the test after it
+    Document wt = program([](Document& d) {
+        Block l = d.make("wait");
+        l.setValue("test", cmp(d, "==", var(d, "x"), num(d, "4")));
+        *l.stack("COND", true) = {change(d, "x", num(d, "1"))};
+        return std::vector<Block>{set(d, "x", num(d, "0")), l};
+    });
+    check(runWord(generate(wt).text, 0) == 4, "wait until x == 4 (COND adds one each round) stops with x = 4");
+    // the generator keeps off the bytes other blocks name, and off a counting loop's
+    Document hand = program([](Document& d) { return std::vector<Block>{set(d, "x", num(d, "9"))}; }, "MOV CONST(1, 2) -> MAIN_SCRATCHPAD[0..3]\n");
+    const std::string th = generate(hand).text;
+    check(th.find("MOV CONST(9, 2) -> MAIN_SCRATCHPAD[4..5]") != std::string::npos, "a variable does not use bytes a MOV names (MAIN_SCRATCHPAD[0..3]): it goes to 4..5", th);
+    Document lp = program([](Document& d) {
+        Block l = d.make("loop");
+        l.set("count", "2");
+        *l.stack("BODY", true) = {change(d, "n", num(d, "1"))};
+        return std::vector<Block>{set(d, "n", num(d, "0")), l};
+    });
+    const std::string tl = generate(lp).text;
+    check(runWord(tl, 0) == 2 && tl.find("MAIN_SCRATCHPAD[26..27]") != std::string::npos && tl.find("CONST(0, 2) -> MAIN_SCRATCHPAD[0..1]") != std::string::npos, "a variable and a counting loop live side by side (n at 0, the counter at 26..31): the loop adds 1 twice", tl);
+    // problems
+    auto problemsOf = [&](const Document& d, const std::string& needle) { for (const BlockProblem& p : validate(d, reg)) if (p.message.find(needle) != std::string::npos) return true; return false; };
+    Document unset = program([](Document& d) { return std::vector<Block>{set(d, "y", var(d, "ghost"))}; });
+    check(problemsOf(unset, "nothing sets the variable 'ghost'"), "a variable nothing sets is reported");
+    Document badName = program([](Document& d) { return std::vector<Block>{set(d, "1x", num(d, "1"))}; });
+    check(problemsOf(badName, "not a name for a variable"), "a bad variable name is reported");
+    Document many = program([](Document& d) { std::vector<Block> v; for (int i = 0; i < 17; i++) v.push_back(set(d, "v" + std::to_string(i), num(d, "1"))); return v; });
+    check(problemsOf(many, "no room in the scratchpad for the variable"), "17 variables do not fit in 32 bytes: the 17th is reported");
+    Document shift = program([](Document& d) { return std::vector<Block>{set(d, "x", num(d, "1")), set(d, "y", bin(d, "<<", var(d, "x"), var(d, "x")))}; });
+    check(problemsOf(shift, "a shift needs a plain number"), "a shift by something that is not a number is reported");
+    Document noValue = program([](Document& d) { Block s = d.make("set"); s.set("name", "x"); return std::vector<Block>{s}; });
+    check(problemsOf(noValue, "needs a block plugged in") && generate(noValue).text.find("(incomplete) set x") != std::string::npos, "a set without a value is incomplete (said on the block and in the text)");
+    // the file keeps all of it
+    Document back;
+    std::string err;
+    check(parseDocument(serializeDocument(b), back, err) && generate(back).text == tb, "the file keeps variables and expressions: the same program comes back", err);
+}
+
 int main() {
     std::printf("AssemblyCore block program tests\n");
     t_coverage();
@@ -542,6 +649,7 @@ int main() {
     t_roundtrip();
     t_loop();
     t_structured();
+    t_variables();
     std::printf("\n%s  %d passed, %d failed\n", g_fail ? "FAILED" : "OK    ", g_pass, g_fail);
     return g_fail ? 1 : 0;
 }

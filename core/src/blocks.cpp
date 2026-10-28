@@ -3,6 +3,9 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <functional>
+#include <map>
+#include <regex>
 #include <set>
 #include <sstream>
 
@@ -242,6 +245,23 @@ const Registry& Registry::defaults() {
             l.help = "Repeats the blocks inside: a number of times (the count lives in 6 scratchpad bytes, the ALU does the counting) or forever.";
             r.add(l);
         }
+        {
+            // Variables: a name for 2 bytes of the scratchpad, chosen by the generator (see Gen::prepare); the value is an expression of runtime values (blocks of the "val" type).
+            auto assign = [&](const char* type, const char* title, const char* socketLabel, const char* help) {
+                BlockDef s;
+                s.type = type; s.title = title; s.category = "Variables"; s.domains = kMain;
+                FieldDef nm = F("name", "variable");
+                nm.def = "x";
+                s.fields = {nm};
+                s.inputs.push_back(InputDef("value", socketLabel, {"val", kTypeInt}, false));
+                s.tmpl = "{name} {value}";                                                    // (the order of the parts on the block; the lines come from Gen)
+                s.structural = true;
+                s.help = help;
+                r.add(s);
+            };
+            assign("set", "set", "to", "Puts the value of an expression into a variable. The variable is a name for 2 bytes of the scratchpad that the generator picks.");
+            assign("change", "change", "by", "Adds an expression to a variable (x = x + value).");
+        }
         def("label", "label", "Structure", kBoth, {F("name", "name")}, "{name}:", "");
         def("vector", "event vector", "Structure", kBoth, {F("id", "event"), F("label", "handler")}, ".vector {id}, {label}", "16");
         def("wcet", "WCET query", "Structure", kMain, {F("name", "name"), F("from", "from"), F("to", "to")}, ".wcet {name}, {from}, {to}", "");
@@ -352,20 +372,208 @@ int loopCounterBase(const Block& b, int depth) {
     return end && *end == 0 && v >= 0 && v <= 26 ? (int)v : -1;
 }
 
+// ---- variables and expressions -------------------------------------------------------------------------------------------------------
+// A variable is 2 bytes of the scratchpad. The generator picks them: from the lowest free byte up, never on a byte another block names (MAIN_SCRATCHPAD[a..b] in any
+// text, WRITE_SP's window) or on the bytes of a counting loop. The working values of an expression use free bytes too, and give them back at the end of the statement.
+bool isIdentifier(const std::string& s) {
+    if (s.empty() || !(std::isalpha((unsigned char)s[0]) || s[0] == '_')) return false;
+    for (char c : s) if (!(std::isalnum((unsigned char)c) || c == '_')) return false;
+    return true;
+}
+bool plainNumber(const std::string& t, long long& v) {
+    const std::string s = trim(t);
+    char* end = nullptr;
+    v = std::strtoll(s.c_str(), &end, 0);
+    return !s.empty() && end && *end == 0;
+}
+
 struct Gen {
+    explicit Gen(const Registry& r) : reg(r) {}
     const Registry& reg;
     Generated out;
     int line = 0;
     int loopDepth = 0;
+    // ---- variables
+    bool taken[32] = {};
+    std::map<std::string, int> varAt;
+    std::set<std::string> assigned;
+    std::vector<int> liveTemps;
+    std::set<std::string> reported;
+    std::vector<std::string> lineBuf;
+    void problem(const std::string& id, const std::string& msg, bool error = true, const char* kind = "structure") {
+        if (!reported.insert(id + "|" + msg).second) return;
+        BlockProblem p;
+        p.error = error; p.blockId = id; p.message = msg; p.kind = kind;
+        out.problems.push_back(p);
+    }
+    void reserve(long long a, long long z) { for (long long i = a; i <= z && i < 32; i++) if (i >= 0) taken[i] = true; }
+    // bytes named by hand: "MAIN_SCRATCHPAD[4..7]", "SCRATCH[0]" in any text of any block
+    void scanText(const std::string& t) {
+        static const std::regex re("(?:SCRATCHPAD|SCRATCH)\\s*\\[\\s*([0-9]+)\\s*(?:\\.\\.\\s*([0-9]+))?\\s*\\]", std::regex::icase);
+        for (auto it = std::sregex_iterator(t.begin(), t.end(), re); it != std::sregex_iterator(); ++it) {
+            const long long a = std::stoll((*it)[1].str());
+            const long long z = (*it)[2].matched ? std::stoll((*it)[2].str()) : a;
+            reserve(a, z);
+        }
+    }
+    void scan(const std::vector<Block>& v, int depth, std::vector<std::pair<std::string, std::string>>& order, std::vector<const Block*>& reads) {
+        for (const Block& b : v) {
+            for (const auto& f : b.fields) scanText(f.second);
+            if (b.type == "csr_write_sp") {
+                long long ptr = 0, len = 0;
+                if (plainNumber(b.get("ptr"), ptr) && plainNumber(b.get("len"), len)) reserve(ptr, ptr + len - 1);
+            }
+            if (b.type == "loop" && b.get("mode") != "forever") { const int c = loopCounterBase(b, depth); if (c >= 0) reserve(c, c + 5); }
+            if (b.type == "set" || b.type == "change") { order.push_back({trim(b.get("name")), b.id}); assigned.insert(trim(b.get("name"))); }
+            std::function<void(const Block&)> values = [&](const Block& x) {
+                if (x.type == "v_var") { order.push_back({trim(x.get("name")), x.id}); reads.push_back(&x); }
+                for (const auto& vl : x.values) for (const Block& c : vl.second) values(c);
+            };
+            for (const auto& vl : b.values) for (const Block& c : vl.second) values(c);
+            for (const auto& st : b.stacks) scan(st.second, b.type == "loop" ? depth + 1 : depth, order, reads);
+        }
+    }
+    void prepare(const Document& doc) {
+        std::vector<std::pair<std::string, std::string>> order;
+        std::vector<const Block*> reads;
+        for (size_t si : programOrder(doc)) scan(doc.sections[si].blocks, 0, order, reads);
+        for (const auto& nb : order) {
+            const std::string& name = nb.first;
+            if (varAt.count(name)) continue;
+            if (!isIdentifier(name)) { problem(nb.second, "'" + name + "' is not a name for a variable (letters, digits and _, not starting with a digit)"); varAt[name] = 0; continue; }
+            int at = -1;
+            for (int i = 0; i + 1 < 32 && at < 0; i++) if (!taken[i] && !taken[i + 1]) at = i;
+            if (at < 0) { problem(nb.second, "no room in the scratchpad for the variable '" + name + "' (32 bytes: 2 for each variable, minus the bytes the blocks name and the counting loops use)"); varAt[name] = 0; continue; }
+            taken[at] = taken[at + 1] = true;
+            varAt[name] = at;
+        }
+        for (const Block* r : reads)
+            if (!assigned.count(trim(r->get("name")))) problem(r->id, "nothing sets the variable '" + trim(r->get("name")) + "'", false, "reference");
+    }
+    int allocTemp(const std::string& id) {
+        for (int i = 0; i + 1 < 32; i++) if (!taken[i] && !taken[i + 1]) { taken[i] = taken[i + 1] = true; liveTemps.push_back(i); return i; }
+        problem(id, "no room in the scratchpad for the working values of this expression (use fewer variables or a simpler expression)");
+        return 0;
+    }
+    void freeTemp(int at) {
+        auto it = std::find(liveTemps.begin(), liveTemps.end(), at);
+        if (it == liveTemps.end()) return;
+        taken[at] = taken[at + 1] = false;
+        liveTemps.erase(it);
+    }
+    // ---- expressions: a value is a variable (or a working value) in the scratchpad, or a literal; an operation loads its operands into the ALU, runs it, stores ALU_OUT
+    struct Loc { bool lit = false, temp = false; int at = 0; std::string text; };
+    void put(const std::string& s) { lineBuf.push_back(s); }
+    void load(const Block& host, const Loc& l, const char* alu) {
+        if (!l.lit) { put("    MOV " + sp(l.at, l.at + 1) + " -> " + alu); return; }
+        const int t = allocTemp(host.id);                                              // a constant goes through the scratchpad (MOV CONST can only write there)
+        put("    MOV CONST(" + l.text + ", 2) -> " + sp(t, t + 1));
+        put("    MOV " + sp(t, t + 1) + " -> " + alu);
+        freeTemp(t);
+    }
+    std::string signText(const Block& b) { return b.get("mode") == "signed" ? "signed" : "unsigned"; }
+    Loc evalValue(const Block* v, const Block& host, int into = -1) {
+        Loc zero;
+        zero.lit = true; zero.text = "0";
+        if (!v) return zero;
+        if (v->type == "v_var") {
+            Loc l;
+            const auto it = varAt.find(trim(v->get("name")));
+            l.at = it == varAt.end() ? 0 : it->second;
+            return l;
+        }
+        if (v->type != "v_bin") {                                                       // a number, a name, an assembler expression: a literal
+            Loc l;
+            l.lit = true;
+            l.text = valueText(*v, reg);
+            if (trim(l.text).empty()) l.text = "0";
+            return l;
+        }
+        const std::string op = v->get("op");
+        Loc a = evalValue(v->value("a"), host), b = evalValue(v->value("b"), host);
+        std::string alu;
+        const bool shift = op == "<<" || op == ">>";
+        if (shift) {
+            long long n = 0;
+            if (!b.lit || !plainNumber(b.text, n) || n < 0 || n > 31) { problem(v->id, "a shift needs a plain number (0..31) on its right"); n = 0; }
+            alu = std::string(op == "<<" ? "SHL " : "SHR ") + std::to_string(n) + " " + signText(*v);
+        } else if (op == "+") alu = "ADD " + signText(*v);
+        else if (op == "-") alu = "SUB " + signText(*v);
+        else if (op == "*") alu = "MUL " + signText(*v);
+        else if (op == "&") alu = "AND";
+        else if (op == "|") alu = "OR";
+        else if (op == "^") alu = "XOR";
+        else { problem(v->id, "'" + op + "' is not an operation"); alu = "ADD unsigned"; }
+        load(host, a, "ALU_OPA");
+        if (!shift) load(host, b, "ALU_OPB");
+        put("    ALU " + alu);
+        if (a.temp) freeTemp(a.at);
+        if (b.temp) freeTemp(b.at);
+        Loc r;
+        r.at = into >= 0 ? into : allocTemp(host.id);
+        r.temp = into < 0;
+        put("    MOV ALU_OUT[0..1] -> " + sp(r.at, r.at + 1));
+        return r;
+    }
+    // the ALU compare of a "test" (the blocks before it only load the operands): afterwards the condition is ALU_CMP_TRUE
+    void evalTest(const Block& host, const Block* t) {
+        if (!t || t->type != "v_cmp") return;
+        const std::string op = t->get("op");
+        Loc a = evalValue(t->value("a"), host), b = evalValue(t->value("b"), host);
+        std::string alu;
+        bool swap = false;
+        if (op == "==") alu = "CMP.EQ"; else if (op == "!=") alu = "CMP.NE"; else if (op == "<") alu = "CMP.LT"; else if (op == ">=") alu = "CMP.GE";
+        else if (op == ">") { alu = "CMP.LT"; swap = true; } else if (op == "<=") { alu = "CMP.GE"; swap = true; }
+        else { problem(t->id, "'" + op + "' is not a comparison"); alu = "CMP.EQ"; }
+        load(host, swap ? b : a, "ALU_OPA");
+        load(host, swap ? a : b, "ALU_OPB");
+        put("    ALU " + alu + " " + signText(*t));
+        if (a.temp) freeTemp(a.at);
+        if (b.temp) freeTemp(b.at);
+    }
+    void flush(const Block& b, const std::string& fallback) {
+        std::vector<std::string> ls;
+        ls.swap(lineBuf);
+        for (int t : std::vector<int>(liveTemps)) freeTemp(t);
+        if (ls.empty()) ls.push_back("    ; " + fallback);
+        emitWithComment(ls[0], b.comment, b.id, 4);
+        for (size_t i = 1; i < ls.size(); i++) emit(ls[i], b.id);
+    }
+    void assignBlock(const Block& b) {
+        const std::string name = trim(b.get("name"));
+        if (b.disabled) { emit("    ; " + b.type + " " + name + " (turned off)", b.id); return; }
+        if (!b.value("value")) { emit("    ; (incomplete) " + b.type + " " + name, b.id); return; }
+        const int dst = varAt.count(name) ? varAt[name] : 0;
+        lineBuf.clear();
+        if (b.type == "change") {
+            Loc cur; cur.at = dst;
+            Loc by = evalValue(b.value("value"), b);
+            load(b, cur, "ALU_OPA");
+            load(b, by, "ALU_OPB");
+            put("    ALU ADD unsigned");
+            if (by.temp) freeTemp(by.at);
+            put("    MOV ALU_OUT[0..1] -> " + sp(dst, dst + 1));
+            flush(b, "change " + name);
+            return;
+        }
+        Loc v = evalValue(b.value("value"), b, dst);
+        if (v.lit) put("    MOV CONST(" + v.text + ", 2) -> " + sp(dst, dst + 1));
+        else if (v.at != dst) { put("    MOV " + sp(v.at, v.at + 1) + " -> " + sp(dst, dst + 1)); if (v.temp) freeTemp(v.at); }
+        flush(b, "set " + name + " (already there)");
+    }
     std::string sp(int a, int z) { return "MAIN_SCRATCHPAD[" + std::to_string(a) + ".." + std::to_string(z) + "]"; }
     // if / while / wait: labels + BR.COND (jumps when the condition holds) + JMP. A body is written as the blocks inside it.
     void list(const std::vector<Block>* v) { if (v) for (const Block& x : *v) block(x); }
     void structured(const Block& b) {
-        const std::string cond = trim(b.get("cond")), top = b.type + "_" + b.id;
+        const Block* test = b.value("test");
+        const std::string cond = test ? std::string("ALU_CMP_TRUE") : trim(b.get("cond")), top = b.type + "_" + b.id;
         if (b.disabled) { emit("; " + b.type + " " + cond + " (turned off)", b.id); return; }
         const std::string br = "    BR.COND " + (cond.empty() ? std::string("ALWAYS") : cond) + ", ";
+        std::vector<std::string> pre;                                                          // a comparison plugged into "test": loads and the ALU compare, right before the branch
+        if (test) { lineBuf.clear(); evalTest(b, test); pre.swap(lineBuf); for (int t : std::vector<int>(liveTemps)) freeTemp(t); }
         if (b.type == "if") {
-            emitWithComment(br + top + "_then", b.comment, b.id, 4);
+            if (pre.empty()) emitWithComment(br + top + "_then", b.comment, b.id, 4);
+            else { emitWithComment(pre[0], b.comment, b.id, 4); for (size_t i = 1; i < pre.size(); i++) emit(pre[i], b.id); emit(br + top + "_then", b.id); }
             list(b.stack("ELSE"));
             emit("    JMP " + top + "_end", b.id);
             emit(top + "_then:", b.id);
@@ -374,6 +582,7 @@ struct Gen {
         } else if (b.type == "while") {
             emitWithComment(top + ":", b.comment, b.id, 0);
             list(b.stack("COND"));
+            for (const std::string& l : pre) emit(l, b.id);
             emit(br + top + "_body", b.id);
             emit("    JMP " + top + "_end", b.id);
             emit(top + "_body:", b.id);
@@ -383,6 +592,7 @@ struct Gen {
         } else {                                                                              // wait
             emitWithComment(top + ":", b.comment, b.id, 0);
             list(b.stack("COND"));
+            for (const std::string& l : pre) emit(l, b.id);
             emit(br + top + "_end", b.id);
             emit("    JMP " + top, b.id);
             emit(top + "_end:", b.id);
@@ -444,6 +654,9 @@ struct Gen {
         } else if (b.type == "if" || b.type == "while" || b.type == "wait") {
             structured(b);
             return;
+        } else if (b.type == "set" || b.type == "change") {
+            assignBlock(b);
+            return;
         } else if (b.type == "proc") {
             emitWithComment(".proc " + b.get("name"), b.comment, b.id, 0);
             if (const std::vector<Block>* body = b.stack("BODY")) for (const Block& c : *body) block(c);
@@ -489,7 +702,8 @@ std::vector<size_t> programOrder(const Document& doc) {
 }
 
 Generated generate(const Document& doc, const Registry& reg, const GenerateOptions& opt) {
-    Gen g{reg, {}, 0};
+    Gen g(reg);
+    g.prepare(doc);
     if (!opt.header.empty()) {
         std::istringstream hs(opt.header);
         for (std::string l; std::getline(hs, l);) g.emit("; " + l, "");
@@ -528,7 +742,7 @@ void checkSequenceHints(const std::vector<Block>& v, const Registry& reg, std::v
     for (size_t i = 0; i < v.size(); i++) {
         const Block& b = v[i];
         if (b.disabled) continue;
-        if (b.type == "br_cond" || b.type == "if") {
+        if ((b.type == "br_cond" || b.type == "if") && !b.value("test")) {
             const std::string cond = upper(text(b, "cond"));
             if (cond == "ALU_CMP_TRUE" || cond == "ALU_OUT_OV16") {
                 size_t k = i;
@@ -645,7 +859,7 @@ void checkLoops(const std::vector<Block>& v, int depth, std::vector<int>& bases,
             }
         }
         // while / wait: the condition is worked out by the blocks in COND: when it reads the ALU flag, the last of them should be the ALU operation
-        if ((b.type == "while" || b.type == "wait") && !b.disabled) {
+        if ((b.type == "while" || b.type == "wait") && !b.disabled && !b.value("test")) {
             const std::string cond = upper(trim(b.get("cond")));
             if (cond == "ALU_CMP_TRUE" || cond == "ALU_OUT_OV16") {
                 const std::vector<Block>* cs = b.stack("COND");
@@ -669,6 +883,10 @@ std::vector<BlockProblem> validate(const Document& doc, const Registry& reg, con
         checkList(s.blocks, s.domain, false, reg, out, ids);
         std::vector<int> bases;
         checkLoops(s.blocks, 0, bases, out);
+    }
+    {                                                                            // what the generator cannot do (no room for a variable, a bad shift, a variable nothing sets)
+        const Generated g = generate(doc, reg);
+        out.insert(out.end(), g.problems.begin(), g.problems.end());
     }
     SymbolTable table;
     table.addDocument(doc);

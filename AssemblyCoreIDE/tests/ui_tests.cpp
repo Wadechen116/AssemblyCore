@@ -1773,6 +1773,43 @@ private slots:
         r.ed->grab().save(outDir() + "/blocks_if.png");
     }
 
+    void variablesAndExpressionsAreBuiltFromTheToolbox() {
+        DragRig r(".main\ntop: MOV CONST(5, 2) -> MAIN_SCRATCHPAD[4..5]\n JMP top\n");
+        auto& s = r.ed->session();
+        r.sc().setAnimationsEnabled(false);
+        auto& tb = r.ed->toolbox();
+        const auto names = tb.drawerNames();
+        QVERIFY(std::find(names.begin(), names.end(), "Variables") != names.end() && std::find(names.begin(), names.end(), "Expressions") != names.end());
+        for (const char* id : {"type:set", "type:change", "type:v_var", "type:v_bin", "type:v_cmp"}) QVERIFY2(tb.catalogHas(id), id);
+        // a "set" comes complete (0 plugged in) and gives code at once; the bytes it picks keep off the MOV's
+        s.select({s.document().sections[0].blocks[1].id});
+        emit tb.activated("type:set");
+        std::string setId;
+        for (const auto& b : s.document().sections[0].blocks) if (b.type == "set") setId = b.id;
+        QVERIFY(!setId.empty());
+        QVERIFY2(s.generated().text.find("MOV CONST(0, 2) -> MAIN_SCRATCHPAD[0..1]") != std::string::npos, s.generated().text.c_str());
+        QVERIFY(r.ed->errorText().isEmpty());
+        // a calculation dropped on the value: it takes the socket's place, the old 0 goes out
+        s.select({setId});
+        emit tb.activated("type:v_bin");
+        QVERIFY2(s.generated().text.find("ALU ADD unsigned") != std::string::npos, s.generated().text.c_str());
+        // an if, and a comparison into its "test"
+        s.select({setId});
+        emit tb.activated("type:if");
+        std::string ifId;
+        for (const auto& b : s.document().sections[0].blocks) if (b.type == "if") ifId = b.id;
+        QVERIFY(!ifId.empty());
+        s.select({ifId});
+        emit tb.activated("type:v_cmp");
+        const asmcore::blocks::Block* f = s.document().find(ifId);
+        QVERIFY2(f && f->value("test") && f->value("test")->type == "v_cmp", "the comparison went into 'test'");
+        QVERIFY(s.generated().text.find("ALU CMP.LT unsigned") != std::string::npos);
+        r.ed->resize(1000, 700);
+        r.ed->view().fitAll();
+        QApplication::processEvents();
+        r.ed->grab().save(outDir() + "/blocks_variables.png");
+    }
+
     void aClosedChoiceIsPickedFromAMenuThatStays() {
         DragRig r(".main\ntop: MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]\n JMP top\n");
         auto& s = r.ed->session();
