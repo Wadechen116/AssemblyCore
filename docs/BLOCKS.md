@@ -177,6 +177,14 @@ asmblk blocks                              列出所有積木與欄位
 
 > 操作說明（快速鍵、疑難排解）：`docs/BLOCKS_EDITOR.md`；練習專案：`sample/13_block_editor`。
 
+### 串接（cascade）積木（B4 第三批）
+
+Control 抽屜的 **cascade**（只在 Main）加上 **next block**：cascade 的 BODY 用 *next block* 切成幾個「區塊」，選擇值 `run blocks up to k` 的意思是**依序跑區塊 0…k**（0＝只跑第一個，2＝前三個）。降階成 `CASCADE_BEGIN k, …`、每個區塊一個自動命名的標籤與 `CASCADE_END i, …`、最後一個共同的離開標籤，索引自動編號，不用自己算。
+- 區塊數＝next block 的個數＋1，自由增減；空的 cascade 也是合法程式。
+- **檢查**（E304 的白話版）：BODY 裡不能有跳轉、迴圈、標籤、呼叫、巢狀 cascade；選擇值不能超過最後一個區塊；next block 放在 cascade 外面會提示。
+- 驗收：用 cascade 積木重做 `04_alu_cascade`，**組譯出的映像與文字版逐位元組相同**；選擇值 0／1／2 在模擬器裡跑出 1／2／3 個區塊的結果。
+- 文字匯入（`CASCADE_BEGIN` … 的文字）仍是一指令一積木的 `cascade begin`／`cascade end`，不會被自動轉成容器（圖形版是新寫的時候用）。
+
 ### 變數與運算式（B4 第二批）
 
 - **變數** = 暫存區的 2 個位元組，**位置由產生器挑**：從最低的空位元組往上，**避開**其他積木用名字指到的位元組（任何文字裡的 `MAIN_SCRATCHPAD[a..b]`、`WRITE_SP` 的視窗）以及計數 loop 的 6 個位元組；運算中途的暫存值也用空位元組、語句結束就還回去。32 位元組放不下時，積木上標「no room in the scratchpad…」並說哪個變數。

@@ -611,6 +611,14 @@ Drag it to change the order; double-click the end of it to write a comment</sour
         <source>comparison</source>
         <translation>比較</translation>
     </message>
+    <message>
+        <source>cascade</source>
+        <translation>串接</translation>
+    </message>
+    <message>
+        <source>next block</source>
+        <translation>下一個區塊</translation>
+    </message>
 </context>
 <context>
     <name>BreakpointsPanel</name>

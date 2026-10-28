@@ -155,6 +155,8 @@ const char* const* blockTextsForTranslation(int& count) {
         QT_TRANSLATE_NOOP("BlockField", "as"),
         QT_TRANSLATE_NOOP("BlockDrawer", "Variables"),
         QT_TRANSLATE_NOOP("BlockDrawer", "Expressions"),
+        QT_TRANSLATE_NOOP("BlockTitle", "cascade"),
+        QT_TRANSLATE_NOOP("BlockTitle", "next block"),
     };
     count = (int)(sizeof(texts) / sizeof(texts[0]));
     return texts;

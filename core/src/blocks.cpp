@@ -190,6 +190,23 @@ const Registry& Registry::defaults() {
                 s.help = help;
                 r.add(s);
             };
+            {
+                // A cascade: the blocks in BODY, cut into parts by "next block" dividers, run in order up to the selector (CASCADE_BEGIN k ... CASCADE_END i). Lowered in Gen::cascade.
+                BlockDef cs;
+                cs.type = "cascade"; cs.title = "cascade"; cs.category = "Control"; cs.domains = kMain;
+                FieldDef k = F("k", "run blocks up to", FieldKind::Int, 0, 31);
+                k.def = "0";
+                cs.fields = {k};
+                cs.stacks = {"BODY"};
+                cs.structural = true;
+                cs.help = "Runs the parts of BODY in order, as many as the number says: 0 = only the first, 2 = the first three. Cut BODY into parts with 'next block'. No branches inside.";
+                r.add(cs);
+                BlockDef nx;
+                nx.type = "cascade_next"; nx.title = "next block"; nx.category = "Control"; nx.domains = kMain;
+                nx.structural = true;
+                nx.help = "Ends one part of a cascade and starts the next. Only inside a cascade.";
+                r.add(nx);
+            }
             structure("if", "if", {"THEN", "ELSE"}, "Runs THEN when the condition holds, ELSE when it does not. Put the ALU compare right before it.");
             structure("while", "while", {"COND", "BODY"}, "Runs COND (the blocks that work out the condition, ending with the ALU compare) and then BODY, again and again while the condition holds.");
             structure("wait", "wait until", {"COND"}, "Runs COND again and again until the condition holds (COND: the blocks that work it out; may be empty for a hardware condition).");
@@ -598,6 +615,23 @@ struct Gen {
             emit(top + "_end:", b.id);
         }
     }
+    // cascade: CASCADE_BEGIN k, <part 0>; each part is a label, its blocks and CASCADE_END i, <after>
+    void cascade(const Block& b) {
+        const std::string top = "cascade_" + b.id;
+        const std::vector<Block>* body = b.stack("BODY");
+        std::vector<std::vector<const Block*>> parts(1);
+        if (body) for (const Block& x : *body) { if (x.type == "cascade_next") parts.emplace_back(); else parts.back().push_back(&x); }
+        long long k = 0;
+        if (!plainNumber(b.get("k"), k) || k < 0) k = 0;
+        if (b.disabled) { emit("; cascade (turned off)", b.id); return; }
+        emitWithComment("    CASCADE_BEGIN " + std::to_string(std::min<long long>(k, (long long)parts.size() - 1)) + ", " + top + "_0", b.comment, b.id, 4);
+        for (size_t i = 0; i < parts.size(); i++) {
+            emit(top + "_" + std::to_string(i) + ":", b.id);
+            for (const Block* x : parts[i]) block(*x);
+            emit("    CASCADE_END " + std::to_string(i) + ", " + top + "_after", b.id);
+        }
+        emit(top + "_after:", b.id);
+    }
     void loopBlock(const Block& b) {
         const bool forever = b.get("mode") == "forever";
         const std::string top = "loop_" + b.id, end = top + "_end";
@@ -656,6 +690,13 @@ struct Gen {
             return;
         } else if (b.type == "set" || b.type == "change") {
             assignBlock(b);
+            return;
+        } else if (b.type == "cascade") {
+            cascade(b);
+            return;
+        } else if (b.type == "cascade_next") {
+            problem(b.id, "'next block' only makes sense inside a cascade", false, "hint");
+            emit("    ; (next block outside a cascade)", b.id);
             return;
         } else if (b.type == "proc") {
             emitWithComment(".proc " + b.get("name"), b.comment, b.id, 0);
@@ -858,6 +899,23 @@ void checkLoops(const std::vector<Block>& v, int depth, std::vector<int>& bases,
                 bases.push_back(c);
             }
         }
+        // a cascade runs instructions in a row: no branches inside, and the selector must name a part that exists
+        if (b.type == "cascade" && !b.disabled) {
+            size_t parts = 1;
+            std::function<void(const std::vector<Block>&, bool)> walk = [&](const std::vector<Block>& v, bool top) {
+                for (const Block& x : v) {
+                    if (x.disabled) continue;
+                    if (top && x.type == "cascade_next") { parts++; continue; }
+                    static const std::set<std::string> forbidden = {"jmp", "br_cond", "br_peri", "br_eret", "if", "while", "wait", "loop", "call", "ret", "cascade", "cascade_begin", "cascade_end", "label", "vector", "proc"};
+                    if (forbidden.count(x.type)) out.push_back({true, x.id, "a cascade runs its blocks in a row: no branches, loops, labels or calls inside it (E304)", "structure"});
+                    for (const auto& st : x.stacks) walk(st.second, false);
+                }
+            };
+            if (const std::vector<Block>* body = b.stack("BODY")) walk(*body, true);
+            long long k = 0;
+            if (plainNumber(b.get("k"), k) && (k < 0 || (size_t)k >= parts))
+                out.push_back({true, b.id, "'run blocks up to' is " + std::to_string(k) + ", but the cascade has " + std::to_string(parts) + " block(s): the last is " + std::to_string(parts - 1) + " (E304)", "structure"});
+        }
         // while / wait: the condition is worked out by the blocks in COND: when it reads the ALU flag, the last of them should be the ALU operation
         if ((b.type == "while" || b.type == "wait") && !b.disabled && !b.value("test")) {
             const std::string cond = upper(trim(b.get("cond")));
@@ -935,7 +993,7 @@ json::Value toJson(const Block& b, const Registry& reg) {
         v.set("parts", vs);
     }
     bool anyStack = false;
-    for (const auto& st : b.stacks) if (!st.second.empty() || b.type == "proc" || b.type == "loop" || b.type == "if" || b.type == "while" || b.type == "wait") anyStack = true;
+    for (const auto& st : b.stacks) if (!st.second.empty() || b.type == "proc" || b.type == "loop" || b.type == "if" || b.type == "while" || b.type == "wait" || b.type == "cascade") anyStack = true;
     if (anyStack) {
         json::Value s = json::Value::makeObject();
         for (const auto& st : b.stacks) {

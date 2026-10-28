@@ -638,6 +638,89 @@ static void t_variables() {
     check(parseDocument(serializeDocument(b), back, err) && generate(back).text == tb, "the file keeps variables and expressions: the same program comes back", err);
 }
 
+// The cascade container: parts cut by "next block", run in order up to the selector. Sample 04's cascade is made again with it: the image must be the text version's.
+static void t_cascade() {
+    std::printf("\nCascade block\n");
+    const Registry& reg = Registry::defaults();
+    const BlockDef* cd = reg.find("cascade");
+    check(cd && cd->category == "Control" && cd->domains == kMain && cd->stacks.size() == 1 && reg.find("cascade_next"), "the cascade and 'next block' blocks exist (Control, Main)");
+    // sample 04: replace CASCADE_BEGIN ... CASCADE_END 2 (and their labels) by one cascade block
+    const std::string text = slurp(fs::path(ASMCORE_SOURCE_DIR) / "sample" / "04_alu_cascade" / "alu_cascade.asm");
+    const std::string defs = slurp(fs::path(ASMCORE_SOURCE_DIR) / "sample" / "common" / "defs.inc");
+    auto build = [&](const std::string& src) { Options o; return assemble({Source{"defs.inc", defs}, Source{"a.asm", src}}, nullptr, o); };
+    std::string noInclude = text;
+    const size_t inc = noInclude.find(".include \"defs.inc\"");
+    if (inc != std::string::npos) noInclude.erase(inc, std::string(".include \"defs.inc\"\n").size());
+    const Result original = build(noInclude);
+    check(original.ok, "sample 04 assembles", original.diagnosticsText());
+    Document d = importAsm(noInclude, "c");
+    std::vector<Block>* main = nullptr;
+    for (Section& s : d.sections) if (s.domain == "main") main = &s.blocks;
+    size_t from = 0, to = 0;
+    std::vector<Block> parts;
+    bool found = false;
+    for (size_t i = 0; main && i < main->size(); i++) {
+        if ((*main)[i].type == "cascade_begin") from = i;
+        if ((*main)[i].type == "cascade_end" && (*main)[i].get("index") == "2") to = i;
+    }
+    for (size_t i = from + 1; main && i < to; i++) {
+        const Block& x = (*main)[i];
+        if (x.type == "csr_set8") parts.push_back(x);
+        if (x.type == "cascade_end" && x.get("index") != "2") { Block nx = d.make("cascade_next"); parts.push_back(nx); }
+    }
+    if (main && to > from) {
+        Block cs = d.make("cascade");
+        cs.set("k", "2");
+        *cs.stack("BODY", true) = parts;
+        main->erase(main->begin() + (long)from, main->begin() + (long)to + 1);
+        main->insert(main->begin() + (long)from, cs);
+        found = true;
+    }
+    d.assignMissingIds();
+    const std::string gen = generate(d).text;
+    check(found && gen.find("CASCADE_BEGIN 2, cascade_") != std::string::npos && gen.find("CASCADE_END 2, cascade_") != std::string::npos, "the cascade block lowers to CASCADE_BEGIN / CASCADE_END with parts 0, 1, 2", gen);
+    const Result blocks = build(gen);
+    check(blocks.ok, "...and assembles", blocks.diagnosticsText());
+    check(blocks.ok && original.ok && blocks.main.bytes == original.main.bytes, "sample 04 made with the cascade block has the image of the text version");
+    check(validate(d, reg).empty() || [&] { for (const BlockProblem& p : validate(d, reg)) if (p.error) return false; return true; }(), "...with no errors");
+    // what it does: selector k runs parts 0..k
+    auto cascadeProgram = [&](const std::string& k) {
+        return vb::program([&](Document& dd) {
+            Block cs = dd.make("cascade");
+            cs.set("k", k);
+            std::vector<Block> body = blocksOf(dd, "MOV CONST(1, 2) -> MAIN_SCRATCHPAD[0..1]\n");
+            body.push_back(dd.make("cascade_next"));
+            for (Block& x : blocksOf(dd, "MOV CONST(2, 2) -> MAIN_SCRATCHPAD[2..3]\n")) body.push_back(x);
+            body.push_back(dd.make("cascade_next"));
+            for (Block& x : blocksOf(dd, "MOV CONST(3, 2) -> MAIN_SCRATCHPAD[4..5]\n")) body.push_back(x);
+            *cs.stack("BODY", true) = body;
+            return std::vector<Block>{cs};
+        });
+    };
+    const std::string c0 = generate(cascadeProgram("0")).text, c1 = generate(cascadeProgram("1")).text, c2 = generate(cascadeProgram("2")).text;
+    check(runWord(c0, 0) == 1 && runWord(c0, 2) == 0 && runWord(c0, 4) == 0, "selector 0 runs only the first part", c0);
+    check(runWord(c1, 0) == 1 && runWord(c1, 2) == 2 && runWord(c1, 4) == 0, "selector 1 runs the first two");
+    check(runWord(c2, 0) == 1 && runWord(c2, 2) == 2 && runWord(c2, 4) == 3, "selector 2 runs all three");
+    // an empty cascade is still a valid program; problems are said on the block
+    Document empty = vb::program([](Document& dd) { Block cs = dd.make("cascade"); *cs.stack("BODY", true) = {}; return std::vector<Block>{cs}; });
+    check(build(generate(empty).text).ok, "an empty cascade assembles");
+    auto said = [&](const Document& dd, const std::string& needle) { for (const BlockProblem& p : validate(dd, reg)) if (p.message.find(needle) != std::string::npos) return true; return false; };
+    check(said(cascadeProgram("5"), "'run blocks up to' is 5"), "a selector past the last part is reported");
+    Document branchy = vb::program([](Document& dd) {
+        Block cs = dd.make("cascade");
+        Block j = dd.make("jmp");
+        j.set("target", "s");
+        *cs.stack("BODY", true) = {j};
+        return std::vector<Block>{cs};
+    });
+    check(said(branchy, "no branches, loops, labels or calls"), "a branch inside a cascade is reported");
+    Document stray = vb::program([](Document& dd) { return std::vector<Block>{dd.make("cascade_next")}; });
+    check(said(stray, "only makes sense inside a cascade"), "'next block' outside a cascade is reported");
+    Document back;
+    std::string err;
+    check(parseDocument(serializeDocument(d), back, err) && generate(back).text == gen, "the file keeps the cascade and its parts", err);
+}
+
 int main() {
     std::printf("AssemblyCore block program tests\n");
     t_coverage();
@@ -650,6 +733,7 @@ int main() {
     t_loop();
     t_structured();
     t_variables();
+    t_cascade();
     std::printf("\n%s  %d passed, %d failed\n", g_fail ? "FAILED" : "OK    ", g_pass, g_fail);
     return g_fail ? 1 : 0;
 }

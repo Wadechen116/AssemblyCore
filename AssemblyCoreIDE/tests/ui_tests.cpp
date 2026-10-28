@@ -1810,6 +1810,33 @@ private slots:
         r.ed->grab().save(outDir() + "/blocks_variables.png");
     }
 
+    void aCascadeIsBuiltFromPartsCutByNextBlock() {
+        DragRig r(".main\ntop: MOV CONST(5, 2) -> MAIN_SCRATCHPAD[4..5]\n JMP top\n");
+        auto& s = r.ed->session();
+        r.sc().setAnimationsEnabled(false);
+        QVERIFY(r.ed->toolbox().catalogHas("type:cascade") && r.ed->toolbox().catalogHas("type:cascade_next"));
+        s.select({s.document().sections[0].blocks[1].id});
+        emit r.ed->toolbox().activated("type:cascade");
+        std::string cs;
+        for (const auto& b : s.document().sections[0].blocks) if (b.type == "cascade") cs = b.id;
+        QVERIFY(!cs.empty());
+        QVERIFY2(s.generated().text.find("CASCADE_BEGIN 0, cascade_") != std::string::npos && s.generated().text.find("CASCADE_END 0, cascade_") != std::string::npos, s.generated().text.c_str());
+        QVERIFY(r.ed->errorText().isEmpty());
+        // two parts: a "next block" into the body, a block in each; the selector can name the second
+        std::vector<asmcore::blocks::Block> next = s.fresh([&](asmcore::blocks::Document& d) { return r.ed->catalog().instantiate(*r.ed->catalog().find("type:cascade_next"), d); });
+        asmcore::blocks::Where at;
+        at.section = 0;
+        at.container = cs;
+        at.slot = "BODY";
+        QVERIFY(s.apply([&](asmcore::blocks::Editor& e) { return e.insertBlocks(at, next); }).ok);
+        QVERIFY(s.apply([&](asmcore::blocks::Editor& e) { return e.setPart(cs, "k", "1"); }).ok);
+        QVERIFY2(s.generated().text.find("CASCADE_BEGIN 1, cascade_") != std::string::npos && s.generated().text.find("CASCADE_END 1, cascade_") != std::string::npos, s.generated().text.c_str());
+        r.ed->resize(1000, 700);
+        r.ed->view().fitAll();
+        QApplication::processEvents();
+        r.ed->grab().save(outDir() + "/blocks_cascade.png");
+    }
+
     void aClosedChoiceIsPickedFromAMenuThatStays() {
         DragRig r(".main\ntop: MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]\n JMP top\n");
         auto& s = r.ed->session();
