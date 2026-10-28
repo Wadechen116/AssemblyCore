@@ -409,7 +409,6 @@ void registerBuiltinPanels(PanelRegistry& r) {
     r.add({"references", QT_TRANSLATE_NOOP("QObject", "References"), Qt::BottomDockWidgetArea, false, [](AppContext& c) -> QWidget* { return new ReferencesPanel(c); }});
     r.add({"listing", QT_TRANSLATE_NOOP("QObject", "Listing"), Qt::RightDockWidgetArea, true, [](AppContext& c) -> QWidget* { return new ListingPanel(c); }});
     registerDebugPanels(r);
-    registerSimPanels(r);
 }
 
 }  // namespace acide

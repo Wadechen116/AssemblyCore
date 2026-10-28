@@ -20,7 +20,13 @@ public:
     void clearAll();
     bool setStatus(const std::string& key, const std::string& status, std::string& error);
     void setNote(const std::string& key, const std::string& note);
-    bool dirty() const { return dirty_; }                     // the values differ from the file (or there is no file and something is set)
+    bool dirty() const { return dirty_; }
+    // How many parameters differ from the initial value (what the simulator runs with that is not the planning number).
+    int changedCount() const {
+        int n = 0;
+        for (const std::string& k : p_.keys()) if (!p_.atDefault(k)) n++;
+        return n;
+    }                     // the values differ from the file (or there is no file and something is set)
 
     // ---- the file
     const std::string& path() const { return path_; }         // absolute; "" = the values belong to no file

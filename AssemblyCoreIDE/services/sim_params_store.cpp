@@ -2,8 +2,11 @@
 
 namespace acide {
 
+// Every change goes into the workspace buffer of the file at once (like an edit of any file): the tab shows it is unsaved, Save / Save All / the question when
+// closing take care of it.
 void SimParamsStore::touch() {
     dirty_ = true;
+    if (!path_.empty()) ws_.setText(path_, p_.serialize());
     changed.fire();
 }
 
@@ -36,6 +39,9 @@ void SimParamsStore::setNote(const std::string& key, const std::string& note) {
 
 bool SimParamsStore::load(const std::string& absPath, std::vector<std::string>& errors) {
     std::string text;
+    // Loading the file these values already belong to means "as it is on disk" (the buffer holds the values being edited); another file is read as it is open
+    // (an unsaved edit of it counts), else from the disk.
+    if (absPath == path_ && ws_.find(absPath) && ws_.fileSystem()->exists(absPath)) ws_.reload(absPath);
     if (const Document* d = ws_.find(absPath)) text = d->text;
     else if (!ws_.fileSystem()->read(absPath, text)) { errors.push_back("cannot read " + absPath); return false; }
     asmcore::SimParams n;
@@ -77,6 +83,7 @@ void SimParamsStore::closeFile() {
     dirty_ = !p_.keys().empty();
     changed.fire();
 }
+
 
 void SimParamsStore::syncWithProject() {
     if (!ws_.hasProject()) { if (!path_.empty()) closeFile(); return; }

@@ -1009,10 +1009,6 @@ Drag it to change the order; double-click the end of it to write a comment</sour
         <translation>套用到執行中的模擬器</translation>
     </message>
     <message>
-        <source>filter</source>
-        <translation>篩選</translation>
-    </message>
-    <message>
         <source>changed only</source>
         <translation>只看有改的</translation>
     </message>
@@ -1083,6 +1079,18 @@ Drag it to change the order; double-click the end of it to write a comment</sour
     <message>
         <source>Simulator parameters (*.simparams)</source>
         <translation>模擬器參數 (*.simparams)</translation>
+    </message>
+    <message>
+        <source>search parameters (Ctrl+F)  —  Enter edits the first match</source>
+        <translation>搜尋參數 (Ctrl+F)  —  按 Enter 直接編輯第一個符合的</translation>
+    </message>
+    <message>
+        <source>Unpin from the quick parameters</source>
+        <translation>從快速參數取消釘選</translation>
+    </message>
+    <message>
+        <source>Pin to the quick parameters</source>
+        <translation>釘選到快速參數</translation>
     </message>
 </context>
 <context>
@@ -1213,13 +1221,48 @@ Drag it to change the order; double-click the end of it to write a comment</sour
         <source>Listing</source>
         <translation>組譯清單</translation>
     </message>
+</context>
+<context>
+    <name>QuickParams</name>
     <message>
-        <source>Simulator Parameters</source>
-        <translation>模擬器參數</translation>
+        <source>search parameters (name, group, what it does)</source>
+        <translation>搜尋參數（名稱、群組、功能說明）</translation>
     </message>
     <message>
-        <source>Execution</source>
-        <translation>執行狀態</translation>
+        <source>→ shows it in the Simulator page  ·  ★ pins it here  ·  ↺ back to the initial value</source>
+        <translation>→ 到模擬器頁面看它  ·  ★ 釘選在這裡  ·  ↺ 還原為初始值</translation>
+    </message>
+    <message>
+        <source>Nothing is pinned: search above, or pin a parameter with ★.</source>
+        <translation>沒有釘選任何參數：在上面搜尋，或用 ★ 釘選一個參數。</translation>
+    </message>
+    <message>
+        <source>Pinned</source>
+        <translation>已釘選</translation>
+    </message>
+    <message>
+        <source>No parameter matches.</source>
+        <translation>沒有符合的參數。</translation>
+    </message>
+    <message>
+        <source>Matches</source>
+        <translation>符合的參數</translation>
+    </message>
+    <message>
+        <source>Pin here</source>
+        <translation>釘選在這裡</translation>
+    </message>
+    <message>
+        <source>Back to the initial value</source>
+        <translation>還原為初始值</translation>
+    </message>
+    <message>
+        <source>Show it in the Simulator page</source>
+        <translation>在模擬器頁面顯示</translation>
+    </message>
+    <message>
+        <source>  (not used yet)</source>
+        <translation>（尚未被模擬器使用）</translation>
     </message>
 </context>
 <context>
@@ -1293,6 +1336,26 @@ Drag it to change the order; double-click the end of it to write a comment</sour
     <message>
         <source>Status flags</source>
         <translation>狀態旗標</translation>
+    </message>
+</context>
+<context>
+    <name>SimParams</name>
+    <message>
+        <source>Parameters: initial values</source>
+        <translation>參數：初始值</translation>
+    </message>
+    <message numerus="yes">
+        <source>Parameters: %n changed</source>
+        <translation>
+            <numerusform>參數：%n 項已更改</numerusform>
+        </translation>
+    </message>
+</context>
+<context>
+    <name>SimulatorTab</name>
+    <message>
+        <source>Simulator</source>
+        <translation>模擬器</translation>
     </message>
 </context>
 <context>
@@ -2840,6 +2903,22 @@ An IDE for the Sensor Micro-Sequencer ISA, built on the AssemblyCore assembler.<
     <message>
         <source>%1 is plain assembler text again; %2 is no longer part of the project</source>
         <translation>%1 已是一般組譯器文字；%2 不再屬於專案</translation>
+    </message>
+    <message>
+        <source>The hardware parameters the simulator runs with: click to open the Simulator page</source>
+        <translation>模擬器目前使用的硬體參數：按一下開啟模擬器頁面</translation>
+    </message>
+    <message>
+        <source>Simulator</source>
+        <translation>模擬器</translation>
+    </message>
+    <message>
+        <source>The simulator: parameters, execution</source>
+        <translation>模擬器：參數與執行狀態</translation>
+    </message>
+    <message>
+        <source>Quick Parameters...</source>
+        <translation>快速參數...</translation>
     </message>
 </context>
 <context>

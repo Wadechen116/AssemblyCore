@@ -17,6 +17,7 @@
 #include "find_bar.h"
 #include "panel_registry.h"
 
+class QPushButton;
 namespace acide {
 
 class HardwareDesigner;
@@ -39,7 +40,9 @@ public:
     BlockEditor* openAsBlocks();                                        // the current assembler file shown as blocks (creates NAME.acblk beside it)
     bool newBlocks(const QString& file);
     BlockEditor* openBlocks(const std::string& acblkPath);             // the block editor tab of a .acblk file
-    QWidget* openTab(const std::string& path);                         // any non-text tab kind registered in TabRegistry (by extension)
+    QWidget* openTab(const std::string& path);
+    // The simulator page (parameters, execution, the ISA Top diagram): one per window, shown if it is open. A .simparams file opened anywhere brings its values into it.
+    QWidget* openSimulator();                         // any non-text tab kind registered in TabRegistry (by extension)
     bool newHardware(const QString& achwPath);                         // File -> Hardware -> New: create, attach to the project, open
     bool adoptHardware(const QString& incPath, const QString& envPath, const QString& achwPath);
     bool closeProject();                  // closes the editors and stops debugging (the workspace keeps its project)
@@ -113,6 +116,8 @@ private:
     QAction *actStart_ = nullptr, *actPause_ = nullptr, *actStop_ = nullptr, *actRestart_ = nullptr, *actInto_ = nullptr, *actOver_ = nullptr,
             *actOut_ = nullptr, *actToCursor_ = nullptr, *actToggleBp_ = nullptr;
     QLabel* debugLabel_ = nullptr;
+    QPushButton* paramsChip_ = nullptr;                      // "Parameters: 3 changed" in the status bar: a click opens the simulator page
+    QAction* quickParamsAct_ = nullptr;
     bool pendingStart_ = false;                            // a build is awaited before the debug session starts
     bool runAfterLoad_ = false;
     uint64_t explicitBuild_ = 0;

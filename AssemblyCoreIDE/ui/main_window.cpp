@@ -8,6 +8,7 @@
 #include <QDockWidget>
 #include <QScrollArea>
 #include <QFileDialog>
+#include <QPushButton>
 #include <QFileInfo>
 #include <QInputDialog>
 #include <QMenuBar>
@@ -21,6 +22,7 @@
 #include "document_tab.h"
 #include "block_link.h"
 #include "hardware_designer.h"
+#include "sim_panels.h"
 #include "hardware_link.h"
 #include "i18n.h"
 #include "templates.h"
@@ -62,6 +64,14 @@ MainWindow::MainWindow(AppContext& ctx, PanelRegistry& panels, QWidget* parent) 
     caretLabel_ = new QLabel;
     debugLabel_ = new QLabel(tr("Debug: off"));
     debugLabel_->setObjectName("debugStatus");
+    paramsChip_ = new QPushButton;
+    paramsChip_->setObjectName("paramsChip");
+    paramsChip_->setFlat(true);
+    paramsChip_->setToolTip(tr("The hardware parameters the simulator runs with: click to open the Simulator page"));
+    connect(paramsChip_, &QPushButton::clicked, this, [this] { openSimulator(); });
+    statusBar()->addPermanentWidget(paramsChip_);
+    conns_.add(ctx.debugger.simParams().changed, [this] { paramsChip_->setText(simParamsSummary(ctx_)); });
+    paramsChip_->setText(simParamsSummary(ctx_));
     statusBar()->addPermanentWidget(debugLabel_);
     statusBar()->addPermanentWidget(buildLabel_);
     statusBar()->addPermanentWidget(caretLabel_);
@@ -233,6 +243,8 @@ void MainWindow::createActions() {
     act(edit, tr("&Paste"), QKeySequence::Paste, blocksOrText(&BlockEditor::paste, &CodeEditor::paste));
     edit->addSeparator();
     act(edit, tr("&Find / Replace"), QKeySequence::Find, [this] {
+        auto sim = docTabs_.find("simulator:");
+        if (sim != docTabs_.end() && sim->second == tabs_->currentWidget()) { focusParameterSearch(sim->second); return; }          // on the simulator page it searches the parameters
         CodeEditor* e = currentEditor();
         find_->setEditor(e);
         find_->open(e ? e->textCursor().selectedText() : QString());
@@ -489,7 +501,31 @@ bool MainWindow::adoptHardware(const QString& incFile, const QString& envFile, c
     return true;
 }
 
+QWidget* MainWindow::openSimulator() {
+    auto it = docTabs_.find("simulator:");
+    if (it != docTabs_.end()) { tabs_->setCurrentWidget(it->second); return it->second; }
+    QWidget* w = createSimulatorTab(ctx_);
+    auto* tab = dynamic_cast<DocumentTab*>(w);
+    docTabs_["simulator:"] = w;
+    const int idx = tabs_->addTab(w, tab ? tab->tabTitle() : tr("Simulator"));
+    tabs_->setTabToolTip(idx, tr("The simulator: parameters, execution"));
+    tabs_->setCurrentIndex(idx);
+    return w;
+}
+
 CodeEditor* MainWindow::openFile(const std::string& path) {
+    if (path == "simulator:") { openSimulator(); return nullptr; }
+    if (path.size() > 10 && path.compare(path.size() - 10, 10, ".simparams") == 0) {          // a parameter file: its values are the simulator's, shown on the simulator page
+        SimParamsStore& store = ctx_.debugger.simParams();
+        if (store.path() != path) {
+            std::vector<std::string> errs;
+            if (!ctx_.workspace.open(path)) { warn(tr("Open"), tr("Cannot read %1").arg(fromStd(path))); return nullptr; }
+            store.load(path, errs);
+            for (const std::string& e : errs) ctx_.log.fire(fromStd(path) + ": " + fromStd(e));
+        }
+        openSimulator();
+        return nullptr;
+    }
     if (TabRegistry::instance().find(path)) { openTab(path); return nullptr; }
     auto it = editors_.find(path);
     if (it != editors_.end()) { tabs_->setCurrentWidget(it->second); return it->second; }
@@ -684,8 +720,10 @@ void MainWindow::updateRecentMenu() {
 }
 
 void MainWindow::restoreSession() {
-    for (const std::string& p : ctx_.settings.getList("session." + ctx_.workspace.project().file))
+    for (const std::string& p : ctx_.settings.getList("session." + ctx_.workspace.project().file)) {
+        if (p == "simulator:") { openSimulator(); continue; }
         if (ctx_.workspace.fileSystem()->exists(p)) openFile(p);
+    }
 }
 
 void MainWindow::saveSession() {
@@ -899,6 +937,24 @@ void MainWindow::createDebugActions() {
     });
     dbg->addAction(tr("Remove All Breakpoints"), this, [this] { ctx_.debugger.clearLineBreakpoints(); });
     dbg->addSeparator();
+    {                                                                    // the simulator page, and the parameters at hand from anywhere
+        QAction* sim = dbg->addAction(tr("Simulator"));
+        sim->setShortcut(QKeySequence("Ctrl+Shift+M"));
+        sim->setObjectName("simulatorAction");
+        connect(sim, &QAction::triggered, this, [this] { openSimulator(); });
+        quickParamsAct_ = dbg->addAction(tr("Quick Parameters..."));
+        quickParamsAct_->setShortcut(QKeySequence("Ctrl+Shift+P"));
+        quickParamsAct_->setObjectName("quickParamsAction");
+        connect(quickParamsAct_, &QAction::triggered, this, [this] {
+            QWidget* anchor = nullptr;
+            for (QToolBar* t : findChildren<QToolBar*>("debugToolBar")) anchor = t->widgetForAction(quickParamsAct_);
+            showQuickParams(ctx_, anchor ? anchor : this, [this](const std::string& key) { showParameterInTab(openSimulator(), key); });
+        });
+        tb->addSeparator();
+        tb->addAction(sim);
+        tb->addAction(quickParamsAct_);
+        dbg->addSeparator();
+    }
     dbg->addAction(tr("Run for N Cycles..."), this, [this] {
         if (!ctx_.debugger.active() || ctx_.debugger.running()) { statusBar()->showMessage(tr("Start debugging first (and pause it)"), 4000); return; }
         bool ok = false;

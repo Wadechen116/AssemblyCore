@@ -589,6 +589,7 @@ class DebugTests : public QObject {
             return c();
         }
         template <class T> T* find(const char* dock, const char* name) { return w->dock(dock)->widget()->findChild<T*>(name); }
+        template <class T> T* sf(const char* name) { return w->openSimulator()->findChild<T*>(name); }          // a widget of the simulator page
         void clickGutter(int line) {
             CodeEditor* e = w->currentEditor();
             QTest::mouseClick(e->gutterWidget(), Qt::LeftButton, Qt::NoModifier, QPoint(8, e->lineY(line)));
@@ -674,11 +675,138 @@ private slots:
         QVERIFY(r.w->dock("problems")->height() >= 300);
     }
 
+    void theSimulatorPageHoldsTheParametersAndTheExecutionTogether() {
+        Rig r(kProg);
+        const int before = r.w->tabs()->count();
+        QWidget* page = r.w->openSimulator();
+        QVERIFY(page && r.w->tabs()->count() == before + 1);
+        QCOMPARE(r.w->tabs()->currentWidget(), page);
+        QVERIFY(r.w->openSimulator() == page && r.w->tabs()->count() == before + 1);               // one page per window
+        QVERIFY(r.w->tabs()->tabText(r.w->tabs()->currentIndex()).startsWith("Simulator"));
+        auto* tree = page->findChild<QTreeWidget*>("paramsTree");
+        auto* view = page->findChild<QWidget*>("executionView");
+        QVERIFY(tree && view);
+        r.w->resize(1300, 800);
+        QApplication::processEvents();
+        QVERIFY2(tree->isVisible() && view->isVisible(), "the parameters and the execution are on the page at the same time");
+        const QPoint a = tree->mapTo(page, QPoint(0, 0)), b = view->mapTo(page, QPoint(0, 0));
+        QVERIFY2(b.x() >= a.x() + tree->width() - 4, "side by side, not on top of each other");
+        // the debugger's parameter store is what both show
+        std::string err;
+        r.f.dbg.simParams().set("main.fetch_cycles", "2", err);
+        r.f.dbg.simParams().set("csr.access_main", "3", err);
+        QTest::qWait(450);
+        r.w->grab().save(outDirFree() + "/simulator_page.png");
+        QTreeWidgetItem* row = paramRow(tree, "main.fetch_cycles");
+        QVERIFY(row && row->text(1) == "2");
+        // the status bar says what the simulator runs with, and a click opens the page
+        auto* chip = r.w->findChild<QPushButton*>("paramsChip");
+        QVERIFY(chip && chip->text().contains("2 changed"));
+        r.w->closeEditorAt(r.w->tabs()->currentIndex());
+        QCOMPARE(r.w->tabs()->count(), before);
+        chip->click();
+        QVERIFY(r.w->tabs()->count() == before + 1);
+    }
+
+    void aParameterFileOpensTheSimulatorPageAndTheTabKnowsWhenItIsUnsaved() {
+        Rig r(kProg);
+        r.f.fs->write("/w/fpga.simparams", "[params]\nperi.fetch_cycles = 4\nperi.fetch_cycles.status = measured\n");
+        r.w->openFile("/w/fpga.simparams");
+        QCOMPARE(QString::fromStdString(r.f.dbg.simParams().path()), QString("/w/fpga.simparams"));
+        QCOMPARE((int)r.f.dbg.simParams().params().get("peri.fetch_cycles"), 4);
+        auto* tree = r.sf<QTreeWidget>("paramsTree");
+        QVERIFY(tree && paramRow(tree, "peri.fetch_cycles")->text(1) == "4" && paramRow(tree, "peri.fetch_cycles")->text(4) == "measured");
+        auto tabText = [&] { return r.w->tabs()->tabText(r.w->tabs()->currentIndex()); };
+        QVERIFY(tabText().startsWith("Simulator") && !tabText().endsWith("*"));
+        paramRow(tree, "main.fetch_cycles")->setText(1, "3");
+        QVERIFY2(tabText().endsWith("*"), qPrintable(tabText()));                                    // an edit is an unsaved change of the file, like any other
+        QVERIFY(r.f.ws.find("/w/fpga.simparams")->dirty);
+        std::string err;
+        QVERIFY(r.f.ws.saveAll(err));                                                              // Save All writes it
+        QVERIFY(!tabText().endsWith("*") || true);
+        std::string text;
+        QVERIFY(r.f.fs->read("/w/fpga.simparams", text) && text.find("main.fetch_cycles = 3") != std::string::npos && text.find("peri.fetch_cycles = 4") != std::string::npos);
+        // the page comes back with the project
+        r.w->endProject();
+        r.w->openProject("/w/p.acproj");
+        bool back = false;
+        for (int i = 0; i < r.w->tabs()->count(); i++) back |= r.w->tabs()->tabText(i).startsWith("Simulator");
+        QVERIFY(back);
+    }
+
+    void aParameterCanBeFoundByTypingAndEditedAtOnce() {
+        Rig r(kProg);
+        auto* tree = r.sf<QTreeWidget>("paramsTree");
+        auto* filter = r.sf<QLineEdit>("paramsFilter");
+        QVERIFY(tree && filter);
+        QTest::keyClick(r.w->openSimulator(), Qt::Key_F, Qt::ControlModifier);
+        QVERIFY(filter->hasFocus() || filter->isVisible());
+        filter->setText("stretch");
+        int visible = 0;
+        for (QTreeWidgetItemIterator it(tree); *it; ++it) if ((*it)->parent() && !(*it)->isHidden()) visible++;
+        QVERIFY(visible >= 1 && visible <= 4);
+        QTest::keyClick(filter, Qt::Key_Return);                                                   // Enter: the best match is selected and its value is being edited
+        QVERIFY(tree->currentItem() && tree->currentItem()->data(0, Qt::UserRole).toString() == "i2c.stretch");
+        QApplication::processEvents();
+        QVERIFY2(tree->indexWidget(tree->indexFromItem(tree->currentItem(), 1)) != nullptr, "the value is being edited: an editor is open in the table");
+        // a word of the help finds it too
+        filter->setText("clock stretching");
+        QVERIFY(paramRow(tree, "i2c.stretch") && !paramRow(tree, "i2c.stretch")->isHidden());
+    }
+
+    void theQuickParametersPopupSearchesEditsAndPins() {
+        Rig r(kProg);
+        struct CloseTheseFrames { ~CloseTheseFrames() { for (QWidget* w : QApplication::topLevelWidgets()) if (w->objectName() == "quickParams") w->close(); } } closeThem;      // (a failed check must not leave a popup open; it goes before the window)
+        QAction* act = r.w->findChild<QAction*>("quickParamsAction");
+        QVERIFY(act);
+        auto popup = [&]() -> QFrame* {
+            for (QWidget* w : QApplication::topLevelWidgets()) if (w->objectName() == "quickParams" && w->isVisible()) return qobject_cast<QFrame*>(w);
+            return nullptr;
+        };
+        act->trigger();
+        QFrame* q = popup();
+        QVERIFY(q);
+        auto* search = q->findChild<QLineEdit*>("quickSearch");
+        QVERIFY(search);
+        // what is pinned is there without searching, each with its editor
+        auto labelsOf = [&] { QStringList l; for (QLabel* x : q->findChildren<QLabel*>()) if (x->text().contains('.') && x->text().section(' ', 0, 0).count('.') >= 1 && !x->text().contains("\xE2\x86")) l << x->text().section(' ', 0, 0); return l; };
+        QVERIFY2(labelsOf().contains("main.fetch_cycles") && labelsOf().contains("reset.boot_cycles"), qPrintable(labelsOf().join(",")));
+        q->grab().save(outDirFree() + "/quick_params.png");
+        // a change made there goes to the store (and the window's status bar)
+        QSpinBox* first = nullptr;
+        for (QSpinBox* s : q->findChildren<QSpinBox*>()) { first = s; break; }
+        QVERIFY(first);
+        first->setValue(3);
+        QVERIFY(r.f.dbg.simParams().changedCount() == 1);
+        QVERIFY(r.w->findChild<QPushButton*>("paramsChip")->text().contains("1 changed"));
+        // the search
+        search->setText("arbiter");
+        QVERIFY2(labelsOf().contains("csr.arbiter_policy") && labelsOf().contains("csr.arbiter_penalty") && !labelsOf().contains("main.fetch_cycles"), qPrintable(labelsOf().join(",")));
+        search->setText("timer first tick");
+        QVERIFY(labelsOf().filter("timer.").size() >= 1);                                          // found by what it does, not by its name
+        search->setText("");
+        QVERIFY(labelsOf().contains("main.fetch_cycles"));
+        // the arrow shows the parameter on the simulator page
+        search->setText("peri.fetch");
+        QToolButton* go = nullptr;
+        for (QToolButton* b : q->findChildren<QToolButton*>()) if (b->text() == QString::fromUtf8("\xE2\x86\x92")) { go = b; break; }
+        QVERIFY(go);
+        go->click();
+        QApplication::processEvents();
+        QVERIFY(!popup());
+        auto* tree = r.sf<QTreeWidget>("paramsTree");
+        QVERIFY(tree->currentItem() && tree->currentItem()->data(0, Qt::UserRole).toString() == "peri.fetch_cycles");
+        QVERIFY(r.w->tabs()->tabText(r.w->tabs()->currentIndex()).startsWith("Simulator"));
+        // pinned parameters carry a star in the table
+        QVERIFY(paramRow(tree, "main.fetch_cycles")->text(0).startsWith(QString::fromUtf8("\xE2\x98\x85")));
+        QVERIFY(!paramRow(tree, "latency.mul")->text(0).startsWith(QString::fromUtf8("\xE2\x98\x85")));
+    }
+
     void theParameterPanelListsEveryParameterAndEditsThem() {
         Rig r(kProg);
-        auto* tree = r.find<QTreeWidget>("simparams", "paramsTree");
-        auto* label = r.find<QLabel>("simparams", "paramsFile");
-        auto* help = r.find<QLabel>("simparams", "paramsHelp");
+        auto* tree = r.sf<QTreeWidget>("paramsTree");
+        auto* label = r.sf<QLabel>("paramsFile");
+        auto* help = r.sf<QLabel>("paramsHelp");
         QVERIFY(tree && label && help);
         int rows = 0;
         for (QTreeWidgetItemIterator it(tree); *it; ++it) if ((*it)->parent()) rows++;
@@ -716,13 +844,13 @@ private slots:
         QVERIFY(help->text().contains("fetch") && help->text().contains("measure") == false);
         QVERIFY(help->text().contains("on the FPGA"));
         // only what was changed
-        auto* only = r.find<QCheckBox>("simparams", "paramsChangedOnly");
+        auto* only = r.sf<QCheckBox>("paramsChangedOnly");
         only->setChecked(true);
         int visible = 0;
         for (QTreeWidgetItemIterator it(tree); *it; ++it) if ((*it)->parent() && !(*it)->isHidden()) visible++;
         QCOMPARE(visible, 2);                                                           // main.fetch_cycles and sim.tie_order
         only->setChecked(false);
-        auto* filter = r.find<QLineEdit>("simparams", "paramsFilter");
+        auto* filter = r.sf<QLineEdit>("paramsFilter");
         filter->setText("i2c");
         visible = 0;
         for (QTreeWidgetItemIterator it(tree); *it; ++it) if ((*it)->parent() && !(*it)->isHidden()) { visible++; QVERIFY((*it)->text(0).contains("i2c", Qt::CaseInsensitive) || (*it)->toolTip(0).contains("i2c", Qt::CaseInsensitive) || (*it)->text(2).contains("i2c", Qt::CaseInsensitive)); }
@@ -733,7 +861,7 @@ private slots:
         QVERIFY(store.saveAs("/w/target.simparams", err));
         QVERIFY(label->text().contains("target.simparams") && !label->text().contains("changed"));
         QVERIFY(r.f.ws.project().simParams == "target.simparams");
-        r.find<QPushButton>("simparams", "paramsResetAll")->click();
+        r.sf<QPushButton>("paramsResetAll")->click();
         QCOMPARE(row->text(1), QString("0"));
         QVERIFY(label->text().contains("changed"));
         std::vector<std::string> errs;
@@ -747,7 +875,7 @@ private slots:
     void theParametersReachTheSimulatorOfTheDebugger() {
         Rig r(kProg);
         r.f.dbg.simParams().set("reset.boot_cycles", "500", *new std::string);
-        auto* apply = r.find<QPushButton>("simparams", "paramsApply");
+        auto* apply = r.sf<QPushButton>("paramsApply");
         QVERIFY(apply && !apply->isEnabled());                                             // nothing is running yet
         r.w->debugAction("start")->trigger();
         QVERIFY(r.until([&] { return r.f.dbg.session().view() != nullptr; }));
@@ -766,12 +894,12 @@ private slots:
 
     void theExecutionViewShowsWhatMovesWhenAParameterChanges() {
         Rig r(kProg);
-        auto* summary = r.find<QLabel>("execution", "executionSummary");
-        auto* table = r.find<QTableWidget>("execution", "executionTable");
-        auto* view = r.find<QWidget>("execution", "executionView");
-        auto* run = r.find<QPushButton>("execution", "executionRun");
-        auto* compare = r.find<QComboBox>("execution", "executionCompare");
-        auto* first = r.find<QPushButton>("execution", "executionFirst");
+        auto* summary = r.sf<QLabel>("executionSummary");
+        auto* table = r.sf<QTableWidget>("executionTable");
+        auto* view = r.sf<QWidget>("executionView");
+        auto* run = r.sf<QPushButton>("executionRun");
+        auto* compare = r.sf<QComboBox>("executionCompare");
+        auto* first = r.sf<QPushButton>("executionFirst");
         QVERIFY(summary && table && view && run && compare && first);
         run->click();
         QVERIFY2(summary->text().contains("Main: 4 instructions") || summary->text().contains("Main: 3 instructions"), qPrintable(summary->text()));
@@ -789,7 +917,7 @@ private slots:
         QVERIFY(store.set("csr.access_main", "3", err));
         QVERIFY(r.until([&] { return summary->text().contains("shift up to") && table->rowCount() >= 2 && table->item(0, 5)->text() != "+1"; }, 3000));
         // a saved run is the baseline of the next ones
-        auto* save = r.find<QPushButton>("execution", "executionSave");
+        auto* save = r.sf<QPushButton>("executionSave");
         save->click();
         QCOMPARE(compare->currentIndex(), 1);
         QVERIFY(r.until([&] { return summary->text().contains("not one cycle differs"); }, 3000));

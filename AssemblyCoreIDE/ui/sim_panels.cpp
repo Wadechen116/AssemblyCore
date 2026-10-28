@@ -19,6 +19,13 @@
 #include <QPainter>
 #include <QPushButton>
 #include <QScrollArea>
+#include <QSignalBlocker>
+#include <QShortcut>
+#include <QSplitter>
+#include <QGuiApplication>
+#include <QScreen>
+#include <QToolButton>
+#include <QFrame>
 #include <QSpinBox>
 #include <QStyledItemDelegate>
 #include <QTableWidget>
@@ -34,8 +41,9 @@
 #include <cstring>
 
 #include "app_context.h"
-#include "panel_registry.h"
+#include "document_tab.h"
 #include "sim_compare.h"
+#include "sim_panels.h"
 #include "sim_params_store.h"
 #include "text_util.h"
 
@@ -50,13 +58,81 @@ namespace {
 
 QString groupName(const std::string& g) { return QCoreApplication::translate("SimParamGroup", g.c_str()); }
 
+// ---- the parameters kept at hand ----------------------------------------------------------------------------------------------------
+// The "pinned" parameters are the ones shown in the quick popup without searching (the settings keep the list; until it is first changed these are the ones).
+std::vector<std::string> pinnedKeys(Settings& s) {
+    if (s.getBool("simparams.pinned.set", false)) return s.getList("simparams.pinned");
+    return {"main.fetch_cycles", "peri.fetch_cycles", "csr.access_main", "csr.access_peri", "latency.alu", "timer.main.clock_div", "timer.peri.clock_div", "i2c.stretch", "i2ch.overhead", "reset.boot_cycles"};
+}
+bool isPinned(Settings& s, const std::string& key) {
+    const std::vector<std::string> v = pinnedKeys(s);
+    return std::find(v.begin(), v.end(), key) != v.end();
+}
+void setPinned(Settings& s, const std::string& key, bool on) {
+    std::vector<std::string> v = pinnedKeys(s);
+    v.erase(std::remove(v.begin(), v.end(), key), v.end());
+    if (on) v.push_back(key);
+    s.setList("simparams.pinned", v);
+    s.setBool("simparams.pinned.set", true);
+}
+
+// How well a parameter fits what was typed: 0 not at all; the name starting with it is best, then the name containing it, then the group, the unit or the help.
+int paramScore1(const ParamDef& d, const QString& f);
+// Several words: every one of them has to fit (somewhere in the name, group, unit or help); the score is the worst of them.
+int paramScore(const ParamDef& d, const QString& text) {
+    const QStringList words = text.split(' ', Qt::SkipEmptyParts);
+    if (words.isEmpty()) return 1;
+    int worst = 4;
+    for (const QString& w : words) worst = std::min(worst, paramScore1(d, w));
+    return worst;
+}
+int paramScore1(const ParamDef& d, const QString& f) {
+    const QString key = fromStd(d.key);
+    if (key.startsWith(f, Qt::CaseInsensitive)) return 4;
+    if (key.contains(f, Qt::CaseInsensitive)) return 3;
+    if (groupName(d.group).contains(f, Qt::CaseInsensitive) || fromStd(d.group).contains(f, Qt::CaseInsensitive) || fromStd(d.unit).contains(f, Qt::CaseInsensitive)) return 2;
+    if (fromStd(d.help).contains(f, Qt::CaseInsensitive) || fromStd(d.measure).contains(f, Qt::CaseInsensitive)) return 1;
+    return 0;
+}
+
+// The editor of a value, wired to the store. Used by the quick popup (the table has its own delegate).
+QWidget* valueEditor(SimParamsStore& store, const ParamDef& d, QWidget* parent) {
+    const std::string key = d.key;
+    auto apply = [&store, key](const std::string& text) { std::string e; store.set(key, text, e); };
+    if (d.kind == ParamDef::Int) {
+        auto* s = new QSpinBox(parent);
+        s->setRange((int)std::max<int64_t>(d.lo, INT32_MIN), (int)std::min<int64_t>(d.hi, INT32_MAX));
+        s->setKeyboardTracking(false);                                     // a value is taken when Enter is pressed or the box is left, not at every digit
+        s->setValue((int)store.params().get(key));
+        QObject::connect(s, QOverload<int>::of(&QSpinBox::valueChanged), s, [apply](int v) { apply(std::to_string(v)); });
+        return s;
+    }
+    if (d.kind == ParamDef::Bool) {
+        auto* c = new QCheckBox(parent);
+        c->setChecked(store.params().get(key) != 0);
+        QObject::connect(c, &QCheckBox::toggled, c, [apply](bool on) { apply(on ? "true" : "false"); });
+        return c;
+    }
+    auto* c = new QComboBox(parent);
+    for (const std::string& o : d.options) c->addItem(fromStd(o));
+    c->setCurrentIndex((int)store.params().get(key));
+    QObject::connect(c, QOverload<int>::of(&QComboBox::activated), c, [apply, c](int) { apply(toStd(c->currentText())); });
+    return c;
+}
+void syncEditor(QWidget* e, SimParamsStore& store, const std::string& key) {
+    const int64_t v = store.params().get(key);
+    if (auto* s = qobject_cast<QSpinBox*>(e)) { if (!s->hasFocus() && s->value() != v) { QSignalBlocker b(s); s->setValue((int)v); } }
+    else if (auto* c = qobject_cast<QCheckBox*>(e)) { QSignalBlocker b(c); c->setChecked(v != 0); }
+    else if (auto* cb = qobject_cast<QComboBox*>(e)) { QSignalBlocker b(cb); cb->setCurrentIndex((int)v); }
+}
+
 // ---- the parameter panel --------------------------------------------------------------------------------------------------------------
 
 class ParamDelegate : public QStyledItemDelegate {
 public:
     using QStyledItemDelegate::QStyledItemDelegate;
     QWidget* createEditor(QWidget* parent, const QStyleOptionViewItem& opt, const QModelIndex& index) const override {
-        const asmcore::ParamDef* d = asmcore::findParam(toStd(index.data(Qt::UserRole).toString()));
+        const asmcore::ParamDef* d = asmcore::findParam(toStd(index.siblingAtColumn(0).data(Qt::UserRole).toString()));          // the key is kept on the name column
         if (!d) return nullptr;
         if (index.column() == 1) {
             if (d->kind == ParamDef::Int) {
@@ -94,6 +170,20 @@ public:
 class ParamsPanel : public QWidget {
     Q_DECLARE_TR_FUNCTIONS(ParamsPanel)
 public:
+    void focusSearch() { filter_->setFocus(); filter_->selectAll(); }          // Edit > Find (Ctrl+F) while the page is shown
+    // Brings a parameter into view: the search is cleared, the row selected and its value edited.
+    void showParameter(const std::string& key) {
+        filter_->clear();
+        changedOnly_->setChecked(false);
+        applyFilter();
+        QTreeWidgetItem* row = nullptr;
+        eachRow([&](QTreeWidgetItem* it) { if (toStd(it->data(0, Qt::UserRole).toString()) == key) row = it; });
+        if (!row) return;
+        tree_->setCurrentItem(row);
+        tree_->scrollToItem(row);
+        tree_->setFocus();
+        tree_->editItem(row, 1);
+    }
     explicit ParamsPanel(AppContext& ctx) : ctx_(ctx), store_(ctx.debugger.simParams()) {
         setObjectName("paramsPanel");
         auto* lay = new QVBoxLayout(this);
@@ -112,7 +202,7 @@ public:
         auto* f = new QHBoxLayout;
         filter_ = new QLineEdit;
         filter_->setObjectName("paramsFilter");
-        filter_->setPlaceholderText(tr("filter"));
+        filter_->setPlaceholderText(tr("search parameters (Ctrl+F)  \xE2\x80\x94  Enter edits the first match"));
         filter_->setClearButtonEnabled(true);
         changedOnly_ = new QCheckBox(tr("changed only"));
         changedOnly_->setObjectName("paramsChangedOnly");
@@ -138,6 +228,8 @@ public:
         build();
 
         connect(filter_, &QLineEdit::textChanged, this, [this] { applyFilter(); });
+        connect(filter_, &QLineEdit::returnPressed, this, [this] { editFirstMatch(); });
+        conns_.add(ctx.settings.changed, [this](const std::string& key) { if (key.compare(0, 16, "simparams.pinned") == 0) refresh(); });
         connect(changedOnly_, &QCheckBox::toggled, this, [this] { applyFilter(); });
         connect(tree_, &QTreeWidget::itemChanged, this, [this](QTreeWidgetItem* it, int col) { edited(it, col); });
         connect(tree_, &QTreeWidget::currentItemChanged, this, [this](QTreeWidgetItem* it) { showHelp(it); });
@@ -213,7 +305,7 @@ private:
             it->setForeground(1, set ? QColor("#e08a00") : text);
             const std::string st = p.status(key);
             it->setForeground(4, st == "measured" ? QColor("#2e9d4f") : st == "confirmed" ? QColor("#3b82f6") : text);
-            it->setText(0, fromStd(key) + (d && !d->active ? tr("  (not used yet)") : QString()));
+            it->setText(0, QString(isPinned(ctx_.settings, key) ? QString::fromUtf8("\xE2\x98\x85 ") : QString()) + fromStd(key) + (d && !d->active ? tr("  (not used yet)") : QString()));
         });
         updating_ = false;
         applyFilter();
@@ -232,7 +324,8 @@ private:
             for (int i = 0; i < gi->childCount(); i++) {
                 QTreeWidgetItem* it = gi->child(i);
                 const std::string key = toStd(it->data(0, Qt::UserRole).toString());
-                bool show = f.isEmpty() || it->text(0).contains(f, Qt::CaseInsensitive) || it->text(2).contains(f, Qt::CaseInsensitive) || it->toolTip(0).contains(f, Qt::CaseInsensitive);
+                const ParamDef* pd = asmcore::findParam(key);
+                bool show = f.isEmpty() || (pd && paramScore(*pd, f) > 0);
                 if (onlyChanged && !(p.isSet(key) && (!p.atDefault(key) || p.status(key) != "planning" || !p.note(key).empty()))) show = false;
                 it->setHidden(!show);
                 if (show) shown++;
@@ -268,10 +361,30 @@ private:
         if (!it || !it->parent()) return;
         const std::string key = toStd(it->data(0, Qt::UserRole).toString());
         QMenu m(this);
+        const bool pinned = isPinned(ctx_.settings, key);
+        QAction* pin = m.addAction(pinned ? tr("Unpin from the quick parameters") : tr("Pin to the quick parameters"));
+        connect(pin, &QAction::triggered, this, [this, key, pinned] { setPinned(ctx_.settings, key, !pinned); });
         QAction* reset = m.addAction(tr("Back to the initial value"));
         reset->setEnabled(store_.params().isSet(key));
         connect(reset, &QAction::triggered, this, [this, key] { store_.clear(key); });
         m.exec(tree_->viewport()->mapToGlobal(at));
+    }
+    // the first row the search leaves visible: selected, in view, and its value is being edited (type the number, Enter)
+    void editFirstMatch() {
+        QTreeWidgetItem* first = nullptr;
+        int best = 0;
+        const QString f = filter_->text().trimmed();
+        eachRow([&](QTreeWidgetItem* it) {                                                  // the best fit (the name starts with it), else the first one left
+            if (it->isHidden()) return;
+            const ParamDef* pd = asmcore::findParam(toStd(it->data(0, Qt::UserRole).toString()));
+            const int s = pd ? paramScore(*pd, f) : 0;
+            if (!first || s > best) { first = it; best = s; }
+        });
+        if (!first) return;
+        tree_->setCurrentItem(first);
+        tree_->scrollToItem(first);
+        tree_->setFocus();
+        tree_->editItem(first, 1);
     }
     void loadFile() {
         const QString f = QFileDialog::getOpenFileName(this, tr("Load simulator parameters"), fromStd(ctx_.workspace.hasProject() ? ctx_.workspace.project().baseDir() : std::string()), tr("Simulator parameters (*.simparams);;All files (*)"));
@@ -748,21 +861,209 @@ private:
 }  // namespace
 
 namespace {
-// A panel with a lot in it must not decide how small its dock can be made: docks that are tabbed together are as tall as the tallest of them at least. In a scroll area
-// the panel keeps its natural size when there is room, and scrolls when there is not.
-QWidget* scrolled(QWidget* inner) {
-    auto* s = new QScrollArea;
-    s->setObjectName(inner->objectName() + "Scroll");
-    s->setFrameShape(QFrame::NoFrame);
-    s->setWidgetResizable(true);
-    s->setWidget(inner);
-    return s;
-}
+
+// ---- the quick popup ---------------------------------------------------------------------------------------------------------------------
+class QuickParams : public QFrame {
+    Q_DECLARE_TR_FUNCTIONS(QuickParams)
+public:
+    QuickParams(AppContext& ctx, std::function<void(const std::string&)> showInTab) : QFrame(nullptr, Qt::Popup), ctx_(ctx), store_(ctx.debugger.simParams()), showInTab_(std::move(showInTab)) {
+        setObjectName("quickParams");
+        setAttribute(Qt::WA_DeleteOnClose);
+        setFrameShape(QFrame::StyledPanel);
+        auto* lay = new QVBoxLayout(this);
+        lay->setContentsMargins(6, 6, 6, 6);
+        search_ = new QLineEdit;
+        search_->setObjectName("quickSearch");
+        search_->setPlaceholderText(tr("search parameters (name, group, what it does)"));
+        search_->setClearButtonEnabled(true);
+        lay->addWidget(search_);
+        head_ = new QLabel;
+        head_->setObjectName("quickHead");
+        lay->addWidget(head_);
+        auto* area = new QScrollArea;
+        area->setFrameShape(QFrame::NoFrame);
+        area->setWidgetResizable(true);
+        area->setMinimumHeight(220);
+        rows_ = new QWidget;
+        rowsLay_ = new QVBoxLayout(rows_);
+        rowsLay_->setContentsMargins(0, 0, 0, 0);
+        rowsLay_->setSpacing(2);
+        rowsLay_->addStretch(1);
+        area->setWidget(rows_);
+        lay->addWidget(area, 1);
+        auto* foot = new QLabel(tr("\xE2\x86\x92 shows it in the Simulator page  \xC2\xB7  \xE2\x98\x85 pins it here  \xC2\xB7  \xE2\x86\xBA back to the initial value"));
+        foot->setEnabled(false);
+        lay->addWidget(foot);
+        resize(520, 360);
+        connect(search_, &QLineEdit::textChanged, this, [this] { rebuild(); });
+        connect(search_, &QLineEdit::returnPressed, this, [this] { if (!rows_vec_.empty()) rows_vec_[0].editor->setFocus(); });
+        search_->installEventFilter(this);
+        conns_.add(store_.changed, [this] { sync(); });
+        conns_.add(ctx.settings.changed, [this](const std::string& key) { if (key.compare(0, 16, "simparams.pinned") == 0 && search_->text().trimmed().isEmpty()) rebuild(); });
+        rebuild();
+    }
+    void popupUnder(QWidget* anchor) {
+        QPoint at = anchor ? anchor->mapToGlobal(QPoint(0, anchor->height())) : QCursor::pos();
+        if (QScreen* s = QGuiApplication::screenAt(at)) {
+            const QRect a = s->availableGeometry();
+            at.setX(std::max(a.left(), std::min(at.x(), a.right() - width())));
+            at.setY(std::min(at.y(), a.bottom() - height()));
+        }
+        move(at);
+        show();
+        search_->setFocus();
+    }
+
+protected:
+    bool eventFilter(QObject* o, QEvent* e) override {
+        if (o == search_ && e->type() == QEvent::KeyPress && static_cast<QKeyEvent*>(e)->key() == Qt::Key_Down && !rows_vec_.empty()) { rows_vec_[0].editor->setFocus(); return true; }
+        return QFrame::eventFilter(o, e);
+    }
+
+private:
+    struct Row { std::string key; QWidget* box; QWidget* editor; QLabel* name; QToolButton* pin; };
+    void rebuild() {
+        for (Row& r : rows_vec_) {                                            // gone from the popup at once (a button of a row may be the one that asked for this)
+            rowsLay_->removeWidget(r.box);
+            r.box->hide();
+            r.box->setParent(nullptr);
+            r.box->deleteLater();
+        }
+        rows_vec_.clear();
+        const QString f = search_->text().trimmed();
+        std::vector<std::pair<int, const ParamDef*>> found;
+        if (f.isEmpty()) {
+            for (const std::string& k : pinnedKeys(ctx_.settings)) if (const ParamDef* d = asmcore::findParam(k)) found.push_back({1, d});
+            head_->setText(found.empty() ? tr("Nothing is pinned: search above, or pin a parameter with \xE2\x98\x85.") : tr("Pinned"));
+        } else {
+            for (const ParamDef& d : paramCatalog()) if (const int s = paramScore(d, f)) found.push_back({s, &d});
+            std::stable_sort(found.begin(), found.end(), [](const auto& a, const auto& b) { return a.first > b.first; });
+            if (found.size() > 14) found.resize(14);
+            head_->setText(found.empty() ? tr("No parameter matches.") : tr("Matches"));
+        }
+        for (const auto& fd : found) {
+            const ParamDef& d = *fd.second;
+            auto* box = new QWidget;
+            auto* h = new QHBoxLayout(box);
+            h->setContentsMargins(2, 0, 2, 0);
+            auto* name = new QLabel(fromStd(d.key));
+            name->setToolTip(fromStd(d.help + (d.measure.empty() ? std::string() : "\nmeasure: " + d.measure)));
+            name->setMinimumWidth(170);
+            QWidget* ed = valueEditor(store_, d, box);
+            auto* unit = new QLabel(fromStd(d.unit));
+            unit->setEnabled(false);
+            auto* pin = new QToolButton;
+            pin->setAutoRaise(true);
+            pin->setToolTip(tr("Pin here"));
+            auto* reset = new QToolButton;
+            reset->setAutoRaise(true);
+            reset->setText(QString::fromUtf8("\xE2\x86\xBA"));
+            reset->setToolTip(tr("Back to the initial value"));
+            auto* go = new QToolButton;
+            go->setAutoRaise(true);
+            go->setText(QString::fromUtf8("\xE2\x86\x92"));
+            go->setToolTip(tr("Show it in the Simulator page"));
+            h->addWidget(name);
+            h->addWidget(ed);
+            h->addWidget(unit, 1);
+            h->addWidget(pin);
+            h->addWidget(reset);
+            h->addWidget(go);
+            const std::string key = d.key;
+            connect(pin, &QToolButton::clicked, this, [this, key] { setPinned(ctx_.settings, key, !isPinned(ctx_.settings, key)); sync(); });
+            connect(reset, &QToolButton::clicked, this, [this, key] { store_.clear(key); });
+            connect(go, &QToolButton::clicked, this, [this, key] { close(); if (showInTab_) showInTab_(key); });
+            rowsLay_->insertWidget(rowsLay_->count() - 1, box);
+            rows_vec_.push_back({key, box, ed, name, pin});
+        }
+        sync();
+    }
+    // the values, the "changed" look and the pins follow the store (an editor that has the focus is left alone)
+    void sync() {
+        for (Row& r : rows_vec_) {
+            syncEditor(r.editor, store_, r.key);
+            QFont f = r.name->font();
+            f.setBold(!store_.params().atDefault(r.key));
+            r.name->setFont(f);
+            const bool pinned = isPinned(ctx_.settings, r.key);
+            r.pin->setText(pinned ? QString::fromUtf8("\xE2\x98\x85") : QString::fromUtf8("\xE2\x98\x86"));
+            const ParamDef* d = asmcore::findParam(r.key);
+            r.name->setText(fromStd(r.key) + (d && !d->active ? tr("  (not used yet)") : QString()));
+        }
+    }
+    AppContext& ctx_;
+    SimParamsStore& store_;
+    std::function<void(const std::string&)> showInTab_;
+    QLineEdit* search_;
+    QLabel* head_;
+    QWidget* rows_;
+    QVBoxLayout* rowsLay_;
+    std::vector<Row> rows_vec_;
+    ConnectionBag conns_;
+};
+
+// ---- the simulator page ---------------------------------------------------------------------------------------------------------------------
+class SimulatorTab : public QWidget, public DocumentTab {
+    Q_DECLARE_TR_FUNCTIONS(SimulatorTab)
+public:
+    explicit SimulatorTab(AppContext& ctx) : ctx_(ctx) {
+        setObjectName("simulatorTab");
+        auto* lay = new QVBoxLayout(this);
+        lay->setContentsMargins(0, 0, 0, 0);
+        auto* split = new QSplitter(Qt::Horizontal);
+        split->setObjectName("simulatorSplit");
+        params_ = new ParamsPanel(ctx);
+        right_ = new QSplitter(Qt::Vertical);
+        right_->setObjectName("simulatorRight");
+        right_->addWidget(new ExecutionPanel(ctx));                        // (the ISA Top diagram goes above it)
+        split->addWidget(params_);
+        split->addWidget(right_);
+        split->setStretchFactor(0, 2);
+        split->setStretchFactor(1, 3);
+        split->setSizes({470, 760});
+        lay->addWidget(split);
+    }
+    // DocumentTab: one page per window. The buffer of the parameter file (if the values belong to one) is what makes the tab show "unsaved".
+    std::string tabPath() const override { return "simulator:"; }
+    QString tabTitle() const override { return tr("Simulator"); }
+    std::vector<std::string> workspacePaths() const override {
+        const std::string& p = ctx_.debugger.simParams().path();
+        return p.empty() ? std::vector<std::string>() : std::vector<std::string>{p};
+    }
+    QWidget* widget() override { return this; }
+    void showParameter(const std::string& key) { params_->showParameter(key); }
+    void focusSearch() { params_->focusSearch(); }
+
+private:
+    AppContext& ctx_;
+    ParamsPanel* params_;
+    QSplitter* right_;
+};
+
 }  // namespace
 
-void registerSimPanels(PanelRegistry& r) {
-    r.add({"simparams", QT_TRANSLATE_NOOP("QObject", "Simulator Parameters"), Qt::RightDockWidgetArea, false, [](AppContext& c) -> QWidget* { return scrolled(new ParamsPanel(c)); }});
-    r.add({"execution", QT_TRANSLATE_NOOP("QObject", "Execution"), Qt::BottomDockWidgetArea, false, [](AppContext& c) -> QWidget* { return new ExecutionPanel(c); }});
+QWidget* createSimulatorTab(AppContext& ctx) { return new SimulatorTab(ctx); }
+
+void showParameterInTab(QWidget* tab, const std::string& key) {
+    if (auto* t = dynamic_cast<SimulatorTab*>(tab)) t->showParameter(key);
+}
+
+void focusParameterSearch(QWidget* tab) {
+    if (auto* t = dynamic_cast<SimulatorTab*>(tab)) t->focusSearch();
+}
+
+void showQuickParams(AppContext& ctx, QWidget* anchor, std::function<void(const std::string&)> showInTab) {
+    auto* q = new QuickParams(ctx, std::move(showInTab));
+    q->popupUnder(anchor);
+}
+
+QString simParamsSummary(AppContext& ctx) {
+    SimParamsStore& s = ctx.debugger.simParams();
+    const int n = s.changedCount();
+    QString t = n == 0 ? QCoreApplication::translate("SimParams", "Parameters: initial values") : QCoreApplication::translate("SimParams", "Parameters: %n changed", nullptr, n);
+    if (!s.path().empty()) t += QString::fromUtf8(" \xC2\xB7 ") + QFileInfo(fromStd(s.path())).fileName();
+    if (s.dirty()) t += " *";
+    return t;
 }
 
 }  // namespace acide
