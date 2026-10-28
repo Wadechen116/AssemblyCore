@@ -87,6 +87,9 @@ public:
     // Blocks marked as unable to nest (the diagonal lines); the editor sets them while a block is being dragged.
     void setHatched(const std::set<std::string>& ids);
     const std::set<std::string>& hatched() const { return hatched_; }
+    // The blocks of the line each sequencer is executing (id -> colour): they are drawn in that colour until the sequencer moves on. Empty: nothing runs.
+    void setExecution(const std::map<std::string, QColor>& tint);
+    const std::map<std::string, QColor>& execution() const { return tint_; }
     std::string hovered() const { return hovered_; }
     void setHovered(const std::string& id);
 
@@ -231,6 +234,7 @@ private:
     blocks::DocumentLayout layout_;
     std::map<std::string, std::string> problems_;
     std::set<std::string> errorIds_, warningIds_, hatched_;
+    std::map<std::string, QColor> tint_;
     std::string hovered_;
     ConnectionBag conns_;
     bool rebuilding_ = false;

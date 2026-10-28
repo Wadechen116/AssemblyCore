@@ -1055,7 +1055,11 @@ void MainWindow::onStopped(const SimUpdate& u, const DebugLocation& where) {
         Location l;
         l.file = where.file;
         l.line = where.line;
-        ctx_.goTo.fire(l);
+        bool shown = false;                                          // a program made of blocks: stay on the blocks (they are coloured), do not open the generated text
+        for (int i = 0; i < tabs_->count() && !shown; i++)
+            if (auto* be = qobject_cast<BlockEditor*>(tabs_->widget(i)))
+                if (be->generatedPath() == l.file && be->revealGeneratedLine(l.line)) { tabs_->setCurrentIndex(i); shown = true; }
+        if (!shown) ctx_.goTo.fire(l);
     }
     for (const std::string& m : u.messages) ctx_.log.fire(fromStd(m));
     updateDebugActions();

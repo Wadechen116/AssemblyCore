@@ -60,6 +60,7 @@ void StackItem::paint(QPainter* p, const QStyleOptionGraphicsItem*, QWidget*) {
     info.hatched = &scene_.hatched_;
     info.errors = &scene_.errorIds_;
     info.warnings = &scene_.warningIds_;
+    info.tint = &scene_.tint_;
     info.floating = s.domain == "floating";
     info.fx = [this](const std::string& id, double& sx, double& sy, int& anchor) {
         auto it = scene_.fx_.find(id);
@@ -129,6 +130,12 @@ void BlockScene::setLayoutStyle(const LayoutStyle& s) {
 
 void BlockScene::setHatched(const std::set<std::string>& ids) {
     hatched_ = ids;
+    update();
+}
+
+void BlockScene::setExecution(const std::map<std::string, QColor>& tint) {
+    if (tint == tint_) return;                                            // the sequencers stay on a line for a while: no repaint then
+    tint_ = tint;
     update();
 }
 

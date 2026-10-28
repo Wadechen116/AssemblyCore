@@ -142,6 +142,11 @@ private:
     void beginTextEdit(const BlockScene::EditTarget& t);
     void applyFieldValue(const BlockScene::EditTarget& t, const QString& text);
     QMenu* choiceMenu_ = nullptr;
+    void refreshExecution();                                 // the blocks of the lines Main and Peri are executing get one colour each
+public:
+    // Scrolls to the block that produced `line` of the generated file (a debugger stop): true if there is one and the page shows blocks.
+    bool revealGeneratedLine(int line);
+private:
     void applyBuildProblems();                               // the assembler's messages about the generated file become badges on the blocks that produced the lines
     SnapshotPtr snap_;
     void syncToWorkspace();

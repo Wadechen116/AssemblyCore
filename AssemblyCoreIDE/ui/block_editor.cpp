@@ -257,9 +257,10 @@ BlockEditor::BlockEditor(AppContext& ctx, const std::string& path, QWidget* pare
     view_->viewport()->installEventFilter(this);
     conns_->add(scene_->blockClicked, [this](const std::string& id, Qt::KeyboardModifiers m) { onBlockClicked(id, m); });
     conns_->add(scene_->emptyClicked, [this](Qt::KeyboardModifiers m) { if (!(m & Qt::ControlModifier)) session_.clearSelection(); });
-    conns_->add(session_.changed, [this] { refreshCode(); refreshInfo(); syncToWorkspace(); applyBuildProblems(); });
+    conns_->add(session_.changed, [this] { refreshCode(); refreshInfo(); syncToWorkspace(); applyBuildProblems(); refreshExecution(); });
     snap_ = ctx.snapshot;
-    conns_->add(ctx.snapshotChanged, [this](SnapshotPtr s) { snap_ = s; applyBuildProblems(); });
+    conns_->add(ctx.snapshotChanged, [this](SnapshotPtr s) { snap_ = s; applyBuildProblems(); refreshExecution(); });
+    conns_->add(ctx.debugger.updated, [this](const SimUpdate&) { refreshExecution(); });                  // while the simulator runs: the line of each sequencer, ~30 times a second
     conns_->add(session_.selectionChanged, [this] {
         if (!syncing_) code_->setMarkedLines(session_.selectedLines(), page() == Page::Code);
         refreshInfo();
@@ -305,6 +306,46 @@ void BlockEditor::applyBuildProblems() {
         }
     }
     session_.setBuildProblems(v);
+}
+
+// What the simulator executes, shown on the blocks: every line of the generated file comes from one block, and that block together with the components
+// plugged into it (numbers, regions, options ...) is "the line". While a sequencer is on a line all of them are drawn in one colour (Main's or Peri's); when it
+// moves on they get their own colours back. Only while the debugged program is the one these blocks generate now (after an edit the lines may have moved).
+void BlockEditor::refreshExecution() {
+    std::map<std::string, QColor> tint;
+    if (ctx_.debugger.active() && !ctx_.debugger.stale() && snap_) {
+        const std::string gen = generatedPath();
+        const std::string* built = nullptr;
+        for (const asmcore::Source& s : snap_->sources) if (s.name == gen) built = &s.text;
+        if (built && *built == session_.generated().text) {
+            const Theme theme = Theme::fromSettings(ctx_.settings);
+            const bool dark = theme.background.lightness() < 128;
+            const QColor colour[2] = {dark ? QColor("#b8860b") : QColor("#ffcf3f"), dark ? QColor("#00838f") : QColor("#4dd0e1")};          // Main: amber, Peri: cyan
+            std::function<void(const asmcore::blocks::Block&, const QColor&)> add = [&](const asmcore::blocks::Block& b, const QColor& c) {
+                tint[b.id] = c;
+                for (const auto& v : b.values) for (const asmcore::blocks::Block& child : v.second) add(child, c);      // the components, not the statements inside a container
+            };
+            for (int i = 1; i >= 0; i--) {                                                     // Peri first: where both are on one block, Main's colour wins
+                const asmcore::Domain d = i == 0 ? asmcore::Domain::Main : asmcore::Domain::Peri;
+                const DebugLocation loc = ctx_.debugger.location(d);
+                if (!loc.valid || loc.file != gen) continue;
+                const std::string id = session_.blockAtLine(loc.line);
+                if (id.empty()) continue;
+                if (const asmcore::blocks::Block* b = session_.document().find(id)) add(*b, colour[i]);
+            }
+        }
+    }
+    scene_->setExecution(tint);
+}
+
+bool BlockEditor::revealGeneratedLine(int line) {
+    if (page() != Page::Blocks) return false;
+    const std::string id = session_.blockAtLine(line);
+    if (id.empty()) return false;
+    const QRectF r = scene_->blockRect(id);
+    if (r.isEmpty()) return false;
+    view_->showBlock(r);
+    return true;
 }
 
 bool BlockEditor::eventFilter(QObject* o, QEvent* e) {

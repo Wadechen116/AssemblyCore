@@ -1839,6 +1839,69 @@ private slots:
         for (const auto& p : s.problems()) QVERIFY2(!(p.kind == "build" && p.error), p.message.c_str());       // (warnings may remain: they are badges too)
     }
 
+    void theBlocksOfTheLineBeingExecutedShareOneColour() {
+        Rig r(".main\nstart: MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]\n ALU ADD unsigned\n JMP start\n.peri\np: JMP p\n", false);
+        // a project of blocks: its one source is the file the blocks generate
+        r.f.fs->write("/w/p.acproj", "name = p\nsource = prog.generated.asm\nblocks = prog.acblk\n");
+        r.f.fs->write("/w/prog.generated.asm", ".main\nh: JMP h\n");
+        QVERIFY(r.w->openProject("/w/p.acproj"));
+        r.w->openFile("/w/prog.acblk");
+        r.ed = qobject_cast<BlockEditor*>(r.w->tabs()->currentWidget());
+        QVERIFY(r.ed);
+        auto& s = r.ed->session();
+        r.ed->scene().setAnimationsEnabled(false);
+        auto sc = [&]() -> BlockScene& { return r.ed->scene(); };
+        {   // (an edit and its undo: the generated text goes into the workspace, as it does when the blocks are worked on)
+            std::string any;
+            for (const auto& b : s.document().sections[0].blocks) if (b.type.find("jmp") != std::string::npos) any = b.id;
+            QVERIFY(!any.empty());
+            QVERIFY(s.apply([&](asmcore::blocks::Editor& e) { return e.setField(any, "target", "p"); }).ok);
+            QVERIFY(s.apply([&](asmcore::blocks::Editor& e) { return e.setField(any, "target", "start"); }).ok);
+        }
+        QVERIFY(r.f.buildAndWait());
+        QVERIFY(r.f.ctx.snapshot->result.ok);
+        QVERIFY(sc().execution().empty());                                                   // nothing runs: every block has its own colour
+        // the blocks of the program: the MOV with what is plugged into it, the ALU, the peri JMP
+        const asmcore::blocks::Block* mov = nullptr;
+        const asmcore::blocks::Block* alu = nullptr;
+        for (const auto& sec : s.document().sections) for (const auto& b : sec.blocks) {
+            if (b.type.find("mov") != std::string::npos && !mov && sec.domain == "main") mov = &b;
+            if (b.type.find("alu") != std::string::npos && !alu) alu = &b;
+        }
+        QVERIFY(mov && alu);
+        std::set<std::string> movGroup{mov->id};
+        std::function<void(const asmcore::blocks::Block&)> walk = [&](const asmcore::blocks::Block& b) { for (const auto& v : b.values) for (const auto& c : v.second) { movGroup.insert(c.id); walk(c); } };
+        walk(*mov);
+        QVERIFY2(movGroup.size() >= 2, "the MOV has components plugged into it (a number, a region)");
+        std::string why;
+        r.f.dbg.simParams().set("sim.speed", "1", *new std::string);                          // (so slow that it hardly moves while the test looks)
+        QVERIFY(r.f.dbg.start(why));
+        for (int i = 0; i < 300 && sc().execution().empty(); i++) QTest::qWait(10);
+        const auto onMain = sc().execution();
+        QVERIFY(!onMain.empty());
+        QColor mainColour = onMain.at(mov->id);
+        for (const std::string& id : movGroup) QVERIFY2(onMain.count(id) && onMain.at(id) == mainColour, "every block of the line has the same colour");
+        QVERIFY(!onMain.count(alu->id));
+        QColor periColour;
+        for (const auto& kv : onMain) if (!movGroup.count(kv.first)) periColour = kv.second;
+        QVERIFY2(periColour.isValid() && periColour != mainColour, "Peri has a colour of its own (its JMP is on the canvas too)");
+        // the next line: the first one gets its own colours back, the next one is coloured
+        r.f.dbg.stepInto();
+        for (int i = 0; i < 300 && !sc().execution().count(alu->id); i++) QTest::qWait(10);
+        QVERIFY(sc().execution().count(alu->id));
+        for (const std::string& id : movGroup) QVERIFY2(!sc().execution().count(id), "the line that was left is drawn in its own colours again");
+        // and the picture really differs: the block is painted in the colour
+        r.ed->view().showContent();
+        QApplication::processEvents();
+        QImage img(r.ed->view().viewport()->size(), QImage::Format_ARGB32);
+        r.ed->view().viewport()->render(&img);
+        img.save(QDir::tempPath() + "/acide_block_exec.png");
+        // stopping the debugger takes the colours away
+        r.f.dbg.stop();
+        for (int i = 0; i < 300 && !sc().execution().empty(); i++) QTest::qWait(10);
+        QVERIFY(sc().execution().empty());
+    }
+
     void aGeneratedFileIsReadOnlyAndPointsToItsBlocks() {
         DragRig r(".main\nstart: MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]\n JMP start\n");
         auto& ws = r.f.ctx.workspace;

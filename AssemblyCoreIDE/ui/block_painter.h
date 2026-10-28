@@ -22,6 +22,7 @@ struct BlockPaintState {
     bool selected = false, hovered = false;
     bool hatched = false;                 // cannot be nested here (the diagonal lines)
     bool error = false, warning = false;  // a badge
+    QColor tint;                          // valid: the block is part of the line a sequencer is executing: drawn in this colour instead of its category's
 };
 
 // What the blocks of one stack are drawn with.
@@ -31,6 +32,7 @@ struct StackPaintInfo {
     const std::set<std::string>* hatched = nullptr;
     const std::set<std::string>* errors = nullptr;
     const std::set<std::string>* warnings = nullptr;
+    const std::map<std::string, QColor>* tint = nullptr;               // the blocks of the line each sequencer is executing (simulator running or stopped)
     bool floating = false;
     // A soft effect on a block (and everything inside it): scale around an anchor. Returns false if the block has none. anchor: 0 = its centre, 1 = the left edge.
     std::function<bool(const std::string& id, double& sx, double& sy, int& anchor)> fx;
@@ -74,6 +76,7 @@ public:
     // The outline of a block as a path (used for painting and for the selection / hatch clip).
     static QPainterPath outline(const blocks::BlockBox& b);
     QColor fillOf(const blocks::BlockBox& b) const;
+    QColor fillFor(const blocks::BlockBox& b, const BlockPaintState& st) const { return st.tint.isValid() ? st.tint : fillOf(b); }
 
 private:
     blocks::BlockTheme theme_;

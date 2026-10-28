@@ -18,6 +18,7 @@ BlockPaintState StackPaintInfo::stateOf(const std::string& id) const {
     s.hatched = hatched && hatched->count(id);
     s.error = errors && errors->count(id);
     s.warning = warnings && warnings->count(id);
+    if (tint) { auto it = tint->find(id); if (it != tint->end()) s.tint = it->second; }
     return s;
 }
 
@@ -218,7 +219,7 @@ class StatementPainter : public IShapePainter {
 public:
     void paint(PaintContext& c, const BlockBox& b, const BlockPaintState& st) override {
         const QPainterPath path = BlockPainter::outline(b);
-        const QColor fill = c.owner.fillOf(b);
+        const QColor fill = c.owner.fillFor(b, st);
         c.p.setPen(QPen(fill.darker(135), 1));
         c.p.setBrush(fill);
         c.p.drawPath(path);
@@ -245,7 +246,7 @@ class PillPainter : public IShapePainter {                       // Value and Ta
 public:
     void paint(PaintContext& c, const BlockBox& b, const BlockPaintState& st) override {
         const QPainterPath path = BlockPainter::outline(b);
-        const QColor fill = c.owner.fillOf(b);
+        const QColor fill = c.owner.fillFor(b, st);
         c.p.setPen(QPen(fill.darker(135), 1));
         c.p.setBrush(fill);
         c.p.drawPath(path);
@@ -266,7 +267,7 @@ public:
     void paint(PaintContext& c, const BlockBox& b, const BlockPaintState& st) override {
         const QPainterPath path = BlockPainter::outline(b);
         const bool note = b.shape == Shape::Note;
-        QColor fill = note ? toQColor(c.theme.note) : c.owner.fillOf(b);
+        QColor fill = note ? toQColor(c.theme.note) : c.owner.fillFor(b, st);
         if (b.disabled) fill = fill.lighter(110);
         c.p.setPen(QPen(fill.darker(125), 1, note ? Qt::SolidLine : Qt::DashLine));
         c.p.setBrush(fill);
