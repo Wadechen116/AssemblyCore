@@ -1005,10 +1005,6 @@ Drag it to change the order; double-click the end of it to write a comment</sour
         <translation>全部還原</translation>
     </message>
     <message>
-        <source>Apply to the running simulator</source>
-        <translation>套用到執行中的模擬器</translation>
-    </message>
-    <message>
         <source>changed only</source>
         <translation>只看有改的</translation>
     </message>
@@ -1035,10 +1031,6 @@ Drag it to change the order; double-click the end of it to write a comment</sour
     <message>
         <source>Note</source>
         <translation>備註</translation>
-    </message>
-    <message>
-        <source>The simulator was restarted with these parameters</source>
-        <translation>模擬器已用這些參數重新啟動</translation>
     </message>
     <message>
         <source>  (not used yet)</source>
@@ -1091,6 +1083,14 @@ Drag it to change the order; double-click the end of it to write a comment</sour
     <message>
         <source>Pin to the quick parameters</source>
         <translation>釘選到快速參數</translation>
+    </message>
+    <message>
+        <source>Restart with these parameters</source>
+        <translation>用這些參數重新開始</translation>
+    </message>
+    <message>
+        <source>The simulator was restarted from cycle 0 with these parameters</source>
+        <translation>模擬器已用這些參數從週期 0 重新開始</translation>
     </message>
 </context>
 <context>
@@ -2709,10 +2709,6 @@ An IDE for the Sensor Micro-Sequencer ISA, built on the AssemblyCore assembler.<
         <translation>除錯：建置中…</translation>
     </message>
     <message>
-        <source>Debug: running</source>
-        <translation>除錯：執行中</translation>
-    </message>
-    <message>
         <source>Debug: paused at cycle %1</source>
         <translation>除錯：已暫停於週期 %1</translation>
     </message>
@@ -2919,6 +2915,18 @@ An IDE for the Sensor Micro-Sequencer ISA, built on the AssemblyCore assembler.<
     <message>
         <source>Quick Parameters...</source>
         <translation>快速參數...</translation>
+    </message>
+    <message>
+        <source>Debug: running (%1 cycles/s)</source>
+        <translation>偵錯：執行中（每秒 %1 週期）</translation>
+    </message>
+    <message>
+        <source>Debug: running (full speed)</source>
+        <translation>偵錯：執行中（全速）</translation>
+    </message>
+    <message>
+        <source>, cycle %1</source>
+        <translation>，週期 %1</translation>
     </message>
 </context>
 <context>

@@ -875,10 +875,15 @@ private slots:
     void theParametersReachTheSimulatorOfTheDebugger() {
         Rig r(kProg);
         r.f.dbg.simParams().set("reset.boot_cycles", "500", *new std::string);
+        r.f.dbg.simParams().set("sim.speed", "0", *new std::string);                       // (full speed: the test does not wait for the pace)
         auto* apply = r.sf<QPushButton>("paramsApply");
         QVERIFY(apply && !apply->isEnabled());                                             // nothing is running yet
         r.w->debugAction("start")->trigger();
         QVERIFY(r.until([&] { return r.f.dbg.session().view() != nullptr; }));
+        r.f.dbg.pause();                                                                    // Run goes on by itself until it is paused (or has nothing left to do)
+        QVERIFY(r.until([&] { return !r.f.dbg.running(); }));
+        r.f.dbg.restart();                                                                  // (from cycle 0 again, to look at the first instruction)
+        QVERIFY(r.until([&] { return r.f.dbg.session().view() && r.f.dbg.session().view()->cycle == 0; }));
         r.f.dbg.stepInto();
         QVERIFY(r.until([&] { return r.f.dbg.session().view() && r.f.dbg.session().view()->instrs[0] >= 1; }));
         QVERIFY2(r.f.dbg.session().view()->cycle >= 500, "the first instruction waits for the boot cycles");
@@ -890,6 +895,31 @@ private slots:
         r.f.dbg.stepInto();
         QVERIFY(r.until([&] { return r.f.dbg.session().view() && r.f.dbg.session().view()->instrs[0] >= 1; }));
         QVERIFY(r.f.dbg.session().view()->cycle < 100);
+    }
+
+    void aParameterChangedWhileTheSimulatorRunsActsAtOnce() {
+        Rig r(".csr MARK = 0x50\n.main\ns: EXEC_CSR WRITE8 MARK, 1\n JMP s\n");
+        std::string err;
+        r.f.dbg.simParams().set("sim.speed", "300", err);
+        r.w->debugAction("start")->trigger();
+        QVERIFY(r.until([&] { return r.f.dbg.running(); }));                                // Run goes on and on: nothing ends it
+        QTest::qWait(500);
+        auto cycle = [&] { return r.f.dbg.session().view() ? (long long)r.f.dbg.session().view()->cycle : -1LL; };
+        const long long c1 = cycle();
+        QVERIFY2(c1 > 30 && c1 < 600, qPrintable(QString::number(c1)));                     // slow motion: about 300 cycles per second
+        QVERIFY(r.f.dbg.running());
+        r.f.dbg.simParams().set("sim.speed", "0", err);                                    // edited in the parameter store: the running simulator follows
+        QVERIFY(r.until([&] { return cycle() > c1 + 5000; }));
+        QVERIFY(r.f.dbg.running());
+        // the status bar says how it runs
+        QString status;
+        for (QLabel* l : r.w->findChildren<QLabel*>()) if (l->text().startsWith("Debug:")) status = l->text();
+        QVERIFY2(status.contains("full speed"), qPrintable(status));
+        r.f.dbg.pause();
+        QVERIFY(r.until([&] { return !r.f.dbg.running(); }));
+        const long long frozen = cycle();
+        QTest::qWait(150);
+        QCOMPARE(cycle(), frozen);
     }
 
     void theExecutionViewShowsWhatMovesWhenAParameterChanges() {
@@ -1048,6 +1078,7 @@ private slots:
         const asmcore::IndexSymbol* h = f.ctx.snapshot->index.find("handle", "main");
         QVERIFY(h);
         f.dbg.toggleLineBreakpoint("/n/main.asm", h->def.line + 1);
+        f.dbg.simParams().set("sim.speed", "0", *new std::string);                          // (full speed: the test does not wait for the pace)
         w.debugAction("start")->trigger();
         for (int i = 0; i < 600 && stops < 1; i++) QTest::qWait(10);
         QVERIFY2(stops >= 1, "no stop");

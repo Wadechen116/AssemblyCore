@@ -193,6 +193,12 @@ struct Simulator::Impl : public ExprBinder, public ExprEnv, public ActionContext
     bool faultStopsAll = false;
     // ---- hardware parameters (sim_params.h): read once from `params` by applyParams()
     SimParams params;
+    // What the parameters are laid over (kept so that new values can be applied to a running simulator: setParamsLive)
+    SimParams envParams;
+    Latency baseLat;
+    TimingCfg baseTiming;
+    bool baseTie = true, baseUnmapped = false, baseFaultStops = false;
+    void setParamsLive(const SimParams& p);
     int fetchExtra[2] = {0, 0};                        // extra cycles per instruction of each decoder
     int csrAccessOf[2] = {-1, -1};                     // one CSR access as each decoder sees it (-1: lat.csrAccess)
     int bootCycles = 0;

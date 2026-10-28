@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <thread>
 
 using namespace asmcore;
 using namespace asmcore::sim;
@@ -39,6 +40,24 @@ struct SimSession::Worker {
     bool eventsReset = false;
     std::vector<std::string> messages;
     SimState state = SimState::Empty;
+    int64_t speed = 0;                                          // sim.speed: cycles per second of a live run (0 = full speed)
+
+    // After a command that changes what is shown: the same state again (a run that goes on stays Running).
+    void republish() { if (sim) publish(state == SimState::Running ? SimState::Running : SimState::Paused); }
+
+    // The commands that may act while a run goes on, in the order they were given (the first one that may not stops the draining).
+    void drainLive() {
+        for (;;) {
+            std::function<void(Worker&)> fn;
+            {
+                std::lock_guard<std::mutex> l(owner->m_);
+                if (owner->q_.empty() || !owner->q_.front().live) return;
+                fn = std::move(owner->q_.front().fn);
+                owner->q_.pop_front();
+            }
+            fn(*this);
+        }
+    }
 
     ViewPtr makeView() {
         auto v = std::make_shared<SimView>();
@@ -189,6 +208,7 @@ struct SimSession::Worker {
         sim->enableHistory(10000, 500);
         SimSession* o = owner;
         sim->setCancelHook([o] { return o->pause_.load(); });
+        speed = sim->params().get("sim.speed");
         reconcileBreakpoints();
         reconcileWatches();
         eventsReset = true;
@@ -211,26 +231,51 @@ struct SimSession::Worker {
         publish(SimState::Running);
         const Cycle start = sim->now();
         const auto wallStart = std::chrono::steady_clock::now();
+        auto lastPublish = wallStart, lastTick = wallStart;
+        double owed = 0;                                          // cycles the pace allows that have not been run yet
         RunResult r;
         for (;;) {
+            if (spec.live) drainLive();
             RunLimits l;
-            if (spec.maxCycles) {
+            l.maxMillis = 30;                                         // one slice
+            l.stopOnIdle = spec.stopOnIdle;
+            l.untilExpr = spec.until;
+            if (spec.live) {
+                l.stopOnIdle = false;                                 // (a run that cannot go on says so itself: nothing left to run)
+                if (speed > 0) {
+                    const auto now = std::chrono::steady_clock::now();
+                    owed += (double)speed * std::chrono::duration<double>(now - lastTick).count();
+                    lastTick = now;
+                    owed = std::min(owed, std::max(1.0, (double)speed * 0.2));        // after a stall: no burst to catch up
+                    const Cycle n = (Cycle)owed;
+                    if (n == 0) {
+                        if (owner->pause_) { r.reason = StopReason::Cancelled; r.detail = "cancelled"; r.now = sim->now(); break; }
+                        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+                        continue;
+                    }
+                    l.maxCycles = n;
+                } else {
+                    l.maxCycles = 0;
+                    owed = 0;
+                }
+            } else if (spec.maxCycles) {
                 Cycle used = sim->now() - start;
                 if (used >= spec.maxCycles) { r.reason = StopReason::CycleLimit; r.now = sim->now(); r.detail = "cycle budget used up"; break; }
                 l.maxCycles = spec.maxCycles - used;
             } else {
                 l.maxCycles = 0;
             }
-            l.maxMillis = 30;                                         // one slice
-            l.stopOnIdle = spec.stopOnIdle;
-            l.untilExpr = spec.until;
+            const Cycle before = sim->now();
             r = sim->run(l);
-            if (r.reason != StopReason::TimeLimit) break;              // anything but "the slice ended"
-            if (spec.maxMillis && std::chrono::steady_clock::now() - wallStart > std::chrono::milliseconds(spec.maxMillis)) {
+            if (spec.live && speed > 0) owed -= (double)(sim->now() - before);
+            const bool sliceEnded = r.reason == StopReason::TimeLimit || (spec.live && r.reason == StopReason::CycleLimit);
+            if (!sliceEnded) break;                                    // anything but "the slice ended"
+            if (!spec.live && spec.maxMillis && std::chrono::steady_clock::now() - wallStart > std::chrono::milliseconds(spec.maxMillis)) {
                 r.detail = "wall-clock budget of " + std::to_string(spec.maxMillis) + " ms used up";
                 break;
             }
-            publish(SimState::Running);
+            const auto now = std::chrono::steady_clock::now();
+            if (now - lastPublish >= std::chrono::milliseconds(33)) { lastPublish = now; publish(SimState::Running); }
         }
         if (tempBp >= 0) sim->removeBreakpoint(tempBp);
         owner->running_ = false;
@@ -267,10 +312,10 @@ SimSession::~SimSession() {
     th_.join();
 }
 
-void SimSession::post(std::function<void(Worker&)> fn) {
+void SimSession::post(std::function<void(Worker&)> fn, bool live) {
     {
         std::lock_guard<std::mutex> l(m_);
-        q_.push_back(std::move(fn));
+        q_.push_back(Cmd{std::move(fn), live});
     }
     cv_.notify_one();
 }
@@ -282,7 +327,7 @@ void SimSession::loop() {
             std::unique_lock<std::mutex> l(m_);
             cv_.wait(l, [&] { return stop_ || !q_.empty(); });
             if (stop_) return;
-            fn = std::move(q_.front());
+            fn = std::move(q_.front().fn);
             q_.pop_front();
         }
         fn(*w_);
@@ -342,43 +387,52 @@ void SimSession::rewindTo(Cycle t) {
     });
 }
 
+void SimSession::setParams(const SimParams& p) {
+    post([p](Worker& w) {
+        if (!w.sim) return;
+        w.sim->setParams(p);
+        w.speed = w.sim->params().get("sim.speed");
+        w.republish();
+    }, true);
+}
+
 void SimSession::setBreakpoints(const std::vector<BreakpointSpec>& v) {
     post([v](Worker& w) {
         w.desiredBps = v;
         w.reconcileBreakpoints();
-        if (w.sim) w.publish(w.state == SimState::Running ? SimState::Running : SimState::Paused);
-    });
+        w.republish();
+    }, true);
 }
 
 void SimSession::setDataWatches(const std::vector<std::string>& targets) {
     post([targets](Worker& w) {
         w.desiredWatches = targets;
         w.reconcileWatches();
-        if (w.sim) w.publish(SimState::Paused);
-    });
+        w.republish();
+    }, true);
 }
 
 void SimSession::setWatchExprs(const std::vector<std::string>& exprs) {
     post([exprs](Worker& w) {
         w.watchExprs = exprs;
-        if (w.sim) w.publish(SimState::Paused);
-    });
+        w.republish();
+    }, true);
 }
 
 void SimSession::writeRegion(const std::string& region, int off, const std::vector<uint8_t>& bytes) {
     post([region, off, bytes](Worker& w) {
         if (!w.sim) return;
         if (!w.sim->writeRegion(region, off, bytes)) w.messages.push_back("cannot write " + region + "[" + std::to_string(off) + "]");
-        w.publish(SimState::Paused);
-    });
+        w.republish();
+    }, true);
 }
 
 void SimSession::setSignal(const std::string& name, int64_t value) {
     post([name, value](Worker& w) {
         if (!w.sim) return;
         if (!w.sim->setSignal(name, value)) w.messages.push_back("no signal named " + name);
-        w.publish(SimState::Paused);
-    });
+        w.republish();
+    }, true);
 }
 
 void SimSession::command(const std::string& cmd) {
@@ -386,8 +440,8 @@ void SimSession::command(const std::string& cmd) {
         if (!w.sim) return;
         std::string err;
         if (!w.sim->injectNow(cmd, err)) w.messages.push_back(cmd + ": " + err);
-        w.publish(SimState::Paused);
-    });
+        w.republish();
+    }, true);
 }
 
 void SimSession::exportTrace(const std::string& format, std::function<void(const std::string&)> done) {

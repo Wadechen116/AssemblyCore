@@ -191,6 +191,9 @@ public:
     bool ok() const;                                        // false if the environment file had errors
     const std::vector<std::string>& configErrors() const;
     const SimParams& params() const;                        // the parameters the simulator runs with (environment file [params] and SimConfig::params merged)
+    // New hardware parameters for a simulator that is running: nothing is reset, what is still to be timed follows the new numbers (the Frame Timing WCET
+    // registers are written). A parameter that is no longer set goes back to what the environment file says.
+    void setParams(const SimParams& p);
     void reset();                                           // power-on state, time 0, injections of the environment file re-armed
 
     // ---- running

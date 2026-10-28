@@ -62,7 +62,7 @@ QString groupName(const std::string& g) { return QCoreApplication::translate("Si
 // The "pinned" parameters are the ones shown in the quick popup without searching (the settings keep the list; until it is first changed these are the ones).
 std::vector<std::string> pinnedKeys(Settings& s) {
     if (s.getBool("simparams.pinned.set", false)) return s.getList("simparams.pinned");
-    return {"main.fetch_cycles", "peri.fetch_cycles", "csr.access_main", "csr.access_peri", "latency.alu", "timer.main.clock_div", "timer.peri.clock_div", "i2c.stretch", "i2ch.overhead", "reset.boot_cycles"};
+    return {"sim.speed", "main.fetch_cycles", "peri.fetch_cycles", "csr.access_main", "csr.access_peri", "latency.alu", "timer.main.clock_div", "timer.peri.clock_div", "i2c.stretch", "i2ch.overhead", "reset.boot_cycles"};
 }
 bool isPinned(Settings& s, const std::string& key) {
     const std::vector<std::string> v = pinnedKeys(s);
@@ -194,7 +194,7 @@ public:
         auto* save = button("paramsSave", tr("Save"));
         auto* saveAs = button("paramsSaveAs", tr("Save As..."));
         auto* reset = button("paramsResetAll", tr("Reset all"));
-        apply_ = button("paramsApply", tr("Apply to the running simulator"));
+        apply_ = button("paramsApply", tr("Restart with these parameters"));
         lay->addLayout(top);
         file_ = new QLabel;
         file_->setObjectName("paramsFile");
@@ -243,7 +243,7 @@ public:
             std::string why;
             ctx_.debugger.stop();
             if (!ctx_.debugger.start(why)) ctx_.status.fire(fromStd(why));
-            else ctx_.status.fire(tr("The simulator was restarted with these parameters"));
+            else ctx_.status.fire(tr("The simulator was restarted from cycle 0 with these parameters"));
         });
         conns_.add(store_.changed, [this] { refresh(); });
         conns_.add(ctx.debugger.updated, [this](const SimUpdate&) { refreshButtons(); });

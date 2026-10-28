@@ -1025,6 +1025,23 @@ static void t_params() {
         const Cycle t0 = resumed(SimParams());
         check(resumed(P({{"event.dispatch_extra", "5"}, {"event.eret_extra", "7"}})) == t0 + 12, "event.dispatch_extra 5 and event.eret_extra 7: the interrupted flow carries on 12 cycles later");
     }
+    {   // new parameters for a simulator that is running: the state stays, what is still to be timed follows them
+        const std::string movs = ".main\na: MOV CONST(1, 1) -> MAIN_SCRATCHPAD[0..0]\n MOV CONST(2, 1) -> MAIN_SCRATCHPAD[1..1]\n MOV CONST(3, 1) -> MAIN_SCRATCHPAD[2..2]\n MOV CONST(4, 1) -> MAIN_SCRATCHPAD[3..3]\nh: JMP h\n";
+        Fx f(movs, "", CallModel::Inline, nullptr);
+        f.runUntil("scratch[1] == 2", 1000);                                     // a bit of the program has run
+        const Cycle t = f.sim->now();
+        const int pcBefore = (int)f.sim->pc(Domain::Main);
+        f.sim->setParams(P({{"main.fetch_cycles", "10"}}));
+        check(f.sim->now() == t && (int)f.sim->pc(Domain::Main) == pcBefore && f.sim->readRegion("scratch", 1, 1)[0] == 2, "setParams on a running simulator keeps the state: time, pc and registers");
+        check(f.sim->params().get("main.fetch_cycles") == 10, "...and the simulator now runs with the new value");
+        const Cycle t1 = f.runUntil("scratch[3] == 4", 1000).now;
+        check(t1 - t >= 12, "...the instructions still to run take the new time (each costs 10 more: without it the same stretch is about 3 cycles)", std::to_string(t1 - t));
+        f.sim->setParams(SimParams());
+        check(f.sim->params().get("main.fetch_cycles") == 0, "a parameter that is no longer set goes back to the initial value");
+        SimParams w = P({{"frame.wcet_pgl", "55"}});
+        f.sim->setParams(w);
+        check(f.sim->signal("wcet_pgl") == 55, "frame.wcet_pgl written while running reaches the WCET register at once");
+    }
     {   // the frame timing: the video windows and the WCET registers are parameters too
         const char* prog = ".main\nstart: BR.COND VBLANK_OPEN, in\n JMP start\nin: EXEC_CSR WRITE8 MARK, 1\nh: JMP h\n";
         Fx f(prog, "", CallModel::Inline, nullptr);

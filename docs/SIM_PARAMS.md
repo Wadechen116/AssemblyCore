@@ -12,7 +12,7 @@
 - **快速參數**（`Ctrl+Shift+P`，Debug 選單與工具列的「Quick Parameters」；在任何分頁都可用）：一個小彈窗，上面是搜尋框，下面是**已釘選**的常用參數（預設有取指令週期、CSR 存取、Timer 時脈除數、I2C 延展…），每個都有編輯器可以當場改；搜尋時顯示符合的前 14 個，同樣可以當場改。每列右邊：★ 釘選／取消、↺ 還原為初始值、→ 到模擬器頁面顯示並開始編輯。
 - **狀態列**常駐「Parameters: 3 changed · fpga.simparams *」：一眼看出模擬器現在是不是還在初始（規劃）值；按一下開模擬器頁面。
 - **執行狀態（頁面右半）**：把程式在獨立的模擬器跑一次，Main 與 Peri 是兩條軌道（寬度＝指令花的週期，EXEC_XFER 會拉長；事件、I2C 傳輸結束、發佈、結果槽被取走各有標記），**下方的「基準」軌道是用初始值（或存下的那次）跑出來的**，兩者疊在一起，位移一目了然；最下面的折線是兩個定序器的**累積位移**；表格列出每一條被移動的指令（基準週期、現在週期、位移）。參數一改就自動重跑（可關），「第一個差異」跳到最先被動到的指令並放大，滾輪縮放、拖曳平移、雙擊全部看到、點指令跳到原始碼那一行。「存下這次」把現在這次當基準，之後每調一次參數都和它比。
-- 「套用到執行中的模擬器」：除錯中的模擬器用的是啟動時的參數；改了之後按這個鈕，會用新參數重新啟動（執行狀態不需要，它每次都用目前的值）。
+- **模擬器會一直跑下去**：Run（F5）之後模擬器持續執行，畫面（暫存器、事件、狀態列的週期數）跟著動，只有碰到斷點、錯誤、按 Pause，或程式再也沒有事可做時才停，停在當下讓你檢查。跑多快由參數 `sim.speed`（真實時間每秒幾個 ISA 週期）決定：預設 1000，想一條一條看就調到 20～100，`0` 是全速；Main 與 Peri 各自的 Timer（`timer.*.clock_div`）則決定程式本身的節奏。**執行中改任何參數都立即生效、不中斷**（時間、暫存器、待處理的事件都保留，之後才計時的部分用新數字）；改 Frame Timing 的 WCET 也立刻寫進暫存器。「Restart with these parameters」則是從週期 0 用新參數重來。
 
 ## 怎麼設定
 
@@ -67,6 +67,12 @@
 | `frame.wcet_pgl` | ISA cycles | 0 | 0 … 2147483647 | Frame Timing WCET: worst-case time of a PGL commit (PGL_COMMIT_ELIGIBLE needs this much blanking left) | the WCET register of the Frame Timing block |
 | `frame.wcet_ae` | ISA cycles | 0 | 0 … 2147483647 | Frame Timing WCET of an AE commit | the WCET register of the Frame Timing block |
 | `frame.wcet_line` | ISA cycles | 0 | 0 … 2147483647 | Frame Timing WCET of a line commit | the WCET register of the Frame Timing block |
+
+## Simulator pace
+
+| 參數 | 單位 | 初始值 | 範圍 | 說明 | 在 FPGA 上怎麼量 |
+|---|---|---|---|---|---|
+| `sim.speed` | ISA cycles per second | 1000 | 0 … 1000000000 | how fast the IDE lets the simulator run in real time, so that it can be watched: 20 to 100 is slow enough to follow instruction by instruction, 1000 shows the two lanes moving, 0 is full speed. It never changes what the program does or when (the Main and Peri timers do that), only how fast the clock on your screen goes. It can be changed while the simulator runs |  |
 
 ## Scheduling
 

@@ -31,6 +31,12 @@ Simulator::Impl::Impl(const Result& r, const SimConfig& c, const Extensions* e) 
     buildSignals();
     buildDefaultConditions();
     loadEnv(cfg.env);
+    envParams = params;
+    baseLat = pf.latency;
+    baseTiming = timing;
+    baseTie = tieMainFirst;
+    baseUnmapped = unmappedFault;
+    baseFaultStops = faultStopsAll;
     applyParams();
     resetState();
 }
@@ -64,6 +70,24 @@ void Simulator::Impl::applyParams() {
     i2cAck = (int)get("i2c.ack_delay");
     i2cStretch = (int)get("i2c.stretch");
     i2cTurnaround = (int)get("i2c.turnaround");
+}
+
+// New values for a simulator that is running: the state (registers, time, pending events) stays, what is still to be timed follows the new numbers.
+// A value that is no longer set goes back to what the environment file said.
+void Simulator::Impl::setParamsLive(const SimParams& p) {
+    const char* const wcet[] = {"frame.wcet_pgl", "frame.wcet_ae", "frame.wcet_line"};
+    int64_t before[3];
+    for (int i = 0; i < 3; i++) before[i] = params.get(wcet[i]);
+    cfg.params = p;
+    params = envParams;
+    pf.latency = baseLat;
+    timing = baseTiming;
+    tieMainFirst = baseTie;
+    unmappedFault = baseUnmapped;
+    faultStopsAll = baseFaultStops;
+    applyParams();
+    for (int i = 0; i < 3; i++)                                  // the Frame Timing WCET registers hold their value: a changed parameter writes the register
+        if (params.get(wcet[i]) != before[i]) setSignal(std::string(wcet[i]).substr(6), params.get(wcet[i]));
 }
 
 void Simulator::Impl::registerOps() {

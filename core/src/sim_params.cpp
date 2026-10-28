@@ -77,6 +77,9 @@ std::vector<ParamDef> build() {
     add("frame.wcet_ae", "Frame timing", "ISA cycles", 0, 0, kMaxCycles, "Frame Timing WCET of an AE commit", "the WCET register of the Frame Timing block");
     add("frame.wcet_line", "Frame timing", "ISA cycles", 0, 0, kMaxCycles, "Frame Timing WCET of a line commit", "the WCET register of the Frame Timing block");
 
+    // ---- the pace of a run in the IDE (the simulator's own results do not depend on it)
+    add("sim.speed", "Simulator pace", "ISA cycles per second", 1000, 0, 1000000000, "how fast the IDE lets the simulator run in real time, so that it can be watched: 20 to 100 is slow enough to follow instruction by instruction, 1000 shows the two lanes moving, 0 is full speed. It never changes what the program does or when (the Main and Peri timers do that), only how fast the clock on your screen goes. It can be changed while the simulator runs", "");
+
     // ---- scheduling
     choice("sim.tie_order", "Scheduling", {"main_first", "peri_first"}, 0, "who goes first when both sequencers are ready in the same cycle (timed events always come before both)", "two programs that touch the same CSR in the same cycle", true);
     choice("sim.unmapped_csr", "Scheduling", {"ram", "fault"}, 0, "an EXEC_CSR to an address the environment does not define: behaves as RAM, or faults", "", true);

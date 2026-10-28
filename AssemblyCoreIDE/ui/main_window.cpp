@@ -101,7 +101,7 @@ MainWindow::MainWindow(AppContext& ctx, PanelRegistry& panels, QWidget* parent) 
         } else {
             ctx_.log.fire(tr("Debug session started"));
             for (const char* id : {"callstack", "breakpoints", "watch", "state"}) if (docks_.contains(id)) { docks_[id]->show(); docks_[id]->raise(); }
-            if (runAfterLoad_) { runAfterLoad_ = false; ctx_.debugger.run(); }
+            if (runAfterLoad_) { runAfterLoad_ = false; ctx_.debugger.runLive(); }
         }
         updateDebugActions();
     });
@@ -909,7 +909,7 @@ void MainWindow::createDebugActions() {
     };
     actStart_ = make(tr("Start / Continue"), QKeySequence("F5"), [this] {
         if (!ctx_.debugger.active()) startDebug(true);
-        else if (!ctx_.debugger.running()) ctx_.debugger.run();
+        else if (!ctx_.debugger.running()) ctx_.debugger.runLive();
     });
     actPause_ = make(tr("Pause"), QKeySequence("F6"), [this] { ctx_.debugger.pause(); });
     actStop_ = make(tr("Stop"), QKeySequence("Shift+F5"), [this] { ctx_.debugger.stop(); updateDebugActions(); });
@@ -972,9 +972,7 @@ void MainWindow::createDebugActions() {
         QString e = QInputDialog::getText(this, tr("Run until"), tr("Stop when this becomes true (e.g.  csr[0x120] == 5):"), QLineEdit::Normal, fromStd(ctx_.settings.get("debug.untilExpr")), &ok);
         if (!ok || e.trimmed().isEmpty()) return;
         ctx_.settings.set("debug.untilExpr", toStd(e));
-        RunSpec spec;
-        spec.until = toStd(e.trimmed());
-        ctx_.debugger.run(spec);
+        ctx_.debugger.runLive(toStd(e.trimmed()));
     });
     dbg->addSeparator();
     auto* focus = dbg->addMenu(tr("Step focus"));
@@ -1007,7 +1005,11 @@ void MainWindow::updateDebugActions() {
     QString text;
     ViewPtr v = ctx_.debugger.session().view();
     if (!active) text = pendingStart_ ? tr("Debug: building...") : tr("Debug: off");
-    else if (running) text = tr("Debug: running");
+    else if (running) {
+        const int64_t speed = ctx_.debugger.simParams().params().get("sim.speed");
+        text = speed > 0 ? tr("Debug: running (%1 cycles/s)").arg((qlonglong)speed) : tr("Debug: running (full speed)");
+        if (v) text += tr(", cycle %1").arg((qulonglong)v->cycle);
+    }
     else text = v ? tr("Debug: paused at cycle %1").arg((qulonglong)v->cycle) : tr("Debug: starting...");
     if (active && ctx_.debugger.stale()) text += tr("  (source changed: restart to apply)");
     debugLabel_->setText(text);

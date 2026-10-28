@@ -10,6 +10,7 @@ namespace acide {
 Debugger::Debugger(SimSession& s, Workspace& w, Settings* settings, std::function<SnapshotPtr()> latest)
     : params_(w), session_(s), ws_(w), settings_(settings), latest_(std::move(latest)) {
     conns_.add(session_.updated, [this](const SimUpdate& u) { onUpdate(u); });
+    conns_.add(params_.changed, [this] { if (active()) session_.setParams(params_.params()); });                  // a changed value reaches the simulator that is running
     conns_.add(ws_.projectChanged, [this] { params_.syncWithProject(); });             // the project's .simparams file is the values of the parameters
 }
 
@@ -67,6 +68,20 @@ bool Debugger::stale() const {
 
 void Debugger::run(const RunSpec& spec) { session_.run(spec); }
 
+namespace {
+RunSpec liveSpec(const std::string& until = std::string()) {
+    RunSpec s;
+    s.live = true;
+    s.maxCycles = 0;
+    s.maxMillis = 0;
+    s.stopOnIdle = false;
+    s.until = until;
+    return s;
+}
+}  // namespace
+
+void Debugger::runLive(const std::string& until) { session_.run(liveSpec(until)); }
+
 void Debugger::restart() { session_.reset(); }
 
 bool Debugger::runToLine(const std::string& file, int line, std::string& why) {
@@ -77,7 +92,7 @@ bool Debugger::runToLine(const std::string& file, int line, std::string& why) {
     const asmcore::InstrInfo* pick = v.front();
     for (const auto* i : v) if (i->domain == focus_) { pick = i; break; }
     runTo_ = RunTo{true, file, line, pick->domain, pick->pc};
-    session_.runToPc(pick->domain, pick->pc);
+    session_.runToPc(pick->domain, pick->pc, liveSpec());
     return true;
 }
 

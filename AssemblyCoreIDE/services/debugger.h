@@ -59,6 +59,9 @@ public:
     void setFocus(asmcore::Domain d) { focus_ = d; focusChanged.fire(d); }
     asmcore::Domain focus() const { return focus_; }
     void run(const RunSpec& spec = RunSpec());
+    // What Run / Continue do: the simulator goes on, at the pace of the parameter sim.speed, until a breakpoint, a fault, Pause or the end of everything
+    // that could still happen. Breakpoints, watches and parameter changes act while it goes on.
+    void runLive(const std::string& until = std::string());
     void pause() { session_.pause(); }
     void stepInto() { session_.step(focus_); }
     void stepOver() { session_.stepOver(focus_); }

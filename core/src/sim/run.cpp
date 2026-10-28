@@ -220,6 +220,7 @@ Simulator::~Simulator() {}
 bool Simulator::ok() const { return p_->errors.empty(); }
 const std::vector<std::string>& Simulator::configErrors() const { return p_->errors; }
 const SimParams& Simulator::params() const { return p_->params; }
+void Simulator::setParams(const SimParams& p) { p_->setParamsLive(p); }
 void Simulator::reset() { p_->resetState(); p_->skipValid = false; }
 Cycle Simulator::now() const { return p_->st.now; }
 

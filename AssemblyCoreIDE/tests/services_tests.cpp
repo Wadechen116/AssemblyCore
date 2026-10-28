@@ -907,6 +907,86 @@ static void t_session() {
     }
 }
 
+static void t_live_run() {
+    std::printf("\nLive run (paced, goes on until a breakpoint or Pause)\n");
+    using namespace asmcore;
+    using namespace asmcore::sim;
+    auto cycleNow = [](SessionRig& r) { return r.ses.view() ? (long long)r.ses.view()->cycle : -1LL; };
+    auto wait = [](SessionRig& r, int ms) { auto t0 = std::chrono::steady_clock::now(); r.disp->pumpUntil([&] { return std::chrono::steady_clock::now() - t0 > std::chrono::milliseconds(ms); }, ms + 1000); };
+    SimParams slow;
+    std::string err;
+    slow.set("sim.speed", "2000", err);
+    RunSpec live;
+    live.live = true;
+    live.maxCycles = 0;
+    live.maxMillis = 0;
+    live.stopOnIdle = false;
+    {   // the pace
+        SessionRig r;
+        r.ses.load(buildSource(kEndless), "", Profile(), slow);
+        r.disp->pumpUntil([&] { return r.ses.view() != nullptr; }, 3000);
+        r.ses.run(live);
+        wait(r, 500);
+        const long long c = cycleNow(r);
+        check(r.ses.state() == SimState::Running, "a live run goes on (no budget ends it)");
+        check(c > 300 && c < 2000, "it follows sim.speed: about 2000 cycles per second", "cycle " + std::to_string(c) + " after 0.5 s");
+        // a new speed acts at once, without stopping
+        SimParams full = slow;
+        full.set("sim.speed", "0", err);
+        r.ses.setParams(full);
+        wait(r, 300);
+        const long long c2 = cycleNow(r);
+        check(r.ses.state() == SimState::Running && c2 > c + 5000, "a parameter changed while it runs acts at once: speed 0 is full speed", "cycle " + std::to_string(c2));
+        SimParams crawl = slow;
+        crawl.set("sim.speed", "10", err);
+        r.ses.setParams(crawl);
+        wait(r, 100);
+        const long long c3 = cycleNow(r);
+        wait(r, 500);
+        const long long c4 = cycleNow(r);
+        check(c4 - c3 < 40, "...and slow motion again: 10 cycles per second", std::to_string(c4 - c3) + " cycles in 0.5 s");
+        r.clear();
+        auto t0 = std::chrono::steady_clock::now();
+        r.ses.pause();
+        const SimUpdate* u = r.waitStop(3000);
+        const long ms = (long)std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count();
+        check(u && u->stop.reason == StopReason::Cancelled && u->state == SimState::Paused && ms < 500, "Pause stops it at once, also in slow motion", std::to_string(ms) + " ms");
+        const long long frozen = cycleNow(r);
+        wait(r, 200);
+        check(cycleNow(r) == frozen, "...and the state stays where it stopped");
+    }
+    {   // a breakpoint set while it runs
+        SessionRig r;
+        r.ses.load(buildSource(kEndless), "", Profile(), slow);
+        r.disp->pumpUntil([&] { return r.ses.view() != nullptr; }, 3000);
+        r.ses.run(live);
+        wait(r, 150);
+        check(r.ses.state() == SimState::Running, "running");
+        const auto& instrs = r.ses.program()->result.instrs;
+        check(instrs.size() >= 3, "the program has instructions");
+        BreakpointSpec bp;
+        bp.domain = instrs[2].domain;
+        bp.pc = instrs[2].pc;
+        r.clear();
+        r.ses.setBreakpoints({bp});
+        const SimUpdate* u = r.waitStop(5000);
+        check(u && u->stop.reason == StopReason::Breakpoint && u->state == SimState::Paused, "a breakpoint added while it runs stops it there");
+        check(r.ses.view() && r.ses.view()->pc[0] == bp.pc, "...at that instruction");
+    }
+    {   // pause at once, even while waiting for the pace
+        SessionRig r;
+        SimParams one = slow;
+        one.set("sim.speed", "1", err);
+        r.ses.load(buildSource(kEndless), "", Profile(), one);
+        r.disp->pumpUntil([&] { return r.ses.view() != nullptr; }, 3000);
+        r.ses.run(live);
+        wait(r, 100);
+        r.clear();
+        r.ses.pause();
+        check(r.waitStop(2000) != nullptr, "at 1 cycle per second Pause still answers at once");
+    }
+}
+
 int main() {
     t_realfs();
     t_paths();
@@ -923,6 +1003,7 @@ int main() {
     t_settings();
     t_editing();
     t_session();
+    t_live_run();
     t_debugger();
     std::printf("\n%s  %d passed, %d failed\n", g_fail ? "FAILED" : "OK    ", g_pass, g_fail);
     return g_fail ? 1 : 0;

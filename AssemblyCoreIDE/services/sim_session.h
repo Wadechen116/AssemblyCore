@@ -7,7 +7,10 @@
 //   updated(SimUpdate)            <---   dispatcher     <---  views + events, at most ~30 per second while running
 //
 // While a run is in progress it is cut into short slices, so the UI keeps getting fresh states and pause() takes effect at once.
-// Every run has a cycle budget and a wall-clock budget (RunSpec), so a program that never ends cannot hang the IDE.
+// A run has a cycle budget and a wall-clock budget (RunSpec), so a program that never ends cannot hang the IDE - except a LIVE run (RunSpec::live), which
+// is what the IDE's Run is: it goes on at the pace of the parameter sim.speed (cycles per second of real time; 0 = full speed) until a breakpoint, a
+// fault, pause() or the end of everything that could still happen. While it goes on, breakpoints, watches, signals, injections and new parameters
+// (setParams) take effect at once, without stopping it.
 #include <atomic>
 #include <condition_variable>
 #include <deque>
@@ -82,6 +85,7 @@ struct RunSpec {
     uint32_t maxMillis = 15000;                                // wall clock; 0 = unlimited
     std::string until;                                         // stop when this expression becomes true
     bool stopOnIdle = true;
+    bool live = false;                                         // no budgets, no stop when idle, paced by sim.speed, commands act while it runs
 };
 
 class SimSession {
@@ -103,6 +107,8 @@ public:
     void runToPc(asmcore::Domain d, uint32_t pc, const RunSpec& spec = RunSpec());
     void reset();
     void rewindTo(asmcore::sim::Cycle t);
+    // New hardware parameters, at once and without stopping a run (the state stays; see Simulator::setParams); sim.speed is the pace of a live run.
+    void setParams(const asmcore::SimParams& p);
     void setBreakpoints(const std::vector<BreakpointSpec>& v);           // the complete desired set; kept across load()
     void setDataWatches(const std::vector<std::string>& targets);        // "scratch[8..9]" | "csr 0x120" | "signal x" | expression
     void setWatchExprs(const std::vector<std::string>& exprs);
@@ -121,14 +127,15 @@ public:
 
 private:
     struct Worker;
-    void post(std::function<void(Worker&)> fn);
+    void post(std::function<void(Worker&)> fn, bool live = false);       // live: may also run between the slices of a running run
     void loop();
     std::shared_ptr<IDispatcher> disp_;
     std::unique_ptr<Worker> w_;
     std::thread th_;
     std::mutex m_;
     std::condition_variable cv_;
-    std::deque<std::function<void(Worker&)>> q_;
+    struct Cmd { std::function<void(Worker&)> fn; bool live = false; };
+    std::deque<Cmd> q_;
     bool stop_ = false;
     std::atomic<bool> pause_{false};
     std::atomic<bool> running_{false};
