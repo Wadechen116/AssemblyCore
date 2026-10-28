@@ -6,6 +6,7 @@
 #include <QCloseEvent>
 #include <QDir>
 #include <QDockWidget>
+#include <QScrollArea>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QInputDialog>
@@ -330,6 +331,16 @@ void MainWindow::createPanels(PanelRegistry& panels) {
     QMenu* view = menuBar()->findChild<QMenu*>("viewMenu");
     for (const PanelSpec& spec : panels.specs()) {
         QWidget* w = spec.create(ctx_);
+        // Docks that are tabbed together are as tall as the tallest of them at least: a panel at the bottom that wants more room than this would stop the whole area
+        // from being pushed down. In a scroll area it keeps its natural size when there is room and scrolls when there is not.
+        if (spec.area == Qt::BottomDockWidgetArea && w->minimumSizeHint().height() > 110) {
+            auto* s = new QScrollArea;
+            s->setObjectName(w->objectName() + "Scroll");
+            s->setFrameShape(QFrame::NoFrame);
+            s->setWidgetResizable(true);
+            s->setWidget(w);
+            w = s;
+        }
         auto* d = new QDockWidget(QCoreApplication::translate("QObject", spec.title), this);
         d->setObjectName("dock_" + spec.id);
         d->setWidget(w);
@@ -365,6 +376,7 @@ void MainWindow::createPanels(PanelRegistry& panels) {
     if (!left.isEmpty()) resizeDocks(left, QList<int>(left.size(), 240), Qt::Horizontal);
     if (!right.isEmpty()) resizeDocks(right, QList<int>(right.size(), 420), Qt::Horizontal);
     if (docks_.contains("listing") && docks_.contains("state")) resizeDocks({docks_["listing"], docks_["state"]}, {260, 340}, Qt::Vertical);
+    if (docks_.contains("problems")) resizeDocks({docks_["problems"]}, {170}, Qt::Vertical);                  // the bottom area starts low and can be pulled up or pushed down
 }
 
 // ---- files and projects ------------------------------------------------------------------------------------------------------------

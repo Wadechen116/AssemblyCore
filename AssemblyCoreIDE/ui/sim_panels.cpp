@@ -18,6 +18,7 @@
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPushButton>
+#include <QScrollArea>
 #include <QSpinBox>
 #include <QStyledItemDelegate>
 #include <QTableWidget>
@@ -318,7 +319,7 @@ public:
     ExecutionView() {
         setObjectName("executionView");
         setMouseTracking(true);
-        setMinimumHeight(250);
+        setMinimumHeight(110);
         setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     }
     void setData(const RunTrace* cur, const RunTrace* base, const TraceDiff* diff) {
@@ -746,8 +747,21 @@ private:
 
 }  // namespace
 
+namespace {
+// A panel with a lot in it must not decide how small its dock can be made: docks that are tabbed together are as tall as the tallest of them at least. In a scroll area
+// the panel keeps its natural size when there is room, and scrolls when there is not.
+QWidget* scrolled(QWidget* inner) {
+    auto* s = new QScrollArea;
+    s->setObjectName(inner->objectName() + "Scroll");
+    s->setFrameShape(QFrame::NoFrame);
+    s->setWidgetResizable(true);
+    s->setWidget(inner);
+    return s;
+}
+}  // namespace
+
 void registerSimPanels(PanelRegistry& r) {
-    r.add({"simparams", QT_TRANSLATE_NOOP("QObject", "Simulator Parameters"), Qt::RightDockWidgetArea, false, [](AppContext& c) -> QWidget* { return new ParamsPanel(c); }});
+    r.add({"simparams", QT_TRANSLATE_NOOP("QObject", "Simulator Parameters"), Qt::RightDockWidgetArea, false, [](AppContext& c) -> QWidget* { return scrolled(new ParamsPanel(c)); }});
     r.add({"execution", QT_TRANSLATE_NOOP("QObject", "Execution"), Qt::BottomDockWidgetArea, false, [](AppContext& c) -> QWidget* { return new ExecutionPanel(c); }});
 }
 

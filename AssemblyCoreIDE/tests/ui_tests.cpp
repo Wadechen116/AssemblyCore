@@ -649,6 +649,31 @@ private slots:
         return nullptr;
     }
 
+    void everyPanelAtTheBottomCanBeMadeSmall() {
+        Rig r(kProg);
+        QStringList tall;
+        int checked = 0;
+        for (QDockWidget* d : r.w->findChildren<QDockWidget*>()) {
+            if (r.w->dockWidgetArea(d) != Qt::BottomDockWidgetArea) continue;
+            checked++;
+            const int h = std::max(d->minimumSizeHint().height(), d->widget() ? d->widget()->minimumSizeHint().height() : 0);
+            if (h > 130) tall << QString("%1 (%2)").arg(d->objectName()).arg(h);
+        }
+        QVERIFY(checked >= 6);
+        QVERIFY2(tall.isEmpty(), qPrintable("a panel at the bottom needs more than 130 pixels at least: " + tall.join(", ")));
+        // the area itself is not made tall by a panel that is not even shown
+        QVERIFY(r.w->dock("problems")->height() < 300);
+        // and it can be pushed down: asking for a thin area gives a thin area (with the panels of the bottom all in the same tab area)
+        r.w->resize(1100, 760);
+        QApplication::processEvents();
+        r.w->resizeDocks({r.w->dock("problems")}, {40}, Qt::Vertical);
+        QApplication::processEvents();
+        QVERIFY2(r.w->dock("problems")->height() <= 130, qPrintable(QString("the bottom area is still %1 pixels high").arg(r.w->dock("problems")->height())));
+        r.w->resizeDocks({r.w->dock("problems")}, {400}, Qt::Vertical);                  // ... and pulled up again
+        QApplication::processEvents();
+        QVERIFY(r.w->dock("problems")->height() >= 300);
+    }
+
     void theParameterPanelListsEveryParameterAndEditsThem() {
         Rig r(kProg);
         auto* tree = r.find<QTreeWidget>("simparams", "paramsTree");
