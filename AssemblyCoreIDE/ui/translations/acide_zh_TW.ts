@@ -807,6 +807,105 @@ Drag it to change the order; double-click the end of it to write a comment</sour
     </message>
 </context>
 <context>
+    <name>ExecutionPanel</name>
+    <message>
+        <source>Run</source>
+        <translation>執行</translation>
+    </message>
+    <message>
+        <source>run when a parameter changes</source>
+        <translation>參數一改就自動執行</translation>
+    </message>
+    <message>
+        <source>compare with: initial values</source>
+        <translation>比較對象：初始值</translation>
+    </message>
+    <message>
+        <source>compare with: saved run</source>
+        <translation>比較對象：存下的那次</translation>
+    </message>
+    <message>
+        <source>compare with: nothing</source>
+        <translation>比較對象：無</translation>
+    </message>
+    <message>
+        <source>Save this run</source>
+        <translation>存下這次</translation>
+    </message>
+    <message>
+        <source> cycles</source>
+        <translation> 週期</translation>
+    </message>
+    <message>
+        <source>Fit</source>
+        <translation>全部看到</translation>
+    </message>
+    <message>
+        <source>First difference</source>
+        <translation>第一個差異</translation>
+    </message>
+    <message>
+        <source>Sequencer</source>
+        <translation>定序器</translation>
+    </message>
+    <message>
+        <source>#</source>
+        <translation>#</translation>
+    </message>
+    <message>
+        <source>Instruction</source>
+        <translation>指令</translation>
+    </message>
+    <message>
+        <source>Baseline cycle</source>
+        <translation>基準週期</translation>
+    </message>
+    <message>
+        <source>Cycle</source>
+        <translation>週期</translation>
+    </message>
+    <message>
+        <source>Shift</source>
+        <translation>位移</translation>
+    </message>
+    <message>
+        <source>The simulator could not be made: %1</source>
+        <translation>無法建立模擬器：%1</translation>
+    </message>
+    <message>
+        <source>Main: %1 instructions, Peri: %2 instructions; stopped at cycle %3</source>
+        <translation>Main：%1 條指令，Peri：%2 條指令；停在週期 %3</translation>
+    </message>
+    <message>
+        <source> (the first %1 instructions are shown)</source>
+        <translation>（只顯示前 %1 條指令）</translation>
+    </message>
+    <message>
+        <source>The same as the baseline: not one cycle differs.</source>
+        <translation>與基準相同：沒有任何一個週期不同。</translation>
+    </message>
+    <message>
+        <source>Against the baseline: the end moves %1 cycles</source>
+        <translation>與基準相比：結束時間移動 %1 週期</translation>
+    </message>
+    <message>
+        <source>no shift</source>
+        <translation>沒有位移</translation>
+    </message>
+    <message>
+        <source>shift up to %1 cycles, %2 at the end, first at instruction %3</source>
+        <translation>最多位移 %1 週期，最後 %2，從第 %3 條指令開始</translation>
+    </message>
+    <message>
+        <source>, the programs part at instruction %1 (compared up to there)</source>
+        <translation>，兩次的程式在第 %1 條指令分岔（只比到那裡）</translation>
+    </message>
+    <message>
+        <source>  ·  events and bus transfers move up to %1 cycles</source>
+        <translation>  ·  事件與匯流排傳輸最多移動 %1 週期</translation>
+    </message>
+</context>
+<context>
     <name>ListingPanel</name>
     <message>
         <source>Dom</source>
@@ -888,6 +987,105 @@ Drag it to change the order; double-click the end of it to write a comment</sour
     </message>
 </context>
 <context>
+    <name>ParamsPanel</name>
+    <message>
+        <source>Load...</source>
+        <translation>載入...</translation>
+    </message>
+    <message>
+        <source>Save</source>
+        <translation>儲存</translation>
+    </message>
+    <message>
+        <source>Save As...</source>
+        <translation>另存為...</translation>
+    </message>
+    <message>
+        <source>Reset all</source>
+        <translation>全部還原</translation>
+    </message>
+    <message>
+        <source>Apply to the running simulator</source>
+        <translation>套用到執行中的模擬器</translation>
+    </message>
+    <message>
+        <source>filter</source>
+        <translation>篩選</translation>
+    </message>
+    <message>
+        <source>changed only</source>
+        <translation>只看有改的</translation>
+    </message>
+    <message>
+        <source>Parameter</source>
+        <translation>參數</translation>
+    </message>
+    <message>
+        <source>Value</source>
+        <translation>值</translation>
+    </message>
+    <message>
+        <source>Unit</source>
+        <translation>單位</translation>
+    </message>
+    <message>
+        <source>Initial</source>
+        <translation>初始值</translation>
+    </message>
+    <message>
+        <source>Status</source>
+        <translation>狀態</translation>
+    </message>
+    <message>
+        <source>Note</source>
+        <translation>備註</translation>
+    </message>
+    <message>
+        <source>The simulator was restarted with these parameters</source>
+        <translation>模擬器已用這些參數重新啟動</translation>
+    </message>
+    <message>
+        <source>  (not used yet)</source>
+        <translation>（尚未被模擬器使用）</translation>
+    </message>
+    <message>
+        <source>(no file: the values are not saved)</source>
+        <translation>（沒有檔案：這些值不會被儲存）</translation>
+    </message>
+    <message>
+        <source>changed</source>
+        <translation>已更改</translation>
+    </message>
+    <message>
+        <source>on the FPGA:</source>
+        <translation>在 FPGA 上：</translation>
+    </message>
+    <message>
+        <source>The simulator does not use this one yet: it is kept in the file for when it does.</source>
+        <translation>模擬器還沒使用這個參數：先存在檔案裡，等建模後就會生效。</translation>
+    </message>
+    <message>
+        <source>Back to the initial value</source>
+        <translation>還原為初始值</translation>
+    </message>
+    <message>
+        <source>Load simulator parameters</source>
+        <translation>載入模擬器參數</translation>
+    </message>
+    <message>
+        <source>Simulator parameters (*.simparams);;All files (*)</source>
+        <translation>模擬器參數 (*.simparams);;所有檔案 (*)</translation>
+    </message>
+    <message>
+        <source>Save simulator parameters</source>
+        <translation>儲存模擬器參數</translation>
+    </message>
+    <message>
+        <source>Simulator parameters (*.simparams)</source>
+        <translation>模擬器參數 (*.simparams)</translation>
+    </message>
+</context>
+<context>
     <name>ProblemsPanel</name>
     <message>
         <source>Errors</source>
@@ -952,6 +1150,10 @@ Drag it to change the order; double-click the end of it to write a comment</sour
         <source>Blocks</source>
         <translation>積木</translation>
     </message>
+    <message>
+        <source>Simulator parameters</source>
+        <translation>模擬器參數</translation>
+    </message>
 </context>
 <context>
     <name>QObject</name>
@@ -1011,6 +1213,14 @@ Drag it to change the order; double-click the end of it to write a comment</sour
         <source>Listing</source>
         <translation>組譯清單</translation>
     </message>
+    <message>
+        <source>Simulator Parameters</source>
+        <translation>模擬器參數</translation>
+    </message>
+    <message>
+        <source>Execution</source>
+        <translation>執行狀態</translation>
+    </message>
 </context>
 <context>
     <name>ReferencesPanel</name>
@@ -1032,6 +1242,57 @@ Drag it to change the order; double-click the end of it to write a comment</sour
     <message>
         <source>Value</source>
         <translation>值</translation>
+    </message>
+</context>
+<context>
+    <name>SimParamGroup</name>
+    <message>
+        <source>Instruction latency</source>
+        <translation>指令延遲</translation>
+    </message>
+    <message>
+        <source>Clocks</source>
+        <translation>時脈</translation>
+    </message>
+    <message>
+        <source>Frame timing</source>
+        <translation>影像時序</translation>
+    </message>
+    <message>
+        <source>Scheduling</source>
+        <translation>排程</translation>
+    </message>
+    <message>
+        <source>Decoders</source>
+        <translation>解碼器</translation>
+    </message>
+    <message>
+        <source>Events</source>
+        <translation>事件</translation>
+    </message>
+    <message>
+        <source>Timers</source>
+        <translation>計時器</translation>
+    </message>
+    <message>
+        <source>I2C path</source>
+        <translation>I2C 路徑</translation>
+    </message>
+    <message>
+        <source>CSR arbiter</source>
+        <translation>CSR 仲裁器</translation>
+    </message>
+    <message>
+        <source>Data path</source>
+        <translation>資料通道</translation>
+    </message>
+    <message>
+        <source>Result slot</source>
+        <translation>結果槽</translation>
+    </message>
+    <message>
+        <source>Status flags</source>
+        <translation>狀態旗標</translation>
     </message>
 </context>
 <context>
@@ -1489,6 +1750,25 @@ Drag it to change the order; double-click the end of it to write a comment</sour
         <translation>
             <numerusform>有 %n 行看不懂為指令，會保留為組譯器文字</numerusform>
         </translation>
+    </message>
+</context>
+<context>
+    <name>acide::ExecutionView</name>
+    <message>
+        <source>Nothing to show yet: build the program, then Run.</source>
+        <translation>還沒有東西可以顯示：先建置程式，再按「執行」。</translation>
+    </message>
+    <message>
+        <source>baseline</source>
+        <translation>基準</translation>
+    </message>
+    <message>
+        <source>no program</source>
+        <translation>無程式</translation>
+    </message>
+    <message>
+        <source>shift (cycles)</source>
+        <translation>位移（週期）</translation>
     </message>
 </context>
 <context>

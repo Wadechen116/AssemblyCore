@@ -8,8 +8,9 @@ using namespace asmcore;
 namespace acide {
 
 Debugger::Debugger(SimSession& s, Workspace& w, Settings* settings, std::function<SnapshotPtr()> latest)
-    : session_(s), ws_(w), settings_(settings), latest_(std::move(latest)) {
+    : params_(w), session_(s), ws_(w), settings_(settings), latest_(std::move(latest)) {
     conns_.add(session_.updated, [this](const SimUpdate& u) { onUpdate(u); });
+    conns_.add(ws_.projectChanged, [this] { params_.syncWithProject(); });             // the project's .simparams file is the values of the parameters
 }
 
 SnapshotPtr Debugger::programForMapping() const {
@@ -20,17 +21,28 @@ SnapshotPtr Debugger::programForMapping() const {
 
 // ---- session -------------------------------------------------------------------------------------------------------------------------
 bool Debugger::start(std::string& why) {
-    SnapshotPtr prog = latest_ ? latest_() : nullptr;
+    SnapshotPtr prog;
+    std::string env;
+    Profile pf;
+    if (!inputs(prog, env, pf, why)) return false;
+    session_.load(prog, env, pf, params_.params());
+    // re-resolve every breakpoint against this program
+    session_.setWatchExprs(watchExprs_);
+    session_.setDataWatches(dataWatches_);
+    pushBreakpoints();
+    return true;
+}
+
+bool Debugger::inputs(SnapshotPtr& prog, std::string& env, Profile& pf, std::string& why) {
+    prog = latest_ ? latest_() : nullptr;
     if (!prog) { why = "nothing has been built yet"; return false; }
     if (!prog->result.ok) { why = "the program has errors: fix them first"; return false; }
     const Project& p = ws_.project();
-    std::string env;
     if (!p.environment.empty()) {
         Document* d = ws_.find(p.absolute(p.environment));          // an unsaved edit of it counts (also a generated file not written yet)
         if (d) env = d->text;
         else if (!ws_.fileSystem()->read(p.absolute(p.environment), env)) { why = "cannot read the environment file " + p.environment; return false; }
     }
-    Profile pf;
     if (!p.profile.empty()) {
         std::string text;
         std::vector<std::string> errs;
@@ -39,11 +51,6 @@ bool Debugger::start(std::string& why) {
         else if (!ws_.fileSystem()->read(p.absolute(p.profile), text)) { why = "cannot read the profile " + p.profile; return false; }
         if (!pf.load(text, errs)) { why = "profile: " + (errs.empty() ? std::string("error") : errs[0]); return false; }
     }
-    session_.load(prog, env, pf);
-    // re-resolve every breakpoint against this program
-    session_.setWatchExprs(watchExprs_);
-    session_.setDataWatches(dataWatches_);
-    pushBreakpoints();
     return true;
 }
 

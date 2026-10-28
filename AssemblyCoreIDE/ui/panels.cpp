@@ -374,6 +374,7 @@ private:
         group(tr("Blocks"), p.blocks);
         group(tr("Scenarios"), p.scenarios);
         if (!p.hardware.empty()) group(tr("Hardware"), {p.hardware});
+        if (!p.simParams.empty()) group(tr("Simulator parameters"), {p.simParams});
         std::vector<std::string> misc;
         if (!p.profile.empty()) misc.push_back(p.profile);
         if (!p.environment.empty()) misc.push_back(p.environment);
@@ -408,6 +409,7 @@ void registerBuiltinPanels(PanelRegistry& r) {
     r.add({"references", QT_TRANSLATE_NOOP("QObject", "References"), Qt::BottomDockWidgetArea, false, [](AppContext& c) -> QWidget* { return new ReferencesPanel(c); }});
     r.add({"listing", QT_TRANSLATE_NOOP("QObject", "Listing"), Qt::RightDockWidgetArea, true, [](AppContext& c) -> QWidget* { return new ListingPanel(c); }});
     registerDebugPanels(r);
+    registerSimPanels(r);
 }
 
 }  // namespace acide

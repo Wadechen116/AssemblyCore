@@ -9,6 +9,8 @@
 
 #include "artifacts.h"
 #include "block_link.h"
+#include "sim_compare.h"
+#include "sim_params_store.h"
 #include "build.h"
 #include "debugger.h"
 #include "hardware_link.h"
@@ -173,6 +175,100 @@ static void t_samples() {
     }
     check(n >= 10, "found the sample projects", std::to_string(n));
 #endif
+}
+
+// The simulator's hardware parameters in the IDE: the working values, the file, the project's key; and the comparison of two runs.
+static void t_sim_params() {
+    std::printf("\nSimulator parameters: store, file, project\n");
+    auto fs = std::make_shared<MemoryFileSystem>();
+    fs->write("/p/prog.acproj", "name = prog\nsource = main.asm\nsimparams = fpga.simparams\n");
+    fs->write("/p/fpga.simparams", "[params]\nmain.fetch_cycles = 2\nmain.fetch_cycles.status = measured\nmain.fetch_cycles.note = ILA run 1\nno.such = 1\n");
+    Workspace ws(fs);
+    std::vector<std::string> errs;
+    ws.openProject("/p/prog.acproj", errs);
+    check(ws.project().simParams == "fpga.simparams" && ws.project().serialize().find("simparams = fpga.simparams") != std::string::npos, "the project reads and writes `simparams =`");
+    SimParamsStore store(ws);
+    int changes = 0;
+    ConnectionBag bag;
+    bag.add(store.changed, [&] { changes++; });
+    store.syncWithProject();
+    check(store.path() == "/p/fpga.simparams" && store.params().get("main.fetch_cycles") == 2 && store.params().status("main.fetch_cycles") == "measured" && store.params().note("main.fetch_cycles") == "ILA run 1" && !store.dirty(), "the project's file is loaded: values, status and note");
+    std::vector<std::string> le;
+    store.load("/p/fpga.simparams", le);
+    check(le.size() == 1 && le[0].find("no.such") != std::string::npos, "a bad line in the file is reported and the rest is used");
+    const int before = changes;
+    store.syncWithProject();
+    check(changes == before, "the same project again does not reload the file (what was edited stays)");
+    std::string err;
+    check(store.set("peri.fetch_cycles", "3", err) && store.dirty() && store.params().get("peri.fetch_cycles") == 3 && changes > before, "a change marks the values as different from the file and says so");
+    check(!store.set("peri.fetch_cycles", "-5", err) && store.params().get("peri.fetch_cycles") == 3, "a bad value is refused and nothing changes", err);
+    check(store.setStatus("peri.fetch_cycles", "measured", err) && !store.setStatus("peri.fetch_cycles", "guess", err), "the status can be set (planning / measured / confirmed)");
+    store.setNote("peri.fetch_cycles", "scope");
+    check(store.save(err) && !store.dirty(), "save writes the file", err);
+    std::string text;
+    check(fs->read("/p/fpga.simparams", text) && text.find("peri.fetch_cycles = 3") != std::string::npos && text.find("peri.fetch_cycles.status = measured") != std::string::npos && text.find("peri.fetch_cycles.note = scope") != std::string::npos && text.find("main.fetch_cycles = 2") != std::string::npos, "...with the values, statuses and notes", text);
+    store.clear("peri.fetch_cycles");
+    check(store.dirty() && !store.params().isSet("peri.fetch_cycles"), "clearing a value goes back to the initial one");
+    check(store.saveAs("/p/other.simparams", err) && ws.project().simParams == "other.simparams" && store.path() == "/p/other.simparams", "Save As makes it the project's file", err);
+    std::string proj;
+    check(fs->read("/p/prog.acproj", proj) && proj.find("simparams = other.simparams") != std::string::npos, "...and the project file is saved");
+    store.clearAll();
+    check(store.params().size() == 0 && store.dirty(), "clear all goes back to the initial values (and the file differs)");
+    store.closeFile();
+    check(store.path().empty(), "closing lets go of the file");
+    ws.project().simParams.clear();
+    store.syncWithProject();
+    check(store.path().empty(), "a project without a file has none");
+    SimParamsStore loose(ws);
+    check(!loose.save(err) && err.find("Save As") != std::string::npos, "values that belong to no file cannot be saved with Save (they need Save As)", err);
+}
+
+static asmcore::Result simAssemble(const std::string& text) {
+    asmcore::Options o;
+    return asmcore::assemble({asmcore::Source{"p.asm", text}}, nullptr, o);
+}
+
+static void t_sim_compare() {
+    std::printf("\nSimulator runs: trace and comparison\n");
+    const std::string alus = ".main\ns: ALU ADD unsigned\n ALU ADD unsigned\n ALU ADD unsigned\n ALU ADD unsigned\n ALU ADD unsigned\n ALU ADD unsigned\n ALU ADD unsigned\n ALU ADD unsigned\n ALU ADD unsigned\n ALU ADD unsigned\nh: JMP h\n";
+    const asmcore::Result ra = simAssemble(alus);
+    check(ra.ok, "(the program of the comparison assembles)", ra.diagnosticsText());
+    asmcore::sim::SimConfig cfg;
+    const RunTrace base = recordRun(ra, cfg, 100000);
+    check(base.ok() && base.rows.size() == 11 && base.instrs[0] >= 10 && base.rows[0].what.find("ALU") != std::string::npos && base.rows[0].at == 0, "a run is recorded: every instruction with its cycle, mnemonic and pc", std::to_string(base.rows.size()));
+    check(base.endOf(0) == base.rows[1].at && base.endOf(10) >= base.rows[10].at, "a row lasts until the next of the same sequencer");
+    check(compareTraces(base, recordRun(ra, cfg, 100000)).same, "the same run twice is the same");
+    asmcore::sim::SimConfig slow;
+    std::string e;
+    slow.params.set("main.fetch_cycles", "1", e);
+    const TraceDiff d = compareTraces(base, recordRun(ra, slow, 100000));
+    check(!d.same && d.endDelta == 10 && d.maxShift[0] == 10 && d.finalShift[0] == 10 && d.firstMoved[0] == 1 && d.moved.size() == 10 && d.matched[0] == 11, "one extra cycle per instruction: the k-th instruction is k cycles late, the end 10", std::to_string(d.endDelta) + "/" + std::to_string(d.maxShift[0]) + "/" + std::to_string(d.moved.size()));
+    check(d.moved.size() >= 2 && d.moved[0].delta == 1 && d.moved[1].delta == 2 && d.moved[0].curAt == d.moved[0].baseAt + 1, "the moved instructions are listed with their delta, in time order");
+    check(d.maxShift[1] == 0 && d.total[1][0] == 0, "the other sequencer is untouched");
+    // another program: the paths part at the first instruction
+    const asmcore::Result rc = simAssemble(".main\ns: EXEC_CSR WRITE8 AE, 1\nh: JMP h\n.csr AE = 0x10\n");
+    const TraceDiff dv = compareTraces(base, recordRun(rc, cfg, 100000));
+    check(!dv.same && dv.diverged[0] == 0 && dv.matched[0] == 0, "different programs: the paths part at the first instruction and nothing is compared after it");
+    // Peri: the bus time shows in the next row and in the bus marker
+    const std::string prog = ".devmap 0, I2C, 0x68, DEV0\n.main\nh: JMP h\n.peri\ns: EXEC_XFER READ dev=0, addr=0x10, addrlen=1, ptr=0\nq: JMP q\n";
+    const asmcore::Result rp = simAssemble(prog);
+    asmcore::sim::SimConfig dev;
+    dev.env = "[device d]\naddr = 0x68\nreg 0x10 = 0x55\n";
+    const RunTrace pb = recordRun(rp, dev, 100000);
+    asmcore::sim::SimConfig dev2 = dev;
+    dev2.params.set("i2c.stretch", "10", e);
+    const TraceDiff dp = compareTraces(pb, recordRun(rp, dev2, 100000));
+    check(pb.ok() && dp.total[1][0] == 2 && dp.moved.size() == 1 && dp.moved[0].delta == 40 && dp.markShift == 40, "Peri: 10 cycles of stretch on each of 4 byte phases move the next instruction and the bus marker by 40");
+    bool bus = false;
+    for (const TraceMarker& m : pb.marks) bus |= m.kind == 'b' && m.what == "i2c.read";
+    check(bus, "the end of the I2C transaction is a marker");
+    // a bad environment is said, not thrown
+    asmcore::sim::SimConfig bad;
+    bad.env = "[nonsense]\n";
+    check(!recordRun(ra, bad, 1000).ok(), "an environment the simulator refuses is reported as an error of the trace");
+    // the limit
+    const RunTrace small = recordRun(ra, cfg, 100000, 4);
+    check(small.truncated && small.rows.size() == 4, "a run keeps at most the rows it was allowed");
 }
 
 // The block programs' bridge: the project lists them, the generated file is a source and a workspace buffer.
@@ -818,6 +914,8 @@ int main() {
     t_workspace();
     t_build();
     t_block_link();
+    t_sim_params();
+    t_sim_compare();
     t_hardware_link();
     t_samples();
     t_service();

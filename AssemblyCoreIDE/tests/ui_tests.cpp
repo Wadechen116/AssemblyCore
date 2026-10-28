@@ -76,6 +76,16 @@ struct Fixture {
 
 }  // namespace
 
+static QString outDirFree() {
+    QByteArray d = qgetenv("ACIDE_TEST_OUT");
+    return d.isEmpty() ? QDir::tempPath() : QString::fromLocal8Bit(d);
+}
+static int distinctColorsFree(const QImage& img) {
+    QSet<QRgb> s;
+    for (int y = 0; y < img.height(); y += 2) for (int x = 0; x < img.width(); x += 2) s.insert(img.pixel(x, y));
+    return s.size();
+}
+
 class UiTests : public QObject {
     Q_OBJECT
 private slots:
@@ -633,6 +643,149 @@ private slots:
         QVERIFY(r.w->debugStatusText().contains("off"));
         QCOMPARE(r.w->currentEditor()->executionSelectionCount(), 0);
     }
+    // ---- the simulator parameters and the execution view
+    static QTreeWidgetItem* paramRow(QTreeWidget* t, const char* key) {
+        for (QTreeWidgetItemIterator it(t); *it; ++it) if ((*it)->data(0, Qt::UserRole).toString() == key) return *it;
+        return nullptr;
+    }
+
+    void theParameterPanelListsEveryParameterAndEditsThem() {
+        Rig r(kProg);
+        auto* tree = r.find<QTreeWidget>("simparams", "paramsTree");
+        auto* label = r.find<QLabel>("simparams", "paramsFile");
+        auto* help = r.find<QLabel>("simparams", "paramsHelp");
+        QVERIFY(tree && label && help);
+        int rows = 0;
+        for (QTreeWidgetItemIterator it(tree); *it; ++it) if ((*it)->parent()) rows++;
+        QCOMPARE(rows, (int)asmcore::paramCatalog().size());
+        QVERIFY(tree->topLevelItemCount() >= 10);
+        auto& store = r.f.dbg.simParams();
+        QTreeWidgetItem* row = paramRow(tree, "main.fetch_cycles");
+        QVERIFY(row);
+        QCOMPARE(row->text(1), QString("0"));
+        QCOMPARE(row->text(3), QString("0"));                                           // the initial value is shown next to it
+        QVERIFY(label->text().contains("no file"));
+        // an edit in the table goes to the store, the row says it is changed, the label says the values differ from the file
+        row->setText(1, "3");
+        QCOMPARE((int)store.params().get("main.fetch_cycles"), 3);
+        QVERIFY(row->font(1).bold());
+        QVERIFY(store.dirty() && label->text().contains("changed"));
+        // a bad value is refused and the row shows the real one again
+        row->setText(1, "-5");
+        QCOMPARE((int)store.params().get("main.fetch_cycles"), 3);
+        QCOMPARE(row->text(1), QString("3"));
+        // where the value comes from, and a note
+        row->setText(4, "measured");
+        QCOMPARE(QString::fromStdString(store.params().status("main.fetch_cycles")), QString("measured"));
+        row->setText(5, "ILA run 3");
+        QCOMPARE(QString::fromStdString(store.params().note("main.fetch_cycles")), QString("ILA run 3"));
+        // an enum and a bool take their names
+        QTreeWidgetItem* tie = paramRow(tree, "sim.tie_order");
+        QVERIFY(tie);
+        tie->setText(1, "peri_first");
+        QCOMPARE((int)store.params().get("sim.tie_order"), 1);
+        // what the simulator does not use yet is marked, and the help of the selected row is shown
+        QTreeWidgetItem* arb = paramRow(tree, "csr.arbiter_policy");
+        QVERIFY(arb && arb->text(0).contains("not used yet"));
+        tree->setCurrentItem(row);
+        QVERIFY(help->text().contains("fetch") && help->text().contains("measure") == false);
+        QVERIFY(help->text().contains("on the FPGA"));
+        // only what was changed
+        auto* only = r.find<QCheckBox>("simparams", "paramsChangedOnly");
+        only->setChecked(true);
+        int visible = 0;
+        for (QTreeWidgetItemIterator it(tree); *it; ++it) if ((*it)->parent() && !(*it)->isHidden()) visible++;
+        QCOMPARE(visible, 2);                                                           // main.fetch_cycles and sim.tie_order
+        only->setChecked(false);
+        auto* filter = r.find<QLineEdit>("simparams", "paramsFilter");
+        filter->setText("i2c");
+        visible = 0;
+        for (QTreeWidgetItemIterator it(tree); *it; ++it) if ((*it)->parent() && !(*it)->isHidden()) { visible++; QVERIFY((*it)->text(0).contains("i2c", Qt::CaseInsensitive) || (*it)->toolTip(0).contains("i2c", Qt::CaseInsensitive) || (*it)->text(2).contains("i2c", Qt::CaseInsensitive)); }
+        QVERIFY(visible >= 4);
+        filter->clear();
+        // the file: Save As lists it in the project; loading it brings the same values back; Reset all goes back to the initial ones
+        std::string err;
+        QVERIFY(store.saveAs("/w/target.simparams", err));
+        QVERIFY(label->text().contains("target.simparams") && !label->text().contains("changed"));
+        QVERIFY(r.f.ws.project().simParams == "target.simparams");
+        r.find<QPushButton>("simparams", "paramsResetAll")->click();
+        QCOMPARE(row->text(1), QString("0"));
+        QVERIFY(label->text().contains("changed"));
+        std::vector<std::string> errs;
+        QVERIFY(store.load("/w/target.simparams", errs));
+        QCOMPARE(row->text(1), QString("3"));
+        QCOMPARE(row->text(4), QString("measured"));
+        QCOMPARE(row->text(5), QString("ILA run 3"));
+        QVERIFY(!label->text().contains("changed"));
+    }
+
+    void theParametersReachTheSimulatorOfTheDebugger() {
+        Rig r(kProg);
+        r.f.dbg.simParams().set("reset.boot_cycles", "500", *new std::string);
+        auto* apply = r.find<QPushButton>("simparams", "paramsApply");
+        QVERIFY(apply && !apply->isEnabled());                                             // nothing is running yet
+        r.w->debugAction("start")->trigger();
+        QVERIFY(r.until([&] { return r.f.dbg.session().view() != nullptr; }));
+        r.f.dbg.stepInto();
+        QVERIFY(r.until([&] { return r.f.dbg.session().view() && r.f.dbg.session().view()->instrs[0] >= 1; }));
+        QVERIFY2(r.f.dbg.session().view()->cycle >= 500, "the first instruction waits for the boot cycles");
+        QVERIFY(r.until([&] { return apply->isEnabled(); }));
+        // another value, applied to the running simulator: it starts again with it
+        r.f.dbg.simParams().set("reset.boot_cycles", "0", *new std::string);
+        apply->click();
+        QVERIFY(r.until([&] { return r.f.dbg.session().view() && r.f.dbg.session().view()->cycle == 0; }));
+        r.f.dbg.stepInto();
+        QVERIFY(r.until([&] { return r.f.dbg.session().view() && r.f.dbg.session().view()->instrs[0] >= 1; }));
+        QVERIFY(r.f.dbg.session().view()->cycle < 100);
+    }
+
+    void theExecutionViewShowsWhatMovesWhenAParameterChanges() {
+        Rig r(kProg);
+        auto* summary = r.find<QLabel>("execution", "executionSummary");
+        auto* table = r.find<QTableWidget>("execution", "executionTable");
+        auto* view = r.find<QWidget>("execution", "executionView");
+        auto* run = r.find<QPushButton>("execution", "executionRun");
+        auto* compare = r.find<QComboBox>("execution", "executionCompare");
+        auto* first = r.find<QPushButton>("execution", "executionFirst");
+        QVERIFY(summary && table && view && run && compare && first);
+        run->click();
+        QVERIFY2(summary->text().contains("Main: 4 instructions") || summary->text().contains("Main: 3 instructions"), qPrintable(summary->text()));
+        QVERIFY(summary->text().contains("not one cycle differs"));                       // the initial values against themselves
+        QCOMPARE(table->rowCount(), 0);
+        // one extra cycle per instruction: it is seen at once (the panel runs again by itself)
+        auto& store = r.f.dbg.simParams();
+        std::string err;
+        QVERIFY(store.set("main.fetch_cycles", "1", err));
+        QVERIFY2(r.until([&] { return summary->text().contains("shift up to"); }, 3000), qPrintable(summary->text()));
+        QVERIFY(summary->text().contains("Main") && summary->text().contains("first at instruction 2"));
+        QVERIFY(table->rowCount() >= 2 && table->item(0, 5)->text() == "+1" && table->item(1, 5)->text() == "+2");
+        QVERIFY(first->isEnabled());
+        // a smaller change on another parameter: a different set of rows
+        QVERIFY(store.set("csr.access_main", "3", err));
+        QVERIFY(r.until([&] { return summary->text().contains("shift up to") && table->rowCount() >= 2 && table->item(0, 5)->text() != "+1"; }, 3000));
+        // a saved run is the baseline of the next ones
+        auto* save = r.find<QPushButton>("execution", "executionSave");
+        save->click();
+        QCOMPARE(compare->currentIndex(), 1);
+        QVERIFY(r.until([&] { return summary->text().contains("not one cycle differs"); }, 3000));
+        QVERIFY(store.set("main.fetch_cycles", "2", err));
+        QVERIFY(r.until([&] { return summary->text().contains("shift up to"); }, 3000));
+        compare->setCurrentIndex(2);                                                    // no baseline: the run alone
+        QVERIFY(r.until([&] { return !summary->text().contains("Against the baseline") && table->rowCount() == 0; }, 3000));
+        compare->setCurrentIndex(0);
+        QVERIFY(r.until([&] { return summary->text().contains("Against the baseline"); }, 3000));
+        // it draws
+        view->resize(900, 360);
+        QApplication::processEvents();
+        const QImage img = view->grab().toImage();
+        QVERIFY(distinctColorsFree(img) > 10);
+        img.save(outDirFree() + "/execution_view.png");
+        table->selectRow(0);
+        QTest::mouseClick(table->viewport(), Qt::LeftButton, Qt::NoModifier, table->visualItemRect(table->item(0, 1)).center());
+        QApplication::processEvents();
+        view->grab().save(outDirFree() + "/execution_view_zoomed.png");
+    }
+
     void panelsReflectAndEditTheState() {
         Rig r(kProg);
         r.clickGutter(5);

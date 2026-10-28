@@ -157,6 +157,18 @@ const char* const* blockTextsForTranslation(int& count) {
         QT_TRANSLATE_NOOP("BlockDrawer", "Expressions"),
         QT_TRANSLATE_NOOP("BlockTitle", "cascade"),
         QT_TRANSLATE_NOOP("BlockTitle", "next block"),
+        QT_TRANSLATE_NOOP("SimParamGroup", "Instruction latency"),
+        QT_TRANSLATE_NOOP("SimParamGroup", "Clocks"),
+        QT_TRANSLATE_NOOP("SimParamGroup", "Frame timing"),
+        QT_TRANSLATE_NOOP("SimParamGroup", "Scheduling"),
+        QT_TRANSLATE_NOOP("SimParamGroup", "Decoders"),
+        QT_TRANSLATE_NOOP("SimParamGroup", "Events"),
+        QT_TRANSLATE_NOOP("SimParamGroup", "Timers"),
+        QT_TRANSLATE_NOOP("SimParamGroup", "I2C path"),
+        QT_TRANSLATE_NOOP("SimParamGroup", "CSR arbiter"),
+        QT_TRANSLATE_NOOP("SimParamGroup", "Data path"),
+        QT_TRANSLATE_NOOP("SimParamGroup", "Result slot"),
+        QT_TRANSLATE_NOOP("SimParamGroup", "Status flags"),
     };
     count = (int)(sizeof(texts) / sizeof(texts[0]));
     return texts;

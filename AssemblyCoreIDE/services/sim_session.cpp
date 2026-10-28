@@ -144,7 +144,7 @@ struct SimSession::Worker {
         return s;
     }
 
-    void doLoad(SnapshotPtr program, const std::string& env, const Profile& profile) {
+    void doLoad(SnapshotPtr program, const std::string& env, const Profile& profile, const SimParams& params) {
         sim.reset();
         sink.reset();
         ring.clear();
@@ -155,6 +155,7 @@ struct SimSession::Worker {
         SimConfig cfg;
         cfg.profile = profile;
         cfg.env = env;
+        cfg.params = params;
         if (!program || !program->result.ok) {
             failed = true;
             SimSession* o = owner;
@@ -289,11 +290,11 @@ void SimSession::loop() {
 }
 
 // ---- owner-thread API ---------------------------------------------------------------------------------------------------------------
-void SimSession::load(SnapshotPtr program, const std::string& env, const Profile& profile) {
+void SimSession::load(SnapshotPtr program, const std::string& env, const Profile& profile, const SimParams& params) {
     program_ = program;
     view_.reset();
     state_ = SimState::Paused;
-    post([program, env, profile](Worker& w) { w.doLoad(program, env, profile); });
+    post([program, env, profile, params](Worker& w) { w.doLoad(program, env, profile, params); });
 }
 
 void SimSession::unload() {

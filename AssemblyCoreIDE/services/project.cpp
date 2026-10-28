@@ -48,6 +48,7 @@ bool Project::parse(const std::string& text, Project& p, std::vector<std::string
         else if (k == "profile") p.profile = v;
         else if (k == "environment") p.environment = v;
         else if (k == "hardware") p.hardware = v;
+        else if (k == "simparams") p.simParams = v;
         else if (k == "blocks" || k == "block") p.blocks.push_back(v);                    // ("block" was written by an earlier build: still read)
         else if (k == "scenario") p.scenarios.push_back(v);
         else if (k == "call_model") {
@@ -79,6 +80,7 @@ std::string Project::serialize() const {
     if (!profile.empty()) o << "profile = " << profile << "\n";
     if (!environment.empty()) o << "environment = " << environment << "\n";
     if (!hardware.empty()) o << "hardware = " << hardware << "\n";
+    if (!simParams.empty()) o << "simparams = " << simParams << "\n";
     for (auto& s : blocks) o << "blocks = " << s << "\n";
     for (auto& s : scenarios) o << "scenario = " << s << "\n";
     o << "call_model = " << (callModel == asmcore::CallModel::SoftRet ? "softret" : "inline") << "\n";

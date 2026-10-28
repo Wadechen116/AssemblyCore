@@ -48,6 +48,13 @@ add_library(asmcore STATIC
   core/src/sim/scenario.cpp)
 target_include_directories(asmcore PUBLIC core/include)
 
+# Writes docs/SIM_PARAMS.md from the parameter catalog:  gen_sim_params_doc > docs/SIM_PARAMS.md
+add_executable(gen_sim_params_doc cli/gen_sim_params_doc.cpp)
+target_link_libraries(gen_sim_params_doc PRIVATE asmcore)
+if(MSVC)
+  target_compile_options(gen_sim_params_doc PRIVATE /utf-8)      # the text it writes is Chinese
+endif()
+
 # Command-line assembler.
 add_executable(asmc cli/main.cpp)
 target_link_libraries(asmc PRIVATE asmcore)

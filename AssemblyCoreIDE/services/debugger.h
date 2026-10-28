@@ -6,6 +6,7 @@
 //     inline CALL expanded at three places becomes three address breakpoints.
 //   * The location of each sequencer is its pc mapped back to a source line.
 //   * Breakpoints survive a rebuild: after a restart they are resolved again against the new program.
+#include "sim_params_store.h"
 #include <functional>
 #include <set>
 
@@ -44,6 +45,10 @@ public:
     // Starts debugging the newest build. Reads the environment file and the profile of the project. False (with `why`) if there is nothing
     // good to debug. The simulator starts asynchronously: wait for SimSession::loaded.
     bool start(std::string& why);
+    // What a simulator for the newest build is made of: the program, the environment file text and the profile of the project (the parameters are
+    // simParams().params()). False with `why` if there is nothing good to simulate. Used by start() and by the comparison runs.
+    bool inputs(SnapshotPtr& program, std::string& env, asmcore::Profile& profile, std::string& why);
+    SimParamsStore& simParams() { return params_; }
     void stop();
     bool active() const { return session_.state() != SimState::Empty && session_.program() != nullptr; }
     bool running() const { return session_.state() == SimState::Running; }
@@ -100,6 +105,7 @@ private:
     void pushBreakpoints();
     void onUpdate(const SimUpdate& u);
 
+    SimParamsStore params_;
     SimSession& session_;
     Workspace& ws_;
     Settings* settings_;

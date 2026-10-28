@@ -93,7 +93,7 @@ public:
 
     // ---- owner-thread API (all asynchronous)
     // Starts a simulator for a built program. The program snapshot stays referenced: it is what the pcs of every view refer to.
-    void load(SnapshotPtr program, const std::string& environmentText, const asmcore::Profile& profile);
+    void load(SnapshotPtr program, const std::string& environmentText, const asmcore::Profile& profile, const asmcore::SimParams& params = asmcore::SimParams());
     void unload();
     void run(const RunSpec& spec = RunSpec());
     void pause();

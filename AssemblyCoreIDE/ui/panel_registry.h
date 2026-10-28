@@ -32,6 +32,7 @@ private:
 
 // The panels that ship with the IDE.
 void registerBuiltinPanels(PanelRegistry& r);     // also registers the debugging panels
+void registerSimPanels(PanelRegistry& r);         // the simulator parameters and the execution view (sim_panels.cpp)
 void registerDebugPanels(PanelRegistry& r);       // state, memory, signals, CSRs, watch, call stack, breakpoints, events (debug_panels.cpp)
 
 }  // namespace acide
