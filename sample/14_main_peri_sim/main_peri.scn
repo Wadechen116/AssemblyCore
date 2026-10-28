@@ -1,0 +1,7 @@
+; Scenario for main_peri.asm + main_peri_env.cfg: Peri's timer fires, Peri reads and publishes, Main commits inside the blanking window.
+run until slot.valid max 100000
+expect slot.service_id == 1 :: Peri published SID_IMU_GYRO_RAW
+expect slot[0] == 0 && slot[1] == 10 :: gyro X raw = 10, high byte first
+run until csr[0x120] == 10 max 100000
+expect csr[0x120] == 10 :: Main committed the corrected X to the CSR
+expect peri.error == 0

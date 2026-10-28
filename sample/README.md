@@ -25,6 +25,7 @@ ctest -R sample_projects                         # 在 CMake 建置目錄中（�
 | `09_profile_artifacts` | 非預設 **目標 profile**（SRAM 配置、對齊、DeviceMap 排列、ALU 碼重映射）與產物 | 成功（兩種模型） |
 | `11_hardware_designer` | **硬體設計器**：CSR／裝置／服務／常數都由 `board.achw` 以表單定義，程式裡沒有任何定義；即時驗證；接手既有專案 | 成功，零警告 |
 | `13_block_editor` | **積木編輯器**練習：灰色（Raw）積木、loop、浮動積木、產生檔唯讀；逐步操作在它的 README | 成功，零警告 |
+| `14_main_peri_sim` | **Main + Peri 兩段程式一起跑**：Peri 由自己的 Timer 觸發、I2C 讀感測器、發佈到結果槽；Main 取用後等 Frame Timing 消隱視窗才提交；附 `.simparams`，給「模擬器」頁面調參數看差異 | 成功，零警告 |
 | `12_block_files` | **積木 B0**：`.acblk` 檔（程式的積木模型）、`asmblk` 轉換、文字⇄積木往返保證（圖形編輯器在 B1） | 成功，零警告 |
 | `10_multi_file` | 專案含多個來源檔（`shared.inc` + Main 檔 + Peri 檔）：專案樹、跨檔重新命名／找參照／跳轉 | 成功，零警告 |
 

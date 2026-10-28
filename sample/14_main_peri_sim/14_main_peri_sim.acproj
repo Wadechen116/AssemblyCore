@@ -1,0 +1,11 @@
+# AssemblyCoreIDE project
+name = 14_main_peri_sim
+source = main_peri.asm
+include_dir = ../common
+environment = main_peri_env.cfg
+scenario = main_peri.scn
+simparams = main_peri.simparams
+call_model = inline
+dataflow = warn
+output_dir = out
+sample_expect = ok

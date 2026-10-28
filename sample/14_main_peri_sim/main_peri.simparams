@@ -1,0 +1,9 @@
+; Parameters for main_peri.asm: only what differs from the initial values. Placeholders to play with on the Simulator page.
+[params]
+timer.peri.clock_div = 2
+timer.peri.clock_div.note = placeholder: Peri's trigger timer runs at half the ISA clock
+timer.main.clock_div = 2
+i2ch.overhead = 4
+i2ch.overhead.note = placeholder, to be measured
+frame.wcet_pgl = 120
+frame.wcet_pgl.note = placeholder: the commit needs 120 cycles before the blanking window ends
