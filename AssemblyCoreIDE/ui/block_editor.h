@@ -146,6 +146,10 @@ private:
 public:
     // Scrolls to the block that produced `line` of the generated file (a debugger stop): true if there is one and the page shows blocks.
     bool revealGeneratedLine(int line);
+    // The repairs an auto fix made in the text this program generates, made in the BLOCKS instead (as one undo step): every word that was exchanged is a field of
+    // the block that produced the line (or of a component plugged into it); the closing jump becomes a jump block at the end of the domain's code. Steps that
+    // cannot be put into the blocks are returned in `notApplied`. The number of steps applied.
+    int applyFixSteps(const std::vector<FixStep>& steps, std::vector<FixStep>& notApplied);
 private:
     void applyBuildProblems();                               // the assembler's messages about the generated file become badges on the blocks that produced the lines
     SnapshotPtr snap_;

@@ -922,6 +922,104 @@ private slots:
         QCOMPARE(cycle(), frozen);
     }
 
+    void autoDebugFindsWhatIsWrongAndShowsWhere() {
+        Rig r(".main\nstart: BR.COND PERI_RESULT_VALID, take\n JMP start\ntake: JMP start\n");
+        QAction* act = r.w->findChild<QAction*>("autoDebugAction");
+        QVERIFY(act);
+        QDockWidget* dock = r.w->dock("autodebug");
+        QVERIFY(dock);
+        auto* panel = dock->widget();
+        auto* list = panel->findChild<QTreeWidget*>("autoDebugList");
+        auto* summary = panel->findChild<QLabel*>("autoDebugSummary");
+        auto* detail = panel->findChild<QLabel*>("autoDebugDetail");
+        auto* spin = panel->findChild<QSpinBox*>("autoDebugCycles");
+        QVERIFY(list && summary && detail && spin);
+        spin->setValue(60000);
+        act->trigger();                                                                          // Debug > Auto Debug: the panel opens and runs
+        QVERIFY(!dock->isHidden());
+        QVERIFY2(list->topLevelItemCount() >= 1, qPrintable(summary->text()));
+        QTreeWidgetItem* stuck = nullptr;
+        for (int i = 0; i < list->topLevelItemCount(); i++) if (list->topLevelItem(i)->text(3).contains("waiting in a loop")) stuck = list->topLevelItem(i);
+        QVERIFY2(stuck, qPrintable(summary->text()));
+        QCOMPARE(stuck->text(0), QString("Warning"));
+        QVERIFY(stuck->text(2).startsWith("Main") && stuck->text(2).contains("main.asm:2"));
+        QVERIFY(summary->text().contains("1 warning"));
+        list->setCurrentItem(stuck);
+        QVERIFY2(detail->text().contains("PERI_RESULT_VALID"), "the detail says what Main waits for");
+        // show it: the editor goes to the line of the BR.COND
+        auto* show = panel->findChild<QPushButton*>("autoDebugShow");
+        QVERIFY(show && show->isEnabled());
+        show->click();
+        auto* ed = qobject_cast<CodeEditor*>(r.w->tabs()->currentWidget());
+        QVERIFY(ed);
+        QCOMPARE(ed->textCursor().blockNumber() + 1, 2);
+        // "Debug to here" needs a finding with a cycle (a wait since cycle 0 has none): a result slot overrun has
+        r.f.ws.setText("/w/main.asm", ".service S = 1, len=1\n.main\nm: JMP m\n.peri\np: EXEC_PUB service=S, src=0, len=1\n JMP p\n");
+        QVERIFY(r.waitBuild());
+        auto* look = panel->findChild<QPushButton*>("autoDebugRun");
+        look->click();
+        QTreeWidgetItem* over = nullptr;
+        for (int i = 0; i < list->topLevelItemCount(); i++) if (list->topLevelItem(i)->text(3).contains("Result slot overrun")) over = list->topLevelItem(i);
+        QVERIFY2(over, qPrintable(summary->text()));
+        list->setCurrentItem(over);
+        auto* replay = panel->findChild<QPushButton*>("autoDebugReplay");
+        QVERIFY(replay && !replay->isEnabled());                                               // no debug session to run in
+        std::string err;
+        r.f.dbg.simParams().set("sim.speed", "0", err);
+        r.w->debugAction("start")->trigger();
+        QVERIFY(r.until([&] { return r.f.dbg.session().view() != nullptr; }));
+        QVERIFY(r.until([&] { return replay->isEnabled(); }));
+        const auto at = (asmcore::sim::Cycle)over->text(1).toULongLong();
+        QVERIFY(at > 0);
+        QVERIFY(r.until([&] { return r.f.dbg.running(); }));                                 // F5 runs on its own
+        r.stops = 0;
+        replay->click();                                                                      // (the debug session is running: it is stopped first, then run to the cycle)
+        QVERIFY(r.until([&] { return !r.f.dbg.running() && r.f.dbg.session().view() && (qulonglong)r.f.dbg.session().view()->cycle == (qulonglong)at; }, 8000));      // (the pause that comes first is a stop too: wait for the cycle)
+        QCOMPARE((qulonglong)r.f.dbg.session().view()->cycle, (qulonglong)at);
+        // a program that is fine says so
+        r.f.ws.setText("/w/main.asm", ".csr MARK = 0x50\n.main\ns: EXEC_CSR WRITE8 MARK, 7\nh: JMP h\n");
+        QVERIFY(r.waitBuild());
+        r.f.dbg.stop();
+        look->click();
+        QVERIFY2(summary->text().contains("nothing wrong"), qPrintable(summary->text()));
+        QCOMPARE(list->topLevelItemCount(), 0);
+    }
+
+    void findAndFixMendsATextProgramInOneUndoStep() {
+        const std::string broken = ".equ LIMIT = 4\n.main\nstart: MVO CONST(LIMT,1) -> MAIN_SCRATCHPAD[0..0]\n BR.COND PERI_RESULT_VALD, strat\n";
+        Rig r(broken);
+        r.w->openFile("/w/main.asm");
+        auto* ed = qobject_cast<CodeEditor*>(r.w->tabs()->currentWidget());
+        QVERIFY(ed);
+        QVERIFY(!r.f.ctx.snapshot->result.ok);
+        auto* panel = r.w->dock("autodebug")->widget();
+        auto* list = panel->findChild<QTreeWidget*>("autoDebugList");
+        auto* summary = panel->findChild<QLabel*>("autoDebugSummary");
+        // looking changes nothing
+        panel->findChild<QPushButton*>("autoDebugRun")->click();
+        QCOMPARE(ed->toPlainText(), QString::fromStdString(broken));
+        int canFix = 0;
+        for (int i = 0; i < list->topLevelItemCount(); i++) canFix += list->topLevelItem(i)->text(0) == "Can fix";
+        QVERIFY2(canFix >= 3, qPrintable(summary->text()));
+        QVERIFY2(summary->text().contains("nothing was changed"), qPrintable(summary->text()));
+        // fixing does
+        panel->findChild<QPushButton*>("autoDebugFix")->click();
+        const QString mended = ed->toPlainText();
+        QVERIFY2(mended.contains("MOV CONST(LIMIT,1)") && mended.contains("PERI_RESULT_VALID, start") && mended.contains("JMP start"), qPrintable(mended));
+        int fixed = 0;
+        for (int i = 0; i < list->topLevelItemCount(); i++) fixed += list->topLevelItem(i)->text(0) == "Fixed";
+        QVERIFY2(fixed >= 4, qPrintable(summary->text()));
+        QVERIFY2(summary->text().contains("Fixed") && summary->text().contains("Ran"), qPrintable(summary->text()));          // and the repaired program was run
+        QVERIFY(r.waitBuild());
+        QVERIFY(r.f.ctx.snapshot->result.ok);
+        // one Ctrl+Z gives all of it back
+        ed->undo();
+        QCOMPARE(ed->toPlainText(), QString::fromStdString(broken));
+        // the Debug menu does it in one go
+        r.w->findChild<QAction*>("autoDebugAction")->trigger();
+        QVERIFY(ed->toPlainText().contains("JMP start"));
+    }
+
     void theExecutionViewShowsWhatMovesWhenAParameterChanges() {
         Rig r(kProg);
         auto* summary = r.sf<QLabel>("executionSummary");
@@ -1900,6 +1998,31 @@ private slots:
         r.f.dbg.stop();
         for (int i = 0; i < 300 && !sc().execution().empty(); i++) QTest::qWait(10);
         QVERIFY(sc().execution().empty());
+    }
+
+    void findAndFixMendsTheBlocksOfAProgram() {
+        Rig r(".main\nstart: MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]\n JMP strat\n", false);
+        r.f.fs->write("/w/p.acproj", "name = p\nsource = prog.generated.asm\nblocks = prog.acblk\n");
+        r.f.fs->write("/w/prog.generated.asm", ".main\nh: JMP h\n");
+        QVERIFY(r.w->openProject("/w/p.acproj"));
+        r.w->openFile("/w/prog.acblk");
+        r.ed = qobject_cast<BlockEditor*>(r.w->tabs()->currentWidget());
+        QVERIFY(r.ed);
+        auto& s = r.ed->session();
+        r.ed->scene().setAnimationsEnabled(false);
+        std::string jmp;
+        for (const auto& b : s.document().sections[0].blocks) if (b.type.find("jmp") != std::string::npos) jmp = b.id;
+        QVERIFY(!jmp.empty());
+        QCOMPARE(QString::fromStdString(s.document().find(jmp)->get("target")), QString("strat"));
+        QVERIFY(s.apply([&](asmcore::blocks::Editor& e) { return e.setField(jmp, "target", "start2"); }).ok);       // (an edit: the generated text goes into the workspace)
+        QVERIFY(s.apply([&](asmcore::blocks::Editor& e) { return e.setField(jmp, "target", "strat"); }).ok);
+        r.f.ctx.workspace.setText(r.ed->generatedPath(), s.generated().text);
+        auto* panel = r.w->dock("autodebug")->widget();
+        panel->findChild<QPushButton*>("autoDebugFix")->click();
+        QCOMPARE(QString::fromStdString(s.document().find(jmp)->get("target")), QString("start"));      // the blocks were mended, not the generated text
+        QVERIFY(s.generated().text.find("JMP start") != std::string::npos);
+        QVERIFY(s.undo());                                                                                // all of it is one step
+        QCOMPARE(QString::fromStdString(s.document().find(jmp)->get("target")), QString("strat"));
     }
 
     void aGeneratedFileIsReadOnlyAndPointsToItsBlocks() {

@@ -9,6 +9,11 @@
 
 #include "artifacts.h"
 #include "block_link.h"
+#include <cstdlib>
+#include <fstream>
+#include <sstream>
+#include "auto_debug.h"
+#include "auto_fix.h"
 #include "sim_compare.h"
 #include "sim_params_store.h"
 #include "build.h"
@@ -987,6 +992,193 @@ static void t_live_run() {
     }
 }
 
+static void t_auto_debug() {
+    std::printf("\nAuto debug\n");
+    using namespace asmcore;
+    auto run = [&](const std::string& src, const std::string& env, const SimParams& p, asmcore::sim::Cycle cycles = 60000) {
+        SnapshotPtr prog = buildSource(src);
+        AutoDebugReport r;
+        if (!prog->result.ok) { r.error = "build: " + prog->result.diagnosticsText(); return r; }
+        sim::SimConfig cfg;
+        cfg.env = env;
+        cfg.params = p;
+        AutoDebugOptions o;
+        o.maxCycles = cycles;
+        return autoDebug(prog->result, cfg, o);
+    };
+    auto has = [](const AutoDebugReport& r, const char* code) { for (const AutoFinding& f : r.findings) if (f.code == code) return true; return false; };
+    auto get = [](const AutoDebugReport& r, const char* code) -> const AutoFinding* { for (const AutoFinding& f : r.findings) if (f.code == code) return &f; return nullptr; };
+    SimParams none;
+    std::string err;
+    {   // a program that is fine
+        AutoDebugReport r = run(kFinite, "", none);
+        check(r.ok() && r.findings.empty(), "a program with nothing wrong has no findings", r.error + (r.findings.empty() ? "" : r.findings[0].code));
+    }
+    {   // Main waits for a result that never comes
+        AutoDebugReport r = run(".main\nstart: BR.COND PERI_RESULT_VALID, take\n JMP start\ntake: JMP start\n", "", none);
+        const AutoFinding* f = get(r, "AD-STUCK");
+        check(f && f->domain == 0 && f->sev == AutoFinding::Warning, "a wait for something that never comes is found: Main is stuck", r.error);
+        check(f && f->detail.find("PERI_RESULT_VALID") != std::string::npos, "...and it says what Main waits for");
+        check(f && f->line == 2 && f->file.size() > 0, "...and where (the BR.COND line)", f ? std::to_string(f->line) : "");
+        check(f && f->at < 200, "...since when", f ? std::to_string(f->at) : "");
+        check(has(r, "AD-UNREACHED"), "the code behind the wait never ran: a note");
+    }
+    {   // a loop that does not wait for anything is not stuck
+        AutoDebugReport r = run(kEndless, "", none);
+        check(!has(r, "AD-STUCK"), "an endless loop that works (no conditional branch) is not reported as stuck");
+    }
+    {   // Peri publishes and Main never takes: slot overrun and results untaken
+        AutoDebugReport r = run(".service S = 1, len=1\n.main\nm: JMP m\n.peri\np: EXEC_PUB service=S, src=0, len=1\n JMP p\n", "", none, 5000);
+        check(has(r, "AD-OVERRUN") && get(r, "AD-OVERRUN")->sev == AutoFinding::Error, "Peri publishing over a result nobody took is an overrun (an error)", r.error);
+        check(get(r, "AD-OVERRUN") && get(r, "AD-OVERRUN")->count > 1 && get(r, "AD-OVERRUN")->line == 5, "...with how often and the line of the EXEC_PUB", get(r, "AD-OVERRUN") ? std::to_string(get(r, "AD-OVERRUN")->count) + " line " + std::to_string(get(r, "AD-OVERRUN")->line) : "none");
+        check(has(r, "AD-UNTAKEN"), "...and the results Main never takes");
+        check(r.publishes > 0 && r.consumes == 0, "the counts are in the report");
+    }
+    {   // a fault
+        SimParams p;
+        p.set("sim.unmapped_csr", "fault", err);
+        AutoDebugReport r = run(kFinite, "", p);
+        const AutoFinding* f = get(r, "AD-FAULT");
+        check(f && f->sev == AutoFinding::Error && f->domain == 0 && f->line == 3, "a fault is an error at the instruction that faulted", r.error + (r.findings.empty() ? "" : r.findings[0].code));
+        check(r.findings.size() && r.findings[0].code == "AD-FAULT", "errors come first");
+    }
+    {   // the commit that cannot fit
+        SimParams p;
+        p.set("frame.wcet_pgl", "1000", err);
+        AutoDebugReport r = run(kFinite, "[timing]\nframe_cycles = 4000\nvblank_start = 3000\nvblank_len = 900\n", p);
+        const AutoFinding* f = get(r, "AD-WCET");
+        check(f && f->sev == AutoFinding::Error && f->detail.find("1000") != std::string::npos && f->detail.find("900") != std::string::npos, "a WCET longer than the blanking window is an error with both numbers", r.error);
+        p.set("frame.wcet_pgl", "120", err);
+        check(!has(run(kFinite, "[timing]\nframe_cycles = 4000\nvblank_start = 3000\nvblank_len = 900\n", p), "AD-WCET"), "...and 120 fits");
+    }
+    {   // an I2C device that is not there
+        AutoDebugReport r = run(".devmap 0, I2C, 0x68, DEV\n.main\nm: JMP m\n.peri\np: EXEC_XFER READ dev=DEV, len=1, ptr=0, ext=[0x10]\n JMP p\n", "", none, 3000);
+        check(has(r, "AD-NACK") || !r.ok(), "a device that does not answer is reported", r.error);
+    }
+    std::string sampleDir;
+#ifdef _MSC_VER
+    {
+        char* v = nullptr;
+        size_t n = 0;
+        if (_dupenv_s(&v, &n, "ACIDE_SAMPLE_DIR") == 0 && v) { sampleDir = v; free(v); }
+    }
+#else
+    if (const char* v = std::getenv("ACIDE_SAMPLE_DIR")) sampleDir = v;
+#endif
+    if (!sampleDir.empty()) {
+        const char* dir = sampleDir.c_str();   // (the shipped example, when the tests are told where it is)
+        auto slurp = [](const std::string& path) { std::ifstream f(path, std::ios::binary); std::stringstream ss; ss << f.rdbuf(); return ss.str(); };
+        const std::string d = std::string(dir) + "/14_main_peri_sim/";
+        auto fs = std::make_shared<MemoryFileSystem>();
+        fs->write("/p/p.acproj", "name = p\nsource = main_peri.asm\ninclude_dir = common\n");
+        fs->write("/p/main_peri.asm", slurp(d + "main_peri.asm"));
+        fs->write("/p/common/defs.inc", slurp(std::string(dir) + "/common/defs.inc"));
+        Workspace ws(fs);
+        std::vector<std::string> errs;
+        ws.openProject("/p/p.acproj", errs);
+        auto lang = asmcore::lang::Language::defaults();
+        SnapshotPtr prog = buildNow(ws.snapshot(), lang);
+        check(prog->result.ok, "the shipped example builds", prog->result.diagnosticsText());
+        sim::SimConfig cfg;
+        cfg.env = slurp(d + "main_peri_env.cfg");
+        AutoDebugOptions o;
+        AutoDebugReport good = autoDebug(prog->result, cfg, o);
+        for (const AutoFinding& f : good.findings) std::printf("        sample14: %s %s line %d at %llu\n", f.code.c_str(), f.title.c_str(), f.line, (unsigned long long)f.at);
+        check(good.ok() && good.count(AutoFinding::Error) == 0, "sample 14 with its own parameters has no error", good.error);
+        cfg.params.set("frame.wcet_pgl", "1000", err);
+        AutoDebugReport bad = autoDebug(prog->result, cfg, o);
+        for (const AutoFinding& f : bad.findings) std::printf("        sample14/wcet1000: %s %s line %d at %llu\n", f.code.c_str(), f.title.c_str(), f.line, (unsigned long long)f.at);
+        check(has(bad, "AD-WCET") && has(bad, "AD-STUCK"), "...and with a WCET of 1000 it names the cause (AD-WCET) and the symptom (Main stuck)");
+    }
+    {   // an environment with errors
+        AutoDebugReport r = run(kFinite, "[nonsense\n", none);
+        check(!r.ok() && !r.error.empty(), "an environment file with errors is an error of the report, not a crash");
+    }
+}
+
+static void t_auto_fix() {
+    std::printf("\nAuto fix\n");
+    auto fixIt = [&](const std::string& src, bool wordsOnly = false) {
+        auto fs = std::make_shared<MemoryFileSystem>();
+        fs->write("/p/p.acproj", "name = p\nsource = a.asm\n");
+        fs->write("/p/a.asm", src);
+        Workspace ws(fs);
+        std::vector<std::string> errs;
+        ws.openProject("/p/p.acproj", errs);
+        auto lang = asmcore::lang::Language::defaults();
+        AutoFixOptions o;
+        o.wordsOnly = wordsOnly;
+        return autoFix(ws.snapshot(), lang, o);
+    };
+    auto text = [](const AutoFixResult& r) { auto it = r.texts.find("/p/a.asm"); return it == r.texts.end() ? std::string("<unchanged>") : it->second; };
+    auto has = [](const std::string& hay, const std::string& needle) { return hay.find(needle) != std::string::npos; };
+    check(closestWord("MVO", {"MOV", "ALU", "JMP", "EXEC_CSR"}) == "MOV", "a swapped pair of letters finds its word");
+    check(closestWord("PERI_RESULT_VALD", {"PERI_RESULT_VALID", "PERI_RESULT_META"}) == "PERI_RESULT_VALID", "a missing letter finds its word");
+    check(closestWord("XYZ", {"MOV", "ALU"}).empty(), "nothing close: no guess");
+    check(closestWord("JM", {"JMP", "JMN"}).empty(), "two equally close: no guess");
+    {
+        AutoFixResult r = fixIt(kFinite);
+        check(r.clean() && r.steps.empty() && r.texts.empty(), "a program without errors is left alone");
+    }
+    {
+        AutoFixResult r = fixIt(".main\ns: MVO CONST(1,1) -> MAIN_SCRATCHPAD[0..0]\n JMP s\n");
+        check(r.clean() && has(text(r), "MOV CONST(1,1)") && r.steps.size() == 1 && r.steps[0].code == "E101" && r.steps[0].line == 2, "a misspelt instruction becomes the closest one", r.steps.empty() ? "no step" : r.steps[0].what);
+        check(r.steps.size() == 1 && r.steps[0].words.size() == 1 && r.steps[0].words[0].first == "MVO" && r.steps[0].words[0].second == "MOV", "...and the step says which word became which (for blocks)");
+    }
+    {
+        AutoFixResult r = fixIt(".equ LIMIT = 4\n.main\ns: MOV CONST(LIMT,1) -> MAIN_SCRATCHPAD[0..0]\n JMP s\n");
+        check(r.clean() && has(text(r), "CONST(LIMIT,1)"), "an undefined symbol becomes the defined one that is closest", r.remaining.empty() ? "" : r.remaining[0].msg);
+    }
+    {
+        AutoFixResult r = fixIt(".main\nstart: MOV CONST(1,1) -> MAIN_SCRATCHPAD[0..0]\n JMP strat\n");
+        check(r.clean() && has(text(r), "JMP start"), "an undefined branch target becomes the label that is closest");
+    }
+    {
+        AutoFixResult r = fixIt(".main\ns: BR.COND PERI_RESULT_VALD, s\n JMP s\n");
+        check(r.clean() && has(text(r), "PERI_RESULT_VALID"), "an unknown branch condition becomes the closest condition", r.remaining.empty() ? "" : r.remaining[0].msg);
+    }
+    {
+        AutoFixResult r = fixIt(".peri\ns: EXEC_PUB service=0, src=0, len=2\n JMP s\n.main\nm: JMP m\n");
+        check(has(text(r), "service=1"), "a service id of 0 becomes the nearest legal one (1)", text(r));
+    }
+    {
+        AutoFixResult r = fixIt(".main\ns: MOV CONST(1,2) -> MAIN_SCRATCHPAD[30..31]\n MOV CONST(5,2) -> MAIN_SCRATCHPAD[31..32]\n JMP s\n");
+        check(has(text(r), "[30..31]") && has(text(r), "[30..31]\n JMP") , "a scratchpad range that runs past the end slides back to fit", text(r));
+    }
+    {
+        AutoFixResult r = fixIt(".csr X = 0x1230\n.main\ns: EXEC_CSR WRITE8 X, 1\n JMP s\n");
+        check(r.clean() && has(text(r), "0x230"), "a CSR address wider than 12 bits is cut to 12", text(r));
+    }
+    {
+        AutoFixResult r = fixIt(".csr X = 0x10\n.main\ns: EXEC_CSR WRITE_BUF X, len=1, ptr=0\n JMP s\n");
+        check(has(text(r), "WRITE_SP") && !has(text(r), "WRITE_BUF"), "WRITE_BUF is renamed WRITE_SP", text(r));
+    }
+    {
+        AutoFixResult r = fixIt(".main\ns: MOV CONST(5,2) -> ALU_OPA\n MOV CONST(3,2) -> ALU_OPB\n ALU ADD unsigned\n JMP s\n");
+        check(r.clean(), "a constant moved straight into the ALU goes through the scratchpad: the build is clean", r.remaining.empty() ? "" : r.remaining[0].msg);
+        check(has(text(r), "MAIN_SCRATCHPAD[30..31] -> ALU_OPA") && has(text(r), "MAIN_SCRATCHPAD[28..29] -> ALU_OPB"), "...through a free pair each, from the top of the scratchpad", text(r));
+        check(has(text(r), "s: MOV CONST(5,2) -> MAIN_SCRATCHPAD[30..31]\n MOV MAIN_SCRATCHPAD[30..31] -> ALU_OPA"), "...the label stays on the first of the two lines", text(r));
+    }
+    {
+        AutoFixResult r = fixIt(".main\ns: MOV CONST(1,1) -> MAIN_SCRATCHPAD[0..0]\n");
+        check(r.clean() && has(text(r), "JMP s"), "code that runs off its end is closed with a jump to the first label", text(r));
+        AutoFixResult w = fixIt(".main\ns: MOV CONST(1,1) -> MAIN_SCRATCHPAD[0..0]\n", true);
+        check(w.clean() && w.steps.size() == 1 && w.steps[0].closingJump && w.steps[0].domain == "main" && w.steps[0].label == "s", "...for blocks the step says domain and target instead");
+    }
+    {
+        AutoFixResult r = fixIt(".main\ns: ALU AND signed\n JMP s\n");
+        check(has(text(r), "ALU AND\n") && !has(text(r), "signed"), "signed on a LOGIC operation is dropped", text(r));
+    }
+    {   // several mistakes at once, and the ones that need a decision stay
+        AutoFixResult r = fixIt(".equ LIMIT = 4\n.main\nstart: MVO CONST(LIMT,1) -> MAIN_SCRATCHPAD[0..0]\n BR.COND PERI_RESULT_VALD, strat\n");
+        check(r.clean() && r.steps.size() >= 4 && has(text(r), "MOV CONST(LIMIT,1)") && has(text(r), "PERI_RESULT_VALID, start") && has(text(r), "JMP start"), "a program with a typo in the instruction, the symbol, the condition and the label, and no closing jump: all mended together", text(r) + (r.remaining.empty() ? "" : r.remaining[0].msg));
+    }
+    {
+        AutoFixResult r = fixIt(".main\ns: XQZWV CONST(1,1)\n JMP s\n");
+        check(!r.clean() && r.remaining.size() >= 1 && r.texts.empty(), "what has no sure repair is left as it is, with its diagnostic");
+    }
+}
+
 int main() {
     t_realfs();
     t_paths();
@@ -1004,6 +1196,8 @@ int main() {
     t_editing();
     t_session();
     t_live_run();
+    t_auto_debug();
+    t_auto_fix();
     t_debugger();
     std::printf("\n%s  %d passed, %d failed\n", g_fail ? "FAILED" : "OK    ", g_pass, g_fail);
     return g_fail ? 1 : 0;

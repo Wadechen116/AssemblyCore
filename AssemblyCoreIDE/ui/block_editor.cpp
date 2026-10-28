@@ -338,6 +338,52 @@ void BlockEditor::refreshExecution() {
     scene_->setExecution(tint);
 }
 
+int BlockEditor::applyFixSteps(const std::vector<FixStep>& steps, std::vector<FixStep>& notApplied) {
+    using namespace asmcore::blocks;
+    int applied = 0;
+    (void)session_.generated();                                          // the lines of the steps are those of THIS text: keep it while the blocks change
+    auto lower = [](std::string s) { for (char& c : s) c = (char)std::tolower((unsigned char)c); return s; };
+    // the fields of a block and of the components plugged into it (not of the statements inside a container: those are other lines)
+    std::function<bool(const Block&, const std::string&, std::string&, std::string&)> findField = [&](const Block& b, const std::string& word, std::string& id, std::string& name) {
+        for (const auto& f : b.fields) if (lower(f.second) == lower(word)) { id = b.id; name = f.first; return true; }
+        for (const auto& v : b.values) for (const Block& c : v.second) if (findField(c, word, id, name)) return true;
+        return false;
+    };
+    session_.apply([&](Editor& e) -> Outcome {
+        e.beginGroup("autofix");
+        for (const FixStep& s : steps) {
+            if (s.closingJump) {
+                size_t section = (size_t)-1;
+                for (size_t i : programOrder(e.document())) if (e.document().sections[i].domain == s.domain) section = i;
+                if (section == (size_t)-1 || s.label.empty()) { notApplied.push_back(s); continue; }
+                Block j = e.document().make("jmp");
+                j.set("target", s.label);
+                Where w;
+                w.section = section;
+                if (e.insertBlocks(w, {j}).ok) applied++; else notApplied.push_back(s);
+                continue;
+            }
+            const std::string host = session_.blockAtLine(s.line);
+            const Block* hb = host.empty() ? nullptr : e.document().find(host);
+            std::vector<std::tuple<std::string, std::string, std::string>> plan;          // block, field, new value
+            bool all = hb && !s.words.empty();
+            for (size_t i = 0; all && i < s.words.size(); i++) {
+                std::string id, name;
+                if (!s.words[i].second.empty() && findField(*hb, s.words[i].first, id, name)) plan.push_back({id, name, s.words[i].second});
+                else all = false;
+            }
+            bool ok = all;
+            for (size_t i = 0; ok && i < plan.size(); i++) ok = e.setField(std::get<0>(plan[i]), std::get<1>(plan[i]), std::get<2>(plan[i])).ok;
+            if (ok) applied++; else notApplied.push_back(s);
+        }
+        e.endGroup();
+        Outcome o;
+        o.ok = applied > 0;
+        return o;
+    });
+    return applied;
+}
+
 bool BlockEditor::revealGeneratedLine(int line) {
     if (page() != Page::Blocks) return false;
     const std::string id = session_.blockAtLine(line);

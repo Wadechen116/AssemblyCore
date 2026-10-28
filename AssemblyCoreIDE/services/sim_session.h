@@ -139,6 +139,7 @@ private:
     bool stop_ = false;
     std::atomic<bool> pause_{false};
     std::atomic<bool> running_{false};
+    std::atomic<int> pendingRuns_{0};                          // runs asked for that the worker has not started yet (Pause applies to them too)
     std::shared_ptr<bool> alive_ = std::make_shared<bool>(true);
 
     // owner-thread mirror

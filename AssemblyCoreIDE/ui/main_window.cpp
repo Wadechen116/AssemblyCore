@@ -83,6 +83,13 @@ MainWindow::MainWindow(AppContext& ctx, PanelRegistry& panels, QWidget* parent) 
     createActions();
     createPanels(panels);
 
+    ctx.autoFix = [this](bool apply) { return runAutoFix(apply); };
+    conns_.add(ctx.showExecution, [this](const Location& l) {
+        for (int i = 0; i < tabs_->count(); i++)                    // a program made of blocks: stay on the blocks (they are coloured), do not open the generated text
+            if (auto* be = qobject_cast<BlockEditor*>(tabs_->widget(i)))
+                if (be->generatedPath() == l.file && be->revealGeneratedLine(l.line)) { tabs_->setCurrentIndex(i); return; }
+        ctx_.goTo.fire(l);
+    });
     conns_.add(ctx.goTo, [this](const Location& l) { if (CodeEditor* e = openFile(l.file)) e->goTo(l.line, l.col, l.endCol); });
     conns_.add(ctx.status, [this](const QString& m) { statusBar()->showMessage(m, 5000); });
     conns_.add(ctx.requestBuild, [this] { buildNow(false); });
@@ -950,9 +957,21 @@ void MainWindow::createDebugActions() {
             for (QToolBar* t : findChildren<QToolBar*>("debugToolBar")) anchor = t->widgetForAction(quickParamsAct_);
             showQuickParams(ctx_, anchor ? anchor : this, [this](const std::string& key) { showParameterInTab(openSimulator(), key); });
         });
+        QAction* autoDebug = dbg->addAction(tr("Auto Debug"));
+        autoDebug->setShortcut(QKeySequence("Ctrl+Shift+D"));
+        autoDebug->setObjectName("autoDebugAction");
+        autoDebug->setToolTip(tr("Find what is wrong and mend what has one sure repair, then run the program at full speed and list what is still wrong"));
+        connect(autoDebug, &QAction::triggered, this, [this] {
+            QDockWidget* d = dock("autodebug");
+            if (!d) return;
+            d->show();
+            d->raise();
+            if (auto* run = d->widget() ? d->widget()->findChild<QPushButton*>("autoDebugFix") : nullptr) run->click();
+        });
         tb->addSeparator();
         tb->addAction(sim);
         tb->addAction(quickParamsAct_);
+        tb->addAction(autoDebug);
         dbg->addSeparator();
     }
     dbg->addAction(tr("Run for N Cycles..."), this, [this] {
@@ -1029,6 +1048,36 @@ void MainWindow::restartDebug() {
     startDebug(wasRunning);
 }
 
+AutoFixOutcome MainWindow::runAutoFix(bool apply) {
+    AutoFixOutcome out;
+    if (!ctx_.workspace.hasProject()) { out.error = "no project is open"; return out; }
+    flushTabs();                                                                   // (what the blocks generate is in the workspace)
+    std::map<std::string, BlockEditor*> generated;                                 // the files that block programs generate: repairs go into the blocks
+    for (int i = 0; i < tabs_->count(); i++)
+        if (auto* be = qobject_cast<BlockEditor*>(tabs_->widget(i))) generated[be->generatedPath()] = be;
+    AutoFixOptions opt;
+    for (const auto& kv : generated) opt.wordsOnlyFiles.insert(kv.first);
+    out.result = autoFix(ctx_.workspace.snapshot(), *ctx_.language, opt);
+    if (!apply) return out;
+    for (const auto& kv : out.result.texts) {
+        std::vector<FixStep> mine;
+        for (const FixStep& s : out.result.steps) if (s.file == kv.first) mine.push_back(s);
+        const auto g = generated.find(kv.first);
+        if (g != generated.end()) {
+            std::vector<FixStep> notApplied;
+            if (g->second->applyFixSteps(mine, notApplied) > 0) out.changedFiles.push_back(g->second->tabPath());
+            for (const FixStep& s : notApplied) out.notApplied.push_back(s);
+        } else if (CodeEditor* e = openFile(kv.first); e && e->replaceAllText(fromStd(kv.second))) {
+            out.changedFiles.push_back(kv.first);
+        } else {
+            for (const FixStep& s : mine) out.notApplied.push_back(s);
+        }
+    }
+    out.applied = true;
+    if (!out.changedFiles.empty()) ctx_.requestBuild.fire();
+    return out;
+}
+
 void MainWindow::onStopped(const SimUpdate& u, const DebugLocation& where) {
     using asmcore::sim::StopReason;
     QString why;
@@ -1055,11 +1104,7 @@ void MainWindow::onStopped(const SimUpdate& u, const DebugLocation& where) {
         Location l;
         l.file = where.file;
         l.line = where.line;
-        bool shown = false;                                          // a program made of blocks: stay on the blocks (they are coloured), do not open the generated text
-        for (int i = 0; i < tabs_->count() && !shown; i++)
-            if (auto* be = qobject_cast<BlockEditor*>(tabs_->widget(i)))
-                if (be->generatedPath() == l.file && be->revealGeneratedLine(l.line)) { tabs_->setCurrentIndex(i); shown = true; }
-        if (!shown) ctx_.goTo.fire(l);
+        ctx_.showExecution.fire(l);
     }
     for (const std::string& m : u.messages) ctx_.log.fire(fromStd(m));
     updateDebugActions();

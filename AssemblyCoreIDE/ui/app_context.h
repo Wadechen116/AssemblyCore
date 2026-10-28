@@ -7,6 +7,9 @@
 
 #include <QString>
 
+#include <functional>
+
+#include "auto_fix.h"
 #include "build.h"
 #include "debugger.h"
 #include "settings.h"
@@ -33,11 +36,13 @@ struct AppContext {
 
     Signal<SnapshotPtr> snapshotChanged;               // a build finished
     Signal<const Location&> goTo;                      // show this place in an editor
+    Signal<const Location&> showExecution;             // show the place the simulator is at / a finding is about: on the blocks of a block program, else in the text
     Signal<const std::string&, int> cursorMoved;       // an editor's caret: file, line (for views that follow the caret)
     Signal<const QString&, const std::vector<Location>&> showReferences;    // title, places
     Signal<const QString&> status;                     // a message for the status bar
     Signal<const QString&> log;                        // a line for the output panel
     Signal<> requestBuild;                             // someone wants a build now
+    std::function<AutoFixOutcome(bool apply)> autoFix; // the main window repairs the program (apply) or only looks at what it would repair; empty without a window
     Signal<const std::string&> languageRequested;      // the user picked a language ("auto", "en", "zh_TW"); the shell rebuilds the window
 };
 

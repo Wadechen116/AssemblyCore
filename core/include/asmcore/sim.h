@@ -194,6 +194,9 @@ public:
     // New hardware parameters for a simulator that is running: nothing is reset, what is still to be timed follows the new numbers (the Frame Timing WCET
     // registers are written). A parameter that is no longer set goes back to what the environment file says.
     void setParams(const SimParams& p);
+    // The video timing the simulator runs with (environment [timing] and the timing.* parameters); 0 = not set.
+    struct FrameTiming { int64_t frameCycles = 0, vblankStart = 0, vblankLen = 0, lineCycles = 0, hblankStart = 0, hblankLen = 0; };
+    FrameTiming frameTiming() const;
     void reset();                                           // power-on state, time 0, injections of the environment file re-armed
 
     // ---- running

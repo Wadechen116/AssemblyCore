@@ -1,3 +1,4 @@
+#include <algorithm>
 #include "code_editor.h"
 
 #include <QAbstractItemView>
@@ -157,6 +158,22 @@ CodeEditor::Pos CodeEditor::posOf(const QTextCursor& c) const {
 Dom CodeEditor::domainOf(const QTextBlock& b) const {
     int s = b.previous().isValid() ? b.previous().userState() : 0;
     return s == 1 ? Dom::Main : s == 2 ? Dom::Peri : Dom::None;
+}
+
+bool CodeEditor::replaceAllText(const QString& text) {
+    if (!generatedFrom_.empty()) return false;
+    if (toPlainText() == text) return true;
+    const int line = textCursor().blockNumber();
+    const int col = textCursor().positionInBlock();
+    QTextCursor c(document());
+    c.beginEditBlock();
+    c.select(QTextCursor::Document);
+    c.insertText(text);
+    c.endEditBlock();
+    QTextCursor back(document()->findBlockByNumber(std::min(line, document()->blockCount() - 1)));
+    back.movePosition(QTextCursor::Right, QTextCursor::MoveAnchor, std::min(col, back.block().length() - 1));
+    setTextCursor(back);
+    return true;
 }
 
 void CodeEditor::goTo(int line, int col, int endCol) {

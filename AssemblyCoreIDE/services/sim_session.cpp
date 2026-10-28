@@ -223,10 +223,10 @@ struct SimSession::Worker {
     }
 
     void doRun(const RunSpec& spec, bool toPc, Domain d, uint32_t pc) {
-        if (!sim) return;
+        owner->pendingRuns_--;                                    // (a Pause asked for before this run began stops it at once: pause_ is not cleared at the start)
+        if (!sim) { owner->pause_ = false; return; }
         int tempBp = -1;
         if (toPc) tempBp = sim->addBreakpoint(d, pc, "");
-        owner->pause_ = false;
         owner->running_ = true;
         publish(SimState::Running);
         const Cycle start = sim->now();
@@ -346,7 +346,7 @@ void SimSession::unload() {
     program_.reset();
     view_.reset();
     state_ = SimState::Empty;
-    pause_ = true;
+    if (running_ || pendingRuns_ > 0) pause_ = true;                  // (a run that is going on stops; nothing is left over for the next one)
     post([](Worker& w) {
         w.sim.reset();
         w.sink.reset();
@@ -357,9 +357,9 @@ void SimSession::unload() {
     });
 }
 
-void SimSession::run(const RunSpec& spec) { post([spec](Worker& w) { w.doRun(spec, false, Domain::Main, 0); }); state_ = SimState::Running; }
-void SimSession::runToPc(Domain d, uint32_t pc, const RunSpec& spec) { post([spec, d, pc](Worker& w) { w.doRun(spec, true, d, pc); }); state_ = SimState::Running; }
-void SimSession::pause() { if (running_) pause_ = true; }
+void SimSession::run(const RunSpec& spec) { pendingRuns_++; post([spec](Worker& w) { w.doRun(spec, false, Domain::Main, 0); }); state_ = SimState::Running; }
+void SimSession::runToPc(Domain d, uint32_t pc, const RunSpec& spec) { pendingRuns_++; post([spec, d, pc](Worker& w) { w.doRun(spec, true, d, pc); }); state_ = SimState::Running; }
+void SimSession::pause() { if (running_ || pendingRuns_ > 0) pause_ = true; }
 void SimSession::step(Domain d) { post([d](Worker& w) { w.doStep(0, d); }); }
 void SimSession::stepOver(Domain d) { post([d](Worker& w) { w.doStep(1, d); }); }
 void SimSession::stepOut(Domain d) { post([d](Worker& w) { w.doStep(2, d); }); }

@@ -221,6 +221,13 @@ bool Simulator::ok() const { return p_->errors.empty(); }
 const std::vector<std::string>& Simulator::configErrors() const { return p_->errors; }
 const SimParams& Simulator::params() const { return p_->params; }
 void Simulator::setParams(const SimParams& p) { p_->setParamsLive(p); }
+Simulator::FrameTiming Simulator::frameTiming() const {
+    const auto& t = p_->timing;
+    FrameTiming f;
+    f.frameCycles = t.frameCycles; f.vblankStart = t.vStart; f.vblankLen = t.vLen;
+    f.lineCycles = t.lineCycles; f.hblankStart = t.hStart; f.hblankLen = t.hLen;
+    return f;
+}
 void Simulator::reset() { p_->resetState(); p_->skipValid = false; }
 Cycle Simulator::now() const { return p_->st.now; }
 

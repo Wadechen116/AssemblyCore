@@ -38,6 +38,10 @@ bool Debugger::inputs(SnapshotPtr& prog, std::string& env, Profile& pf, std::str
     prog = latest_ ? latest_() : nullptr;
     if (!prog) { why = "nothing has been built yet"; return false; }
     if (!prog->result.ok) { why = "the program has errors: fix them first"; return false; }
+    return environmentAndProfile(env, pf, why);
+}
+
+bool Debugger::environmentAndProfile(std::string& env, Profile& pf, std::string& why) {
     const Project& p = ws_.project();
     if (!p.environment.empty()) {
         Document* d = ws_.find(p.absolute(p.environment));          // an unsaved edit of it counts (also a generated file not written yet)
@@ -83,6 +87,34 @@ RunSpec liveSpec(const std::string& until = std::string()) {
 void Debugger::runLive(const std::string& until) { session_.run(liveSpec(until)); }
 
 void Debugger::restart() { session_.reset(); }
+
+bool Debugger::autoDebug(const AutoDebugOptions& opt, AutoDebugReport& out, std::string& why, SnapshotPtr program) {
+    SnapshotPtr prog = program;
+    std::string env;
+    Profile pf;
+    if (prog) {
+        if (!prog->result.ok) { why = "the program has errors: fix them first"; return false; }
+        if (!environmentAndProfile(env, pf, why)) return false;
+    } else if (!inputs(prog, env, pf, why)) {
+        return false;
+    }
+    sim::SimConfig cfg;
+    cfg.profile = pf;
+    cfg.env = env;
+    cfg.params = params_.params();
+    out = acide::autoDebug(prog->result, cfg, opt);
+    return true;
+}
+
+void Debugger::runToCycle(sim::Cycle cycle) {
+    if (session_.state() == SimState::Running) session_.pause();       // (what is running stops first; the commands below wait for that)
+    session_.reset();                                      // (a place in the past is reached from the start)
+    RunSpec s;
+    s.maxCycles = cycle;
+    s.maxMillis = 60000;
+    s.stopOnIdle = false;
+    session_.run(s);
+}
 
 bool Debugger::runToLine(const std::string& file, int line, std::string& why) {
     SnapshotPtr p = programForMapping();

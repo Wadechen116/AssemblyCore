@@ -6,6 +6,7 @@
 //     inline CALL expanded at three places becomes three address breakpoints.
 //   * The location of each sequencer is its pc mapped back to a source line.
 //   * Breakpoints survive a rebuild: after a restart they are resolved again against the new program.
+#include "auto_debug.h"
 #include "sim_params_store.h"
 #include <functional>
 #include <set>
@@ -48,6 +49,7 @@ public:
     // What a simulator for the newest build is made of: the program, the environment file text and the profile of the project (the parameters are
     // simParams().params()). False with `why` if there is nothing good to simulate. Used by start() and by the comparison runs.
     bool inputs(SnapshotPtr& program, std::string& env, asmcore::Profile& profile, std::string& why);
+    bool environmentAndProfile(std::string& env, asmcore::Profile& profile, std::string& why);      // the project's environment file and profile, as inputs() reads them
     SimParamsStore& simParams() { return params_; }
     void stop();
     bool active() const { return session_.state() != SimState::Empty && session_.program() != nullptr; }
@@ -68,6 +70,12 @@ public:
     void stepOut() { session_.stepOut(focus_); }
     // Runs to the first address of the line (in the focused sequencer if the line has code in both). False if the line has no code.
     bool runToLine(const std::string& file, int line, std::string& why);
+    // Auto debug: the newest build is run in a simulator of its own at full speed (with the parameters of the Simulator page) and searched for what is wrong
+    // (services/auto_debug.h). The debugger session, if any, is not touched. False with `why` if there is nothing good to run.
+    // `program`: a build other than the newest (the one an auto fix just made); null = the newest.
+    bool autoDebug(const AutoDebugOptions& opt, AutoDebugReport& out, std::string& why, SnapshotPtr program = nullptr);
+    // From cycle 0 at full speed to `cycle`, then stopped there (the place an auto debug finding is about).
+    void runToCycle(asmcore::sim::Cycle cycle);
     void restart();                                        // rebuild is the caller's business: this resets the program being debugged
 
     // ---- line breakpoints

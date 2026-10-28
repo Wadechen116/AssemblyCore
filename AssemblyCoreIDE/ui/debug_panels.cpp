@@ -1,6 +1,12 @@
 // Debugging panels. Each one listens to the Debugger of the AppContext, shows one aspect of the simulator state and, where it makes
 // sense, lets the user change it (poke memory, set a signal, write a CSR, edit a breakpoint condition).
+#include <set>
+
 #include <QAbstractItemView>
+#include <QApplication>
+#include <QCheckBox>
+#include <QSpinBox>
+#include <QTimer>
 #include <QCoreApplication>
 #include <QAbstractTableModel>
 #include <QComboBox>
@@ -18,6 +24,7 @@
 #include <QTreeWidget>
 #include <QVBoxLayout>
 
+#include "asmcore/diagnostics.h"
 #include "panel_registry.h"
 #include "text_util.h"
 #include "theme.h"
@@ -739,6 +746,248 @@ private:
 
 }  // namespace
 
+// ---- auto debug -------------------------------------------------------------------------------------------------------------------
+// One click finds what is wrong and mends what has one sure repair (services/auto_fix.h): misspelt words, numbers out of range, a missing closing jump ...
+// in the text or in the blocks, as ONE undo step; then the repaired program is run at full speed in a simulator of its own and searched for what is still wrong
+// (services/auto_debug.h). One row per thing: what was fixed, what is left for you, what the run found. A click shows where (on the blocks of a block
+// program); "Debug to here" runs the debug session to the cycle a finding is about.
+class AutoDebugPanel : public QWidget {
+    Q_DECLARE_TR_FUNCTIONS(AutoDebugPanel)
+public:
+    explicit AutoDebugPanel(AppContext& ctx) : ctx_(ctx) {
+        auto* lay = new QVBoxLayout(this);
+        lay->setContentsMargins(2, 2, 2, 2);
+        auto* top = new QHBoxLayout;
+        fix_ = new QPushButton(tr("Find and fix"));
+        fix_->setObjectName("autoDebugFix");
+        QFont bold = fix_->font();
+        bold.setBold(true);
+        fix_->setFont(bold);
+        fix_->setToolTip(tr("Finds what is wrong and mends what has one sure repair (a misspelt word, a number out of range, a missing closing jump ...) in the text or the blocks - as one step that Ctrl+Z takes back - then runs the program at full speed in a simulator of its own and looks for what is still wrong."));
+        top->addWidget(fix_);
+        run_ = new QPushButton(tr("Look only"));
+        run_->setObjectName("autoDebugRun");
+        run_->setToolTip(tr("The same, but nothing is changed: it says what it would repair and what the run finds."));
+        top->addWidget(run_);
+        top->addWidget(new QLabel(tr("run for")));
+        cycles_ = new QSpinBox;
+        cycles_->setObjectName("autoDebugCycles");
+        cycles_->setRange(1000, 200000000);
+        cycles_->setSingleStep(10000);
+        cycles_->setSuffix(tr(" cycles"));
+        cycles_->setValue(ctx.settings.getInt("autodebug.cycles", 200000));
+        top->addWidget(cycles_);
+        auto_ = new QCheckBox(tr("look after every successful build"));
+        auto_->setObjectName("autoDebugAuto");
+        auto_->setChecked(ctx.settings.getInt("autodebug.auto", 0) != 0);
+        top->addWidget(auto_);
+        top->addStretch(1);
+        lay->addLayout(top);
+        summary_ = new QLabel(tr("Not run yet."));
+        summary_->setObjectName("autoDebugSummary");
+        summary_->setWordWrap(true);
+        lay->addWidget(summary_);
+        list_ = new QTreeWidget;
+        list_->setObjectName("autoDebugList");
+        list_->setRootIsDecorated(false);
+        list_->setUniformRowHeights(true);
+        list_->setHeaderLabels({tr("Kind"), tr("Cycle"), tr("Where"), tr("Finding")});
+        list_->setSelectionBehavior(QAbstractItemView::SelectRows);
+        list_->header()->setStretchLastSection(true);
+        lay->addWidget(list_, 1);
+        detail_ = new QLabel;
+        detail_->setObjectName("autoDebugDetail");
+        detail_->setWordWrap(true);
+        detail_->setTextInteractionFlags(Qt::TextSelectableByMouse);
+        detail_->setAlignment(Qt::AlignTop | Qt::AlignLeft);
+        detail_->setMinimumHeight(48);
+        lay->addWidget(detail_);
+        auto* bottom = new QHBoxLayout;
+        show_ = new QPushButton(tr("Show in code"));
+        show_->setObjectName("autoDebugShow");
+        replay_ = new QPushButton(tr("Debug to here"));
+        replay_->setObjectName("autoDebugReplay");
+        replay_->setToolTip(tr("Starts the simulator from cycle 0 at full speed and stops it at the cycle of the finding, so that you can look at the state"));
+        bottom->addWidget(show_);
+        bottom->addWidget(replay_);
+        bottom->addStretch(1);
+        lay->addLayout(bottom);
+        timer_ = new QTimer(this);
+        timer_->setSingleShot(true);
+
+        connect(fix_, &QPushButton::clicked, this, [this] { run(true); });
+        connect(run_, &QPushButton::clicked, this, [this] { run(false); });
+        connect(cycles_, QOverload<int>::of(&QSpinBox::valueChanged), this, [this](int v) { ctx_.settings.setInt("autodebug.cycles", v); });
+        connect(auto_, &QCheckBox::toggled, this, [this](bool on) { ctx_.settings.setInt("autodebug.auto", on ? 1 : 0); });
+        connect(list_, &QTreeWidget::currentItemChanged, this, [this] { select(); });
+        connect(list_, &QTreeWidget::itemActivated, this, [this] { showCurrent(); });
+        connect(show_, &QPushButton::clicked, this, [this] { showCurrent(); });
+        connect(replay_, &QPushButton::clicked, this, [this] {
+            const Row* r = current();
+            if (!r) return;
+            if (!ctx_.debugger.active()) { ctx_.status.fire(tr("Start debugging first (F5), then use this")); return; }
+            ctx_.debugger.runToCycle(r->at);
+        });
+        connect(timer_, &QTimer::timeout, this, [this] { if (isVisible()) run(false); });
+        conns_.add(ctx.snapshotChanged, [this](SnapshotPtr s) { if (auto_->isChecked() && s && s->result.ok && !busy_) timer_->start(500); });
+        conns_.add(ctx.debugger.updated, [this](const SimUpdate&) { buttons(); });
+        buttons();
+    }
+
+private:
+    struct Row {
+        enum Kind { Fixed, CanFix, Error, Warning, Note } kind = Note;
+        asmcore::sim::Cycle at = 0;
+        QString where, title, detail, hint;
+        std::string file;
+        int line = 0;
+        int count = 1;
+    };
+    const Row* current() const {
+        QTreeWidgetItem* it = list_->currentItem();
+        if (!it) return nullptr;
+        const size_t i = (size_t)it->data(0, Qt::UserRole).toInt();
+        return i < rows_.size() ? &rows_[i] : nullptr;
+    }
+    void buttons() {
+        const Row* r = current();
+        show_->setEnabled(r && r->line > 0 && !r->file.empty());
+        replay_->setEnabled(r && r->at > 0 && ctx_.debugger.active());
+    }
+    void select() {
+        const Row* r = current();
+        if (!r) { detail_->clear(); buttons(); return; }
+        detail_->setText("<b>" + r->title.toHtmlEscaped() + "</b><br>" + r->detail.toHtmlEscaped().replace("\n", "<br>") + (r->hint.isEmpty() ? QString() : "<br><i>" + r->hint.toHtmlEscaped() + "</i>"));
+        buttons();
+    }
+    void showCurrent() {
+        const Row* r = current();
+        if (!r || r->line <= 0 || r->file.empty()) return;
+        Location l;
+        l.file = r->file;
+        l.line = r->line;
+        ctx_.showExecution.fire(l);
+    }
+    static QString lineOf(const std::string& s) { QString t = fromStd(s); t.replace('\n', QString::fromUtf8(" \xE2\x8F\x8E ")); return t.trimmed(); }
+    void run(bool fix) {
+        busy_ = true;
+        rows_.clear();
+        list_->clear();
+        detail_->clear();
+        AutoFixOutcome fx;
+        QApplication::setOverrideCursor(Qt::WaitCursor);
+        if (ctx_.autoFix) fx = ctx_.autoFix(fix);
+        else fx.error = "no window";
+        if (!fx.error.empty()) { QApplication::restoreOverrideCursor(); busy_ = false; summary_->setText(fromStd(fx.error)); buttons(); return; }
+        const bool applied = fix && fx.applied;
+        // what was (or can be) mended
+        std::set<std::pair<std::string, int>> left;                                       // steps that could not be put into the blocks
+        for (const FixStep& s : fx.notApplied) left.insert({s.file, s.line});
+        int mended = 0;
+        for (const FixStep& s : fx.result.steps) {
+            Row r;
+            const bool notDone = applied && left.count({s.file, s.line});
+            r.kind = notDone ? Row::Warning : applied ? Row::Fixed : Row::CanFix;
+            if (!notDone) mended++;
+            r.file = s.file;
+            r.line = s.line;
+            r.where = shortFile(s.file) + ":" + QString::number(s.line);
+            r.title = (notDone ? tr("Could not mend in the blocks: ") : QString()) + fromStd(s.what);
+            r.detail = tr("%1 line %2 (%3)\n  before: %4\n  after:  %5").arg(shortFile(s.file)).arg(s.line).arg(fromStd(s.code)).arg(lineOf(s.before).trimmed()).arg(lineOf(s.after).trimmed());
+            r.hint = notDone ? tr("The word is not a field of any block: change it in the block by hand.") : applied ? tr("Ctrl+Z in the editor takes the repairs back (all of them in one step).") : QString();
+            rows_.push_back(r);
+        }
+        // what is left of the assembler's complaints
+        int errors = 0, warnings = 0;
+        for (const asmcore::Diagnostic& d : fx.result.remaining) {
+            Row r;
+            r.kind = d.sev == asmcore::Diagnostic::Error ? Row::Error : d.sev == asmcore::Diagnostic::Warning ? Row::Warning : Row::Note;
+            (r.kind == Row::Error ? errors : warnings)++;
+            r.file = d.loc.file;
+            r.line = d.loc.line;
+            r.where = shortFile(d.loc.file) + ":" + QString::number(d.loc.line);
+            r.title = fromStd(d.code) + ": " + fromStd(d.msg);
+            r.detail = fromStd(d.msg);
+            const std::string why = asmcore::explainDiagnostic(d.code);
+            const size_t f = why.find("fix:");
+            r.hint = f == std::string::npos ? fromStd(why) : fromStd(why.substr(f));
+            rows_.push_back(r);
+        }
+        // the repaired program, run
+        QString ran;
+        bool didRun = false;
+        report_ = AutoDebugReport();
+        if (fx.result.clean() && fx.notApplied.empty()) {
+            AutoDebugOptions o;
+            o.maxCycles = (asmcore::sim::Cycle)cycles_->value();
+            std::string why;
+            if (!ctx_.debugger.autoDebug(o, report_, why, fx.result.build)) ran = fromStd(why);
+            else if (!report_.ok()) ran = tr("The simulator could not be made: %1").arg(fromStd(report_.error));
+            else {
+                didRun = true;
+                ran = tr("Ran %1 cycles").arg((qulonglong)report_.endAt);
+                if (!report_.stopDetail.empty() && report_.reason != asmcore::sim::StopReason::CycleLimit) ran += " (" + fromStd(report_.stopDetail) + ")";
+                for (const AutoFinding& f : report_.findings) {
+                    Row r;
+                    r.kind = f.sev == AutoFinding::Error ? Row::Error : f.sev == AutoFinding::Warning ? Row::Warning : Row::Note;
+                    if (f.sev == AutoFinding::Error) errors++; else if (f.sev == AutoFinding::Warning) warnings++;
+                    r.at = f.at;
+                    r.file = f.file;
+                    r.line = f.line;
+                    r.count = f.count;
+                    r.where = (f.domain == 0 ? tr("Main") : f.domain == 1 ? tr("Peri") : QString());
+                    if (f.line > 0) r.where += (r.where.isEmpty() ? "" : " ") + shortFile(f.file) + ":" + QString::number(f.line);
+                    r.title = fromStd(f.title) + (f.count > 1 ? QString(" (x%1)").arg(f.count) : QString());
+                    r.detail = fromStd(f.detail);
+                    r.hint = fromStd(f.hint);
+                    rows_.push_back(r);
+                }
+            }
+        } else if (!fx.result.clean()) {
+            ran = tr("The program still has errors: it was not run.");
+        }
+        QApplication::restoreOverrideCursor();
+        QStringList parts;
+        if (!fx.result.steps.empty())
+            parts << (applied ? tr("Fixed %1 problem(s) in %2 file(s) - Ctrl+Z in the editor takes them back.").arg(mended).arg((int)fx.changedFiles.size())
+                              : tr("%1 problem(s) can be fixed automatically (nothing was changed).").arg(mended));
+        if (!ran.isEmpty()) parts << ran;
+        if (errors + warnings == 0) parts << (fx.result.clean() && didRun ? tr("nothing wrong found.") : QString());
+        else parts << tr("%1 error(s), %2 warning(s) left.").arg(errors).arg(warnings);
+        parts.removeAll(QString());
+        summary_->setText(parts.isEmpty() ? tr("Nothing wrong found.") : parts.join("  "));
+        const QColor colour[5] = {QColor("#2e8b57"), QColor("#0b6bcb"), QColor("#d13438"), QColor("#c77700"), QColor("#767676")};
+        const QString kind[5] = {tr("Fixed"), tr("Can fix"), tr("Error"), tr("Warning"), tr("Note")};
+        for (size_t i = 0; i < rows_.size(); i++) {
+            const Row& r = rows_[i];
+            auto* it = new QTreeWidgetItem({kind[r.kind], r.at ? QString::number((qulonglong)r.at) : QString("-"), r.where, r.title});
+            it->setData(0, Qt::UserRole, (int)i);
+            it->setForeground(0, colour[r.kind]);
+            QFont b = it->font(0);
+            b.setBold(r.kind != Row::Note);
+            it->setFont(0, b);
+            it->setTextAlignment(1, Qt::AlignRight | Qt::AlignVCenter);
+            list_->addTopLevelItem(it);
+        }
+        for (int c = 0; c < 3; c++) list_->resizeColumnToContents(c);
+        if (list_->topLevelItemCount()) list_->setCurrentItem(list_->topLevelItem(0));
+        busy_ = false;
+        buttons();
+    }
+
+    AppContext& ctx_;
+    AutoDebugReport report_;
+    std::vector<Row> rows_;
+    bool busy_ = false;
+    QPushButton *fix_, *run_, *show_, *replay_;
+    QSpinBox* cycles_;
+    QCheckBox* auto_;
+    QLabel *summary_, *detail_;
+    QTreeWidget* list_;
+    QTimer* timer_;
+    ConnectionBag conns_;
+};
+
 void registerDebugPanels(PanelRegistry& r) {
     r.add({"state", QT_TRANSLATE_NOOP("QObject", "State"), Qt::RightDockWidgetArea, false, [](AppContext& c) -> QWidget* { return new StatePanel(c); }});
     r.add({"memory", QT_TRANSLATE_NOOP("QObject", "Memory"), Qt::RightDockWidgetArea, false, [](AppContext& c) -> QWidget* { return new MemoryPanel(c); }});
@@ -748,6 +997,7 @@ void registerDebugPanels(PanelRegistry& r) {
     r.add({"callstack", QT_TRANSLATE_NOOP("QObject", "Call Stack"), Qt::BottomDockWidgetArea, false, [](AppContext& c) -> QWidget* { return new CallStackPanel(c); }});
     r.add({"breakpoints", QT_TRANSLATE_NOOP("QObject", "Breakpoints"), Qt::BottomDockWidgetArea, false, [](AppContext& c) -> QWidget* { return new BreakpointsPanel(c); }});
     r.add({"events", QT_TRANSLATE_NOOP("QObject", "Events"), Qt::BottomDockWidgetArea, false, [](AppContext& c) -> QWidget* { return new EventsPanel(c); }});
+    r.add({"autodebug", QT_TRANSLATE_NOOP("QObject", "Auto Debug"), Qt::BottomDockWidgetArea, false, [](AppContext& c) -> QWidget* { return new AutoDebugPanel(c); }});
 }
 
 }  // namespace acide

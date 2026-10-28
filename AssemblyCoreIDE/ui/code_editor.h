@@ -23,6 +23,8 @@ public:
     void setSnapshot(SnapshotPtr snap);                    // diagnostics, known symbols, navigation
     void applyTheme(const Theme& theme);
     void goTo(int line, int col, int endCol);              // 1-based line; bytes
+    // The whole text becomes `text`, as ONE undo step (Ctrl+Z gives the old text back); the caret keeps its line. False for a generated file.
+    bool replaceAllText(const QString& text);
     void syncFromWorkspace();                              // the buffer changed elsewhere (reload, rename)
     void goToDefinition();
     void findReferences();

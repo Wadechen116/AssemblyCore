@@ -2,6 +2,153 @@
 <!DOCTYPE TS>
 <TS version="2.1" language="zh_TW" sourcelanguage="en_US">
 <context>
+    <name>AutoDebugPanel</name>
+    <message>
+        <source>Find and fix</source>
+        <translation>找出並修復</translation>
+    </message>
+    <message>
+        <source>Finds what is wrong and mends what has one sure repair (a misspelt word, a number out of range, a missing closing jump ...) in the text or the blocks - as one step that Ctrl+Z takes back - then runs the program at full speed in a simulator of its own and looks for what is still wrong.</source>
+        <translation>找出哪裡有問題，並修復有把握的部分（拼錯的字、超出範圍的數字、缺少的結尾跳躍…），在文字或積木中修改，整個修改是一個步驟，Ctrl+Z 可以全部還原；接著用獨立的模擬器全速執行修復後的程式，找出仍然有問題的地方。</translation>
+    </message>
+    <message>
+        <source>Look only</source>
+        <translation>只看不改</translation>
+    </message>
+    <message>
+        <source>The same, but nothing is changed: it says what it would repair and what the run finds.</source>
+        <translation>做一樣的事，但不修改任何東西：只告訴你它會修什麼、執行時發現什麼。</translation>
+    </message>
+    <message>
+        <source>run for</source>
+        <translation>執行</translation>
+    </message>
+    <message>
+        <source> cycles</source>
+        <translation> 週期</translation>
+    </message>
+    <message>
+        <source>look after every successful build</source>
+        <translation>每次建置成功後自動檢查（不修改）</translation>
+    </message>
+    <message>
+        <source>Not run yet.</source>
+        <translation>尚未執行。</translation>
+    </message>
+    <message>
+        <source>Kind</source>
+        <translation>類別</translation>
+    </message>
+    <message>
+        <source>Cycle</source>
+        <translation>週期</translation>
+    </message>
+    <message>
+        <source>Where</source>
+        <translation>位置</translation>
+    </message>
+    <message>
+        <source>Finding</source>
+        <translation>發現</translation>
+    </message>
+    <message>
+        <source>Show in code</source>
+        <translation>在程式中顯示</translation>
+    </message>
+    <message>
+        <source>Debug to here</source>
+        <translation>偵錯到這裡</translation>
+    </message>
+    <message>
+        <source>Starts the simulator from cycle 0 at full speed and stops it at the cycle of the finding, so that you can look at the state</source>
+        <translation>模擬器從週期 0 全速開始，停在這個發現所在的週期，讓你檢查當時的狀態</translation>
+    </message>
+    <message>
+        <source>Start debugging first (F5), then use this</source>
+        <translation>請先開始偵錯 (F5)，再使用這個功能</translation>
+    </message>
+    <message>
+        <source>Could not mend in the blocks: </source>
+        <translation>無法在積木中修復：</translation>
+    </message>
+    <message>
+        <source>%1 line %2 (%3)
+  before: %4
+  after:  %5</source>
+        <translation>%1 第 %2 行 (%3)
+  修改前：%4
+  修改後：%5</translation>
+    </message>
+    <message>
+        <source>The word is not a field of any block: change it in the block by hand.</source>
+        <translation>這個字不是任何積木的欄位：請直接在積木上修改。</translation>
+    </message>
+    <message>
+        <source>Ctrl+Z in the editor takes the repairs back (all of them in one step).</source>
+        <translation>在編輯器按 Ctrl+Z 可以還原這些修復（全部是一個步驟）。</translation>
+    </message>
+    <message>
+        <source>The simulator could not be made: %1</source>
+        <translation>無法建立模擬器：%1</translation>
+    </message>
+    <message>
+        <source>Ran %1 cycles</source>
+        <translation>已執行 %1 個週期</translation>
+    </message>
+    <message>
+        <source>Main</source>
+        <translation>Main</translation>
+    </message>
+    <message>
+        <source>Peri</source>
+        <translation>Peri</translation>
+    </message>
+    <message>
+        <source>The program still has errors: it was not run.</source>
+        <translation>程式仍有錯誤：沒有執行。</translation>
+    </message>
+    <message>
+        <source>Fixed %1 problem(s) in %2 file(s) - Ctrl+Z in the editor takes them back.</source>
+        <translation>已修復 %1 個問題（%2 個檔案）— 在編輯器按 Ctrl+Z 可以還原。</translation>
+    </message>
+    <message>
+        <source>%1 problem(s) can be fixed automatically (nothing was changed).</source>
+        <translation>有 %1 個問題可以自動修復（沒有修改任何東西）。</translation>
+    </message>
+    <message>
+        <source>nothing wrong found.</source>
+        <translation>沒有發現問題。</translation>
+    </message>
+    <message>
+        <source>%1 error(s), %2 warning(s) left.</source>
+        <translation>剩下 %1 個錯誤、%2 個警告。</translation>
+    </message>
+    <message>
+        <source>Nothing wrong found.</source>
+        <translation>沒有發現問題。</translation>
+    </message>
+    <message>
+        <source>Fixed</source>
+        <translation>已修復</translation>
+    </message>
+    <message>
+        <source>Can fix</source>
+        <translation>可修復</translation>
+    </message>
+    <message>
+        <source>Error</source>
+        <translation>錯誤</translation>
+    </message>
+    <message>
+        <source>Warning</source>
+        <translation>警告</translation>
+    </message>
+    <message>
+        <source>Note</source>
+        <translation>備註</translation>
+    </message>
+</context>
+<context>
     <name>BlockCanvas</name>
     <message>
         <source>Main</source>
@@ -1220,6 +1367,10 @@ Drag it to change the order; double-click the end of it to write a comment</sour
     <message>
         <source>Listing</source>
         <translation>組譯清單</translation>
+    </message>
+    <message>
+        <source>Auto Debug</source>
+        <translation>自動除錯</translation>
     </message>
 </context>
 <context>
@@ -2927,6 +3078,14 @@ An IDE for the Sensor Micro-Sequencer ISA, built on the AssemblyCore assembler.<
     <message>
         <source>, cycle %1</source>
         <translation>，週期 %1</translation>
+    </message>
+    <message>
+        <source>Auto Debug</source>
+        <translation>自動除錯</translation>
+    </message>
+    <message>
+        <source>Find what is wrong and mend what has one sure repair, then run the program at full speed and list what is still wrong</source>
+        <translation>找出哪裡有問題並修復有把握的部分，再全速執行程式，列出仍然有問題的地方</translation>
     </message>
 </context>
 <context>
