@@ -56,7 +56,7 @@ void Simulator::Impl::opMainCsr(OpCtx& oc) {
             } else {
                 csrWrite(addr, imm, cop, Domain::Main);
             }
-            latency = lat.csrOne(cop);
+            latency = latFor(0).csrOne(cop);
         } else {
             const codec::CsrM cm = codec::unpackCsrM(d);
             const int cop = cm.op;
@@ -277,7 +277,7 @@ void Simulator::Impl::stepMain() {
     h(oc);
     if (m.faulted || oc.skipAdvance) return;
     m.pc = oc.next;
-    m.readyAt = st.now + (Cycle)oc.latency;
+    m.readyAt = st.now + (Cycle)(oc.latency + fetchExtra[0]);
     m.instrs++;
     if (oc.checkpoint) eventCheckpoint(0);
 }

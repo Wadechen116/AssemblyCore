@@ -219,6 +219,7 @@ Simulator::Simulator(const Result& assembled, const SimConfig& cfg, const Extens
 Simulator::~Simulator() {}
 bool Simulator::ok() const { return p_->errors.empty(); }
 const std::vector<std::string>& Simulator::configErrors() const { return p_->errors; }
+const SimParams& Simulator::params() const { return p_->params; }
 void Simulator::reset() { p_->resetState(); p_->skipValid = false; }
 Cycle Simulator::now() const { return p_->st.now; }
 
@@ -353,7 +354,7 @@ void Simulator::Impl::eventCheckpoint(int domain) {
     e.resumePc = pc;
     e.cause = id;
     pc = r.vectorPc;
-    ready += (Cycle)lat.eventDispatch;
+    ready += (Cycle)(lat.eventDispatch + eventDispatchExtra);
     emit([&](Event& ev) { ev.type = EventType::HwEvent; ev.domain = domain; ev.what = "dispatch"; ev.pc = r.vectorPc; ev.a = id; ev.b = r.resumePc; });
 }
 
@@ -363,7 +364,7 @@ bool Simulator::Impl::doEret(int domain, OpCtx& oc) {
     if (!e.active || !e.resumeValid) { raise(dm, oc.pc, "fault_bad_eret_context", "BR.ERET outside an event handler (handler_active = 0 or no resume PC is saved)"); return false; }
     if (e.resumePc >= img[domain].codeLimit) { raise(dm, oc.pc, "fault_branch_target", "the saved resume PC " + std::to_string(e.resumePc) + " is outside the code"); return false; }
     oc.next = e.resumePc;                                       // full-width resume PC; no stack, and ERET itself never dispatches another event
-    oc.latency = lat.eret;
+    oc.latency = lat.eret + eretExtra;
     for (size_t i = st.evlog.size(); i-- > 0;)
         if (st.evlog[i].domain == dm && st.evlog[i].dispatched && !st.evlog[i].returned) {
             st.evlog[i].returned = true;

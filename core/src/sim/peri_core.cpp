@@ -31,7 +31,7 @@ void Simulator::Impl::opPeriCsr(OpCtx& oc) {
         const uint8_t imm = (uint8_t)im.u8(pc + 1);
         emit([&](Event& e) { e.type = EventType::Issue; e.domain = 1; e.pc = pc; e.a = 2; e.what = text("EXEC_CSR"); });
         csrWrite(c1.addr, imm, cop, Domain::Peri);
-        latency = lat.csrOne(cop);
+        latency = latFor(1).csrOne(cop);
         next = pc + 2;
 }
 
@@ -158,7 +158,7 @@ void Simulator::Impl::opPeriXfer(OpCtx& oc) {
         emit([&](Event& e) { e.type = EventType::Issue; e.domain = 1; e.pc = pc; e.a = (int64_t)length; e.what = text("EXEC_XFER"); });
         p.xfer = x;
         p.xfer.dev = devEntry.addr7;                   // from here on `dev` is the 7-bit I2C address
-        const Cycle done = st.now + (Cycle)lat.xfer(x.read, x.addrLen, x.len);
+        const Cycle done = st.now + (Cycle)(lat.xfer(x.read, x.addrLen, x.len) + xferExtra(x.read, x.addrLen, x.len) + fetchExtra[1]);
         p.readyAt = kNever;                            // waits for the bus (spec 14.3: not a 1-cycle instruction)
         schedule(done, TimedEvent::XferDone);
         next = pc + length;
@@ -190,7 +190,7 @@ void Simulator::Impl::stepPeri() {
     h(oc);
     if (p.faulted || oc.skipAdvance) return;
     p.pc = oc.next;
-    if (oc.latency >= 0) p.readyAt = st.now + (Cycle)oc.latency;
+    if (oc.latency >= 0) p.readyAt = st.now + (Cycle)(oc.latency + fetchExtra[1]);
     p.instrs++;
     if (oc.checkpoint) eventCheckpoint(1);
 }

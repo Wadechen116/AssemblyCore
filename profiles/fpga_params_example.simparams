@@ -1,0 +1,12 @@
+; An example parameter file for `asmsim --params` (and, later, the IDE): only what differs from the initial (planning) values.
+; Every value here is a PLACEHOLDER to show the form. After measuring on the FPGA, put the real numbers in and mark them:
+;   key.status = measured      (or: confirmed, once checked against the RTL)
+;   key.note   = how it was measured
+; `asmsim --list-params` lists every parameter with its unit, range and how to measure it on the FPGA.
+[params]
+main.fetch_cycles = 1
+main.fetch_cycles.note = placeholder: descriptor fetch from the 2x-clock SRAM, to be measured
+peri.fetch_cycles = 1
+peri.fetch_cycles.note = placeholder, to be measured
+i2ch.overhead = 4
+i2ch.overhead.note = placeholder: CSR -> i2ch -> i2cm_top start, to be measured

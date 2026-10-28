@@ -31,7 +31,39 @@ Simulator::Impl::Impl(const Result& r, const SimConfig& c, const Extensions* e) 
     buildSignals();
     buildDefaultConditions();
     loadEnv(cfg.env);
+    applyParams();
     resetState();
+}
+
+// The parameters (environment [params], then SimConfig::params) over what the environment's other sections set.
+void Simulator::Impl::applyParams() {
+    params.merge(cfg.params);
+    params.apply(pf.latency);
+    lat = pf.latency;
+    auto get = [&](const char* k) { return params.get(k); };
+    if (params.isSet("sim.tie_order")) tieMainFirst = get("sim.tie_order") == 0;
+    if (params.isSet("sim.unmapped_csr")) unmappedFault = get("sim.unmapped_csr") == 1;
+    if (params.isSet("sim.fault_stops")) faultStopsAll = get("sim.fault_stops") == 1;
+    struct T { const char* k; int64_t TimingCfg::*m; };
+    const T ts[] = {{"timing.frame_cycles", &TimingCfg::frameCycles}, {"timing.vblank_start", &TimingCfg::vStart}, {"timing.vblank_len", &TimingCfg::vLen},
+                    {"timing.line_cycles", &TimingCfg::lineCycles}, {"timing.hblank_start", &TimingCfg::hStart}, {"timing.hblank_len", &TimingCfg::hLen}};
+    for (const T& t : ts) if (params.isSet(t.k)) timing.*t.m = get(t.k);
+    for (const char* name : {"frame.wcet_pgl", "frame.wcet_ae", "frame.wcet_line"})            // the Frame Timing WCET registers: the initial value of the signal of the same name
+        if (params.isSet(name)) { const int id = sigId(std::string(name).substr(6)); if (id >= 0) sigs[(size_t)id].init = get(name); }
+    fetchExtra[0] = (int)get("main.fetch_cycles");
+    fetchExtra[1] = (int)get("peri.fetch_cycles");
+    csrAccessOf[0] = (int)get("csr.access_main");
+    csrAccessOf[1] = (int)get("csr.access_peri");
+    bootCycles = (int)get("reset.boot_cycles");
+    eventDispatchExtra = (int)get("event.dispatch_extra");
+    eretExtra = (int)get("event.eret_extra");
+    timerDiv[0] = (int)get("timer.main.clock_div");       timerDiv[1] = (int)get("timer.peri.clock_div");
+    timerStart[0] = (int)get("timer.main.start_latency"); timerStart[1] = (int)get("timer.peri.start_latency");
+    timerDone[0] = (int)get("timer.main.done_latency");   timerDone[1] = (int)get("timer.peri.done_latency");
+    i2chOverhead = (int)get("i2ch.overhead");
+    i2cAck = (int)get("i2c.ack_delay");
+    i2cStretch = (int)get("i2c.stretch");
+    i2cTurnaround = (int)get("i2c.turnaround");
 }
 
 void Simulator::Impl::registerOps() {
@@ -149,6 +181,8 @@ void Simulator::Impl::resetState() {
     if (timing.frameCycles > 0 && timing.vLen > 0) { schedule((Cycle)timing.vStart, TimedEvent::WindowEdge, 0, 1); }
     if (timing.lineCycles > 0 && timing.hLen > 0) { schedule((Cycle)timing.hStart, TimedEvent::WindowEdge, 1, 1); }
     for (auto& ij : envInjects) schedule(ij.first, TimedEvent::Command, 0, 0, ij.second);
+    st.m.readyAt = (Cycle)bootCycles;                  // from the end of reset to the first instruction of each sequencer
+    st.p.readyAt = (Cycle)bootCycles;
     if (!img[0].present) { st.m.halted = true; st.m.readyAt = kNever; }
     if (!img[1].present) { st.p.halted = true; st.p.readyAt = kNever; }
     nextSnap = 0;

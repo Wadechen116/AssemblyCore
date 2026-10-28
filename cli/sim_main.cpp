@@ -25,6 +25,19 @@ bool writeText(const std::string& p, const std::string& s) {
     o << s;
     return (bool)o;
 }
+void listParams() {
+    std::string group;
+    for (const ParamDef& d : paramCatalog()) {
+        if (d.group != group) { group = d.group; std::printf("\n%s\n", group.c_str()); }
+        std::string range;
+        if (d.kind == ParamDef::Enum) { for (const std::string& o : d.options) range += (range.empty() ? "" : "|") + o; }
+        else if (d.kind == ParamDef::Bool) range = "true|false";
+        else range = std::to_string(d.lo) + ".." + std::to_string(d.hi);
+        SimParams none;
+        std::printf("  %-30s = %-10s %-20s [%s]%s\n      %s\n", d.key.c_str(), none.text(d.key).c_str(), d.unit.empty() ? "" : d.unit.c_str(), range.c_str(), d.active ? "" : "  (not used by the simulator yet)", d.help.c_str());
+        if (!d.measure.empty()) std::printf("      measure: %s\n", d.measure.c_str());
+    }
+}
 void usage() {
     std::puts(
         "usage: asmsim [options] file.asm [more.asm ...]\n"
@@ -34,6 +47,9 @@ void usage() {
         "  --until EXPR         plain run: stop when EXPR becomes true, e.g. \"csr[0x120] == 10\"\n"
         "  --call-model M       inline (default) | softret\n"
         "  --profile FILE       target profile (latencies, table depths)\n"
+        "  --params FILE        hardware parameters (a [params] section: key = value; docs/SIM_VISUAL_DESIGN.md)\n"
+        "  --param KEY=VALUE    one hardware parameter, e.g. main.fetch_cycles=1 (repeatable; wins over --params and the environment file)\n"
+        "  --list-params        every hardware parameter with its group, unit, initial value, range and how to measure it\n"
         "  --dataflow M         off | warn (default) | error   the assembler's data-flow check\n"
         "  --no-warn CODE       drop a warning code, e.g. W502 (repeatable)\n"
         "  -I DIR               include directory\n"
@@ -49,7 +65,8 @@ int main(int argc, char** argv) {
     Options opt;
     sim::SimConfig cfg;
     std::vector<std::string> inputs, incDirs;
-    std::string envPath, scnPath, untilExpr, tracePath, eventsPath, vcdPath, profilePath;
+    std::string envPath, scnPath, untilExpr, tracePath, eventsPath, vcdPath, profilePath, paramsPath;
+    std::vector<std::string> paramArgs;
     long long cycles = 1000000;
     bool dump = false;
     for (int i = 1; i < argc; i++) {
@@ -65,6 +82,9 @@ int main(int argc, char** argv) {
         else if (a == "--until") untilExpr = need();
         else if (a == "--call-model") { std::string m = need(); opt.callModel = m == "softret" ? CallModel::SoftRet : CallModel::Inline; }
         else if (a == "--profile") profilePath = need();
+        else if (a == "--params") paramsPath = need();
+        else if (a == "--param") paramArgs.push_back(need());
+        else if (a == "--list-params") { listParams(); return 0; }
         else if (a == "--dataflow") { std::string m = need(); opt.dataflow = m == "off" ? DataflowMode::Off : m == "error" ? DataflowMode::Error : DataflowMode::Warn; }
         else if (a == "--no-warn") opt.suppress.push_back(need());
         else if (a == "-I") incDirs.push_back(need());
@@ -80,6 +100,20 @@ int main(int argc, char** argv) {
         std::string t;
         std::vector<std::string> errs;
         if (!readFile(profilePath, t) || !opt.profile.load(t, errs)) { std::fprintf(stderr, "asmsim: cannot use profile %s\n", profilePath.c_str()); return 2; }
+    }
+    {                                                                    // hardware parameters: a file, then the command line
+        if (!paramsPath.empty()) {
+            std::string t;
+            std::vector<std::string> errs;
+            if (!readFile(paramsPath, t)) { std::fprintf(stderr, "asmsim: cannot read %s\n", paramsPath.c_str()); return 2; }
+            if (!cfg.params.load(t, errs)) { for (auto& e : errs) std::fprintf(stderr, "%s: %s\n", paramsPath.c_str(), e.c_str()); return 2; }
+        }
+        for (const std::string& pa : paramArgs) {
+            const size_t eq = pa.find('=');
+            std::string err;
+            if (eq == std::string::npos || !cfg.params.set(pa.substr(0, eq), pa.substr(eq + 1), err)) { std::fprintf(stderr, "asmsim: --param %s: %s\n", pa.c_str(), err.empty() ? "expected KEY=VALUE" : err.c_str()); return 2; }
+        }
+        cfg.params.apply(opt.profile.latency);                          // the cycle model the assembler's WCET uses is the one the simulator runs with
     }
     std::vector<Source> sources;
     for (auto& in : inputs) {

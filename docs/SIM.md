@@ -22,6 +22,16 @@ asmsim examples/imu_gyro.asm --env examples/imu_env.cfg --scenario examples/imu_
   `MOV` 讀結果槽時，`valid` 在 MOV **完成**時才清除（期間 `consume_busy`）。
 - 一條 `BR.COND ALWAYS` 跳到自己 = 程式結束（該 domain `halted`）。兩個 domain 都停止時 `run()` 回報 Idle。
 
+## 1b. 硬體參數（可調、可用 FPGA 實測值校正）
+
+所有影響時間或兩個 sequencer 如何交會的數字，都收在**一份參數目錄**（`asmcore/sim_params.h`；完整清單、單位、範圍、在 FPGA 上怎麼量：`docs/SIM_PARAMS.md`，或 `asmsim --list-params`）。
+**沒有設定的參數用初始值（規劃值）**，行為與沒有這個功能之前完全相同；有最佳值就設，沒有就先用初始值，啟動後再調。
+- 環境檔 `[params]` 區段：`latency.alu = 2`、`main.fetch_cycles = 1`、`timer.peri.clock_div = 4`…；`key.status = measured`、`key.note = 說明` 記錄出處。
+- 命令列：`asmsim --params FILE`、`asmsim --param main.fetch_cycles=1`（可重複，比環境檔優先）；`asmsim --list-params`。
+- 優先順序：初始值 → 環境檔各區段（`[latency]` `[timing]` `[bus i2c]` `[sim]`）→ `[params]` → 命令列／`SimConfig::params`。
+- 兩個 decoder 各自的取指令週期（`main.fetch_cycles`／`peri.fetch_cycles`）、兩側的 CSR 存取延遲、Timer 的時脈除數與啟動／完成延遲、i2ch／I2C 的額外延遲、事件派送與返回的額外週期、重置到第一條指令、Frame Timing WCET（`frame.wcet_*`）都是參數。
+- 圖上畫了但模擬器還沒建模的（CSR Arbiter 裁決、Data Xfer 共用、結果槽的複製與 valid 延遲、Status Flag 取樣延遲）也在目錄裡，標成「尚未被模擬器使用」：先存著，之後建模時直接生效。
+
 ## 2. 環境檔
 
 區段式文字檔，`;` 起頭為註解。`[種類 名稱]` 後接 `key = value`（key 可含空白，可重複）。

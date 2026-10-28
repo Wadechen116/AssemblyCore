@@ -14,6 +14,7 @@
 //   * Latency comes from asmcore::Latency, the same model the assembler uses for WCET.
 //
 // See docs/SIM.md for the environment file format and for every place where the spec was silent and a choice was made.
+#include "asmcore/sim_params.h"
 #include <cstdint>
 #include <functional>
 #include <map>
@@ -71,6 +72,7 @@ public:
     // signal to cancel everything that was scheduled against the old value (restartable timers).
     virtual void setSignalAfterGuarded(Cycle delay, const std::string& name, int64_t value, const std::string& guardSignal, int64_t guardValue) = 0;
     virtual void note(const std::string& text) = 0;
+    virtual int64_t param(const std::string&) const { return 0; }       // a hardware parameter (sim_params.h) as the simulator is running with it
 };
 using ActionFn = std::function<void(ActionContext& ctx, const std::string& arg)>;
 
@@ -113,6 +115,7 @@ private:
 struct SimConfig {
     Profile profile;              // layout assumptions (offset width, byte order) and latencies
     std::string env;              // environment file text (docs/SIM.md); may be empty
+    SimParams params;             // hardware parameters (sim_params.h): these win over the environment file's sections and its [params]
 };
 
 // ---- faults, stops, breakpoints --------------------------------------------------------------------------------------------
@@ -187,6 +190,7 @@ public:
 
     bool ok() const;                                        // false if the environment file had errors
     const std::vector<std::string>& configErrors() const;
+    const SimParams& params() const;                        // the parameters the simulator runs with (environment file [params] and SimConfig::params merged)
     void reset();                                           // power-on state, time 0, injections of the environment file re-armed
 
     // ---- running

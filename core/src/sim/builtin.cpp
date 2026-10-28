@@ -22,7 +22,11 @@ void startTimer(ActionContext& c, const std::string& arg, const char* done, cons
     int64_t g = c.signal(gen) + 1;                          // a new generation: earlier expiries no longer count
     c.setSignal(gen, g);
     c.setSignal(done, 0);
-    if (cycles > 0) c.setSignalAfterGuarded((Cycle)cycles, done, 1, gen, g);
+    // hardware parameters of this timer: it ticks every clock_div ISA cycles, starts start_latency after the EXEC_CSR and shows done done_latency after the last tick
+    const char* who = std::string(done).compare(0, 5, "main_") == 0 ? "main" : "peri";
+    const int64_t div = std::max<int64_t>(1, c.param(std::string("timer.") + who + ".clock_div"));
+    const int64_t delay = c.param(std::string("timer.") + who + ".start_latency") + cycles * div + c.param(std::string("timer.") + who + ".done_latency");
+    if (cycles > 0) c.setSignalAfterGuarded((Cycle)delay, done, 1, gen, g);
     else c.note(std::string(done) + ": timer started with no period (set the '" + period + "' CSR or give 'timer_start:<cycles>')");
 }
 

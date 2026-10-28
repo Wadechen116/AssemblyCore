@@ -35,6 +35,7 @@ add_library(asmcore STATIC
   core/src/report.cpp
   core/src/image_view.cpp
   core/src/disasm.cpp
+  core/src/sim_params.cpp
   core/src/sim/ini.cpp
   core/src/sim/sexpr.cpp
   core/src/sim/impl.cpp

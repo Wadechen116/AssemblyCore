@@ -191,6 +191,21 @@ struct Simulator::Impl : public ExprBinder, public ExprEnv, public ActionContext
     std::vector<std::pair<Cycle, std::string>> envInjects;
     bool tieMainFirst = true;
     bool faultStopsAll = false;
+    // ---- hardware parameters (sim_params.h): read once from `params` by applyParams()
+    SimParams params;
+    int fetchExtra[2] = {0, 0};                        // extra cycles per instruction of each decoder
+    int csrAccessOf[2] = {-1, -1};                     // one CSR access as each decoder sees it (-1: lat.csrAccess)
+    int bootCycles = 0;
+    int eventDispatchExtra = 0, eretExtra = 0;
+    int timerDiv[2] = {1, 1}, timerStart[2] = {0, 0}, timerDone[2] = {0, 0};     // [0] Main timer, [1] Peri timer
+    int i2chOverhead = 0, i2cAck = 0, i2cStretch = 0, i2cTurnaround = 0;
+    void applyParams();
+    Latency latFor(int domain) const { Latency l = lat; if (csrAccessOf[domain] >= 0) l.csrAccess = csrAccessOf[domain]; return l; }
+    int64_t xferExtra(bool read, int addrLen, int dataLen) const {         // the I2C path's extras on top of Latency::xfer
+        const int phases = Latency::xferPhases(read, addrLen, dataLen);
+        return (int64_t)i2chOverhead + (int64_t)phases * (i2cAck + i2cStretch) + ((read && addrLen > 0) ? i2cTurnaround : 0);
+    }
+    int64_t param(const std::string& key) const override { return params.get(key); }
     uint32_t constSize = 0;
 
     // ---- mutable

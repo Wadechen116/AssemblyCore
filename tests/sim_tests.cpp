@@ -143,11 +143,12 @@ struct Fx {
     Result r;
     std::unique_ptr<Simulator> sim;
     std::string trace;
-    Fx(const std::string& src, const std::string& env = "", CallModel m = CallModel::Inline) {
+    Fx(const std::string& src, const std::string& env = "", CallModel m = CallModel::Inline, const SimParams* params = nullptr) {
         r = assemble1(std::string(kDefs) + src, m);
         if (!r.ok) { std::printf("        assembly failed:\n%s", diags(r).c_str()); return; }
         SimConfig c;
         c.env = env;
+        if (params) c.params = *params;
         sim.reset(new Simulator(r, c));
         if (!sim->ok()) std::printf("        env error: %s\n", sim->configErrors()[0].c_str());
     }
@@ -907,6 +908,163 @@ static void t_scenario() {
     check(!bad.pass && bad.failures == 2, "failing checks and unknown commands are reported", std::to_string(bad.failures));
 }
 
+// ---- hardware parameters (sim_params.h): the catalog, the values, and what each one does to the running simulator -----------------------------
+static SimParams P(std::initializer_list<std::pair<const char*, const char*>> kv) {
+    SimParams p;
+    std::string e;
+    for (auto& x : kv) if (!p.set(x.first, x.second, e)) std::printf("        bad parameter: %s\n", e.c_str());
+    return p;
+}
+// the cycle at which the programs are done (both sequencers idle)
+static Cycle doneAt(const std::string& src, const SimParams& p, const std::string& env = "") {
+    Fx f(src, env, CallModel::Inline, &p);
+    if (!f.good()) return 0;
+    RunLimits l;
+    l.maxCycles = 500000;
+    return f.sim->run(l).now;
+}
+
+static void t_params() {
+    section("hardware parameters: the catalog and the text form");
+    {
+        std::set<std::string> keys;
+        bool unique = true, inRange = true, helped = true, enums = true;
+        int inactive = 0;
+        for (const ParamDef& d : paramCatalog()) {
+            unique &= keys.insert(d.key).second;
+            inRange &= d.def >= d.lo && d.def <= d.hi;
+            helped &= !d.help.empty() && !d.group.empty();
+            if (d.kind == ParamDef::Enum) enums &= !d.options.empty() && d.hi == (int64_t)d.options.size() - 1;
+            if (!d.active) inactive++;
+        }
+        check(paramCatalog().size() > 50 && unique && inRange && helped && enums, "the catalog: unique keys, every initial value inside its range, every parameter has a group and a help text", std::to_string(paramCatalog().size()));
+        const Latency L;
+        bool same = true;
+        for (const ParamDef& d : paramCatalog()) if (d.latency) same &= d.def == L.*(d.latency);
+        check(same, "the initial values of the cycle model are the Latency defaults (nothing drifts)");
+        check(inactive >= 8, "the parameters of what the simulator does not model yet are in the catalog, marked not active", std::to_string(inactive));
+    }
+    {
+        SimParams p;
+        std::string e;
+        check(p.set("main.fetch_cycles", "3", e) && p.get("main.fetch_cycles") == 3 && p.isSet("main.fetch_cycles") && !p.atDefault("main.fetch_cycles"), "a number is set and read back");
+        check(!p.set("main.fetch_cycles", "-1", e) && e.find("outside") != std::string::npos && p.get("main.fetch_cycles") == 3, "a number outside the range is refused and nothing changes", e);
+        check(!p.set("main.fetch_cycles", "many", e) && !p.set("no.such.key", "1", e) && e.find("unknown parameter") != std::string::npos, "text that is no number, and an unknown key, are refused", e);
+        check(p.set("datapath.contention", "on", e) && p.get("datapath.contention") == 1 && p.text("datapath.contention") == "true", "a bool takes on / off / true / false / yes / no / 1 / 0");
+        check(p.set("sim.tie_order", "Peri_First", e) && p.get("sim.tie_order") == 1 && p.text("sim.tie_order") == "peri_first" && !p.set("sim.tie_order", "never", e), "an enum takes its names (not the case) and refuses others");
+        check(p.set("csr.access_main", "-1", e) && p.set("csr.access_main", "0x10", e) && p.get("csr.access_main") == 16, "-1 is a value (use latency.csr_access) and 0x numbers are read");
+        check(p.status("main.fetch_cycles") == "planning" && p.setStatus("main.fetch_cycles", "measured", e) && p.status("main.fetch_cycles") == "measured" && !p.setStatus("main.fetch_cycles", "guess", e), "every value says where it comes from: planning, measured or confirmed");
+        p.setNote("main.fetch_cycles", "ILA run 3, 2026-11-02");
+        const std::string text = p.serialize();
+        check(text.find("[params]") == 0 && text.find("main.fetch_cycles = 3") != std::string::npos && text.find("main.fetch_cycles.status = measured") != std::string::npos && text.find("main.fetch_cycles.note = ILA run 3") != std::string::npos && text.find("latency.alu") == std::string::npos,
+              "the text form has what is set, with its status and note (and nothing else)", text);
+        SimParams q;
+        std::vector<std::string> errs;
+        check(q.load(text, errs) && errs.empty() && q.serialize() == text, "...and reads back to the same text", errs.empty() ? "" : errs[0]);
+        SimParams bad;
+        check(!bad.load("; a comment\nlatency.alu = 4\nnope = 1\nlatency.mul = x\njust words\n", errs) && bad.get("latency.alu") == 4 && errs.size() >= 3, "a bad line is reported and skipped, the good ones are kept");
+        p.clear("main.fetch_cycles");
+        check(!p.isSet("main.fetch_cycles") && p.status("main.fetch_cycles") == "planning" && p.note("main.fetch_cycles").empty(), "clearing goes back to the initial value, status and note too");
+        SimParams a = P({{"latency.alu", "2"}, {"latency.mul", "3"}}), b = P({{"latency.alu", "9"}});
+        a.merge(b);
+        check(a.get("latency.alu") == 9 && a.get("latency.mul") == 3, "merging: the later values win");
+        Latency l;
+        a.apply(l);
+        check(l.alu == 9 && l.mul == 3 && l.brCond == 1, "the parameters that are Latency fields are written into it");
+    }
+
+    section("hardware parameters: what they do to the simulator (each one measured against the cycle count)");
+    const std::string alus = ".main\ns:" + std::string(10, ' ') + "ALU ADD unsigned\n ALU ADD unsigned\n ALU ADD unsigned\n ALU ADD unsigned\n ALU ADD unsigned\n ALU ADD unsigned\n ALU ADD unsigned\n ALU ADD unsigned\n ALU ADD unsigned\n ALU ADD unsigned\nh: JMP h\n";
+    const Cycle base10 = doneAt(alus, SimParams());
+    check(base10 > 0, "(the reference run of ten ALU operations)", std::to_string(base10));
+    check(doneAt(alus, P({{"main.fetch_cycles", "3"}})) == base10 + 30, "main.fetch_cycles = 3: every instruction takes 3 cycles more (10 instructions: +30)");
+    check(doneAt(alus, P({{"peri.fetch_cycles", "3"}})) == base10, "...the Peri decoder's value does not touch Main");
+    check(doneAt(alus, P({{"latency.alu", "5"}})) == base10 + 40, "latency.alu = 5: each ALU operation 4 cycles more (+40)");
+    check(doneAt(alus, P({{"reset.boot_cycles", "100"}})) == base10 + 100, "reset.boot_cycles = 100: the first instruction waits 100 cycles after reset");
+    {
+        const std::string env = "[latency]\nalu = 3\n[params]\nlatency.alu = 4\n";
+        check(doneAt(alus, SimParams(), env) == base10 + 30, "the environment file's [params] win over its [latency] section (4, not 3: +30)");
+        check(doneAt(alus, P({{"latency.alu", "5"}}), env) == base10 + 40, "SimConfig::params win over both (5: +40)");
+        Fx f(alus, env, CallModel::Inline, nullptr);
+        check(f.good() && f.sim->params().get("latency.alu") == 4, "the simulator reports the parameters it runs with");
+    }
+    const std::string csrsM = ".main\ns: EXEC_CSR WRITE8 MARK, 1\n EXEC_CSR WRITE8 MARK, 1\n EXEC_CSR WRITE8 MARK, 1\n EXEC_CSR WRITE8 MARK, 1\n EXEC_CSR WRITE8 MARK, 1\nh: JMP h\n";
+    const Cycle csrBase = doneAt(csrsM, SimParams());
+    check(doneAt(csrsM, P({{"csr.access_main", "6"}})) == csrBase + 20, "csr.access_main = 6: each EXEC_CSR 4 cycles more than the 2 of latency.csr_access (5 of them: +20)");
+    check(doneAt(csrsM, P({{"csr.access_peri", "6"}})) == csrBase, "...csr.access_peri does not touch Main");
+    const std::string csrsP = ".peri\ns: EXEC_CSR WRITE8 MARK, 1\n EXEC_CSR WRITE8 MARK, 1\n EXEC_CSR WRITE8 MARK, 1\n EXEC_CSR WRITE8 MARK, 1\nh: JMP h\n";
+    const Cycle periBase = doneAt(csrsP, SimParams());
+    check(doneAt(csrsP, P({{"csr.access_peri", "5"}})) == periBase + 12 && doneAt(csrsP, P({{"peri.fetch_cycles", "2"}})) == periBase + 8, "Peri: csr.access_peri = 5 (+3 each, 4 of them) and peri.fetch_cycles = 2 (+2 each)");
+    {   // the timers: 100 ticks, then the done latch
+        const std::string prog = ".peri\ns: EXEC_CSR WRITE8 TPER, 100\n EXEC_CSR SET8 PERI_CTRL, 1\nw: BR.IF_TIMER_DONE d\n JMP w\nd: EXEC_CSR SET8 PERI_CTRL, 2\nh: JMP h\n";
+        auto doneOf = [&](const SimParams& p) { Fx f(prog, kEnvCsr, CallModel::Inline, &p); return f.good() ? f.runUntil("peri.done", 100000).now : 0; };
+        const Cycle t0 = doneOf(SimParams());
+        auto near = [&](Cycle got, Cycle want) { return got + 4 >= want && got <= want + 4; };      // the poll loop looks every two cycles
+        check(near(doneOf(P({{"timer.peri.clock_div", "4"}})), t0 + 300), "timer.peri.clock_div = 4: a 100-tick timer takes 400 cycles (+300)", std::to_string(t0));
+        check(near(doneOf(P({{"timer.peri.start_latency", "50"}, {"timer.peri.done_latency", "20"}})), t0 + 70), "timer.peri.start_latency 50 and done_latency 20: +70");
+        check(near(doneOf(P({{"timer.main.clock_div", "9"}, {"timer.main.start_latency", "99"}})), t0), "...the Main timer's values do not touch the Peri timer");
+    }
+    {   // the path to the I2C device: a read of one byte after one register address byte is 4 byte phases
+        const std::string env = std::string(kEnvCsr) + "[device d]\naddr = 0x68\nreg 0x10 = 0x55\n";
+        const std::string prog = ".peri\ns: EXEC_XFER READ dev=0, addr=0x10, addrlen=1, ptr=0\nh: JMP h\n";
+        const Cycle t0 = doneAt(prog, SimParams(), env);
+        check(doneAt(prog, P({{"i2ch.overhead", "50"}}), env) == t0 + 50, "i2ch.overhead = 50: the transfer starts 50 cycles later");
+        check(doneAt(prog, P({{"i2c.ack_delay", "3"}}), env) == t0 + 12, "i2c.ack_delay = 3: 3 cycles on each of the 4 byte phases (+12)");
+        check(doneAt(prog, P({{"i2c.stretch", "10"}}), env) == t0 + 40, "i2c.stretch = 10: 10 cycles on each of the 4 byte phases (+40)");
+        check(doneAt(prog, P({{"i2c.turnaround", "7"}}), env) == t0 + 7, "i2c.turnaround = 7: once, for the repeated start of a read with a register address");
+        check(doneAt(prog, P({{"peri.fetch_cycles", "2"}}), env) == t0 + 2, "peri.fetch_cycles = 2 also counts for EXEC_XFER (+2)");
+    }
+    {   // events: the dispatch to the handler and the return from it
+        const char* prog = ".main\n.vector 0, h\nloop: MOV CONST(1, 1) -> MAIN_SCRATCHPAD[0..0]\n BR.COND ALWAYS, nxt, safe\nnxt: MOV CONST(2, 1) -> MAIN_SCRATCHPAD[1..1]\n BR.COND PERI_RESULT_VALID, loop, safe\n jl: JMP loop\nh: MOV CONST(7, 1) -> MAIN_SCRATCHPAD[5..5]\n BR.ERET\n";
+        auto resumed = [&](const SimParams& p) {
+            Fx f(prog, "", CallModel::Inline, &p);
+            injectAt(f, 1, "event main id=0");
+            RunLimits l; l.maxCycles = 400; l.stopOnIdle = false; l.untilExpr = "scratch[5] == 7 && !main.in_handler && scratch[1] == 2";
+            return f.sim->run(l).now;
+        };
+        const Cycle t0 = resumed(SimParams());
+        check(resumed(P({{"event.dispatch_extra", "5"}, {"event.eret_extra", "7"}})) == t0 + 12, "event.dispatch_extra 5 and event.eret_extra 7: the interrupted flow carries on 12 cycles later");
+    }
+    {   // the frame timing: the video windows and the WCET registers are parameters too
+        const char* prog = ".main\nstart: BR.COND VBLANK_OPEN, in\n JMP start\nin: EXEC_CSR WRITE8 MARK, 1\nh: JMP h\n";
+        Fx f(prog, "", CallModel::Inline, nullptr);
+        SimParams p = P({{"timing.frame_cycles", "1000"}, {"timing.vblank_start", "300"}, {"timing.vblank_len", "200"}, {"frame.wcet_pgl", "123"}});
+        Fx g(prog, "", CallModel::Inline, &p);
+        RunResult rr = g.runUntil("csr[0x50] == 1", 5000);
+        check(rr.reason == StopReason::Condition && rr.now >= 300 && rr.now < 320, "timing.* parameters make the video window: VBLANK_OPEN at cycle 300", std::to_string(rr.now));
+        check(ev(*g.sim, "wcet_pgl") == 123 && ev(*f.sim, "wcet_pgl") == 0, "frame.wcet_pgl is the Frame Timing WCET register (the signal's initial value)");
+    }
+    {   // the parameters that are listed but not used yet change nothing, so a parameter file can already carry them
+        const std::string env = std::string(kEnvCsr) + "[device d]\naddr = 0x68\nregseq 0x10 = 0x11, 0x22\n";
+        const std::string prog = ".main\nh: JMP h\n.peri\nl: EXEC_XFER READ dev=0, len=2, ptr=0, ext=[0x10]\n EXEC_PUB service=1, src=0, len=2\n JMP l\n";
+        auto final = [&](const SimParams& p) {
+            Fx f(prog, env, CallModel::Inline, &p);
+            RunLimits l; l.maxCycles = 30000; l.stopOnIdle = false;
+            RunResult rr = f.sim->run(l);
+            return std::to_string(rr.now) + "/" + std::to_string(ev(*f.sim, "peri.instrs")) + "/" + std::to_string(ev(*f.sim, "slot.valid")) + "/" + std::to_string(ev(*f.sim, "slot[0..1]"));
+        };
+        const std::string ref = final(SimParams());
+        SimParams defaults, inactive;
+        std::string e;
+        for (const ParamDef& d : paramCatalog()) {
+            if (d.active) defaults.set(d.key, SimParams().text(d.key), e);
+            else inactive.set(d.key, d.kind == ParamDef::Enum ? d.options.back() : d.kind == ParamDef::Bool ? "true" : "7", e);
+        }
+        check(final(defaults) == ref, "every active parameter set explicitly to its initial value: the run is the same as with none set", ref);
+        check(final(inactive) == ref, "every parameter that is not used yet set to something else: the run is the same (they are stored, not applied)");
+    }
+    {   // the document that lists them is the catalog's
+        const std::string doc = slurp(dir() + "/docs/SIM_PARAMS.md");
+        std::string missing;
+        for (const ParamDef& d : paramCatalog()) if (doc.find("`" + d.key + "`") == std::string::npos) missing += d.key + " ";
+        check(!doc.empty() && missing.empty(), "docs/SIM_PARAMS.md lists every parameter (regenerate it when the catalog changes)", missing);
+    }
+    {   // errors in the environment's [params] section are reported like every other environment error
+        Fx f(".main\nh: JMP h\n", "[params]\nno.such = 3\nlatency.alu = 99999999\n", CallModel::Inline, nullptr);
+        check(f.sim && f.sim->configErrors().size() >= 2, "a bad key and an out-of-range value in [params] are reported", f.sim ? std::to_string(f.sim->configErrors().size()) : "no sim");
+    }
+}
+
 int main() {
     std::printf("AssemblyCore simulator tests\n");
     t_alu();
@@ -926,6 +1084,7 @@ int main() {
     t_inject_now();
     t_extensions();
     t_scenario();
+    t_params();
     std::printf("\n%s  %d passed, %d failed\n", g_fail ? "FAILED" : "OK    ", g_pass, g_fail);
     return g_fail ? 1 : 0;
 }

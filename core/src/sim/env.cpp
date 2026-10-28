@@ -150,6 +150,11 @@ void Simulator::Impl::loadEnv(const std::string& text) {
                 if (kv.first.compare(0, 3, "at ") != 0 || !numberOf(*this, kv.first.substr(3), v) || v < 0) { line("expected 'at <cycle> = <command>'"); continue; }
                 envInjects.push_back({(Cycle)v, kv.second});
             }
+        } else if (s.kind == "params") {
+            std::string t;
+            for (auto& kv : s.kv) t += kv.first + " = " + kv.second + "\n";
+            std::vector<std::string> pe;
+            if (!params.load(t, pe)) for (auto& m : pe) line(m);
         } else if (s.kind != "signal" && s.kind != "latency") {
             line("unknown section kind");
         }
