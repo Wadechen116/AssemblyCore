@@ -312,15 +312,18 @@ row peri_timer "done" flag timer.done
 row peri_timer "restarts" signal timer.gen
 
 # ---- shared
-box arb        820 200 190  72 shared  "Main/Peri CSR Arbiter"         help="Both decoders reach the CSRs through it. (The simulator does not model contention yet: sim parameters csr.arbiter_*)"
-row arb "" text "not modelled yet"
+box arb        820 200 190  96 shared  "Main/Peri CSR Arbiter"         help="Both decoders reach the CSRs through it. Contention is modelled when csr.arbiter_policy is not none: the second one waits (parameters csr.arbiter_*)."
+row arb "busy" flag arb.busy
+row arb "Main waited" signal arb.stall_main
+row arb "Peri waited" signal arb.stall_peri
 box csr       1040 200 140 152 data    "CSR"                           target=csrs help="The CSRs the program names. Click: the CSRs panel."
 row csr "" csrn 0
 row csr "" csrn 1
 row csr "" csrn 2
 row csr "" csrn 3
 row csr "" csrn 4
-box xfer       830 440 150  60 shared  "Data Xfer"                     help="The data path of EXEC_XFER."
+box xfer       830 440 150  60 shared  "Data Xfer"                     help="The data path of EXEC_XFER, EXEC_PUB and Main's reads of the result slot. Contention is modelled when datapath.contention is on."
+row xfer "busy" flag xfer.busy
 box i2ch      1020 440 160  60 shared  "i2ch"                          help="CSR -> i2ch -> i2cm_top: parameter i2ch.overhead."
 box i2cm       830 540 150  60 shared  "i2cm_top"                      help="The I2C master: parameters i2c.ack_delay, i2c.stretch, i2c.turnaround."
 box dev       1020 540 160  92 device  "I2C device / EEPROM"           help="The device of the environment file ([device ...])."

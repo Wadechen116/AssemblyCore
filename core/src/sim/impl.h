@@ -69,6 +69,7 @@ struct SlotState {
     uint8_t svc = 0;
     uint8_t payload[32] = {};
     Cycle clearedAt = kNever;      // when Main last cleared valid (spec 12.6: no same-cycle reuse)
+    Cycle validAt = 0;             // from when Main can see `valid` (the publish plus slot.copy_extra and slot.valid_delay)
 };
 struct TimedEvent {
     enum Kind { SetSignal, SlotConsumeDone, XferDone, FrameEnd, WindowEdge, Command, SlotBusyEnd };
@@ -96,6 +97,14 @@ struct State {
     bool hasFault[2] = {false, false};
     Fault fault[2];
     std::vector<uint32_t> hits[2];                     // [domain][pc]: how many times the instruction at that pc was executed
+    // shared resources (parameters csr.arbiter_*, datapath.*). freeAt: when the one that has it lets go. next: the decoder that was granted it next (it waited), and
+    // grantAt: when its turn comes (freeAt plus the hand-over penalty); the other decoder queues behind it. last: who used it last (round robin).
+    struct SharedRes { Cycle freeAt = 0, grantAt = 0; int next = -1, last = -1; };
+    SharedRes arb, xfer;
+    uint64_t stalls[2] = {0, 0}, stallCycles[2] = {0, 0};                  // how often and how long each decoder was held back
+    // the value of each stored signal before its last change, and when it changed (flag.sample_delay_*)
+    std::vector<int64_t> sigPrev;
+    std::vector<Cycle> sigAt;
 };
 
 // ---- environment model ---------------------------------------------------------------------------------------------------------
@@ -206,6 +215,20 @@ struct Simulator::Impl : public ExprBinder, public ExprEnv, public ActionContext
     int eventDispatchExtra = 0, eretExtra = 0;
     int timerDiv[2] = {1, 1}, timerStart[2] = {0, 0}, timerDone[2] = {0, 0};     // [0] Main timer, [1] Peri timer
     int i2chOverhead = 0, i2cAck = 0, i2cStretch = 0, i2cTurnaround = 0;
+    // shared resources and what a BR sees (S7): 0 = not modelled
+    int arbPolicy = 0, arbPenalty = 0;                 // csr.arbiter_policy (0 none, 1 main_first, 2 peri_first, 3 round_robin), csr.arbiter_penalty
+    bool xferContention = false;
+    int xferPenalty = 0, slotCopyExtra = 0, slotValidDelay = 0;
+    int sampleDelay[2] = {0, 0};                       // flag.sample_delay_main / _peri
+    mutable Cycle viewDelay_ = 0;                      // while a BR evaluates its condition: how far back in time it sees the flags
+    Cycle viewNow() const { return viewDelay_ > st.now ? 0 : st.now - viewDelay_; }
+    bool slotVisible() const { return st.slot.valid && st.now >= st.slot.validAt + viewDelay_; }
+    bool evalCondition(int domain, const Expr& e) { viewDelay_ = (Cycle)sampleDelay[domain]; const bool r = evalBool(e); viewDelay_ = 0; return r; }
+    bool nextIsCsr(int domain) const;                  // the instruction a decoder is about to issue is an EXEC_CSR
+    Cycle claim(State::SharedRes& r, int domain, int penalty);      // 0: the resource is the decoder's now; else the cycle it has to wait for
+    bool gate(int domain, uint32_t pc, bool csr, bool xfer);       // true: a shared resource is taken, the instruction waits (and tries again)
+    void occupy(int domain, bool csr, bool xfer, int latency);
+    bool mainMoveFromSlot(int arg) const;
     void applyParams();
     Latency latFor(int domain) const { Latency l = lat; if (csrAccessOf[domain] >= 0) l.csrAccess = csrAccessOf[domain]; return l; }
     int64_t xferExtra(bool read, int addrLen, int dataLen) const {         // the I2C path's extras on top of Latency::xfer

@@ -43,7 +43,8 @@ enum class EventType {
     Fault,        // what = fault code, text = message
     Inject,       // an injected environment command was applied
     Note,         // free text (scenario `log`, breakpoints...)
-    HwEvent       // hardware event (spec v31 16): what = "raise" | "dispatch" | "eret", a = event id, b = resume PC (dispatch) / handler cycles (eret)
+    HwEvent,      // hardware event (spec v31 16): what = "raise" | "dispatch" | "eret", a = event id, b = resume PC (dispatch) / handler cycles (eret)
+    Stall         // an instruction found a shared resource taken and waits for it: what = "csr" | "xfer", a = cycles it waits (including the penalty), pc = the instruction
 };
 struct Event {
     Cycle t = 0;

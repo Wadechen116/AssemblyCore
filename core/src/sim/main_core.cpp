@@ -103,7 +103,7 @@ void Simulator::Impl::opMainBr(OpCtx& oc) {
         if (type == 0) {
             const Cond& c = cond[0][carg];
             if (!c.defined) { fail("fault_cond_undefined", "branch condition 0x" + std::to_string(carg) + " is not defined (reserved, or profile-defined without a definition)"); return; }
-            const bool taken = evalBool(c.e);
+            const bool taken = evalCondition(0, c.e);
             if (taken && target >= im.codeLimit) { fail("fault_branch_target", "branch target " + std::to_string(target) + " is outside the code"); return; }
             if (taken && carg == 0 && target == pc && !mb.eventSafe) {          // BR.COND ALWAYS to itself: the program has finished (a safe one waits for events)
                 m.halted = true;
@@ -174,7 +174,7 @@ void Simulator::Impl::opMainMov(OpCtx& oc) {
             const uint32_t want = len >= 32 ? 0xFFFFFFFFu : (((1u << len) - 1) << so);
             if ((m.bufOk & want) != want) { fail("fault_csrbuf_invalid", "MOV from MAIN_CSR_DATA_BUF bytes whose EXEC_CSR READ did not complete (csr_buf_valid, spec v31 4.3): a failed readback must not be consumed"); return; }
         }
-        if (sr == 2 && (!st.slot.valid || st.slot.busy)) { fail("fault_slot_not_valid", "MOV from PERI_RESULT_SLOT while it holds no result"); return; }   // ASSUMED: spec says only that a failed precheck keeps valid_q
+        if (sr == 2 && (!slotVisible() || st.slot.busy)) { fail("fault_slot_not_valid", "MOV from PERI_RESULT_SLOT while it holds no result"); return; }   // ASSUMED: spec says only that a failed precheck keeps valid_q
         std::vector<uint8_t> bytes;
         if (!regionBytes(regName(sr), so, len, bytes)) { fail("fault_mov_range", "source read failed"); return; }
         emit([&](Event& e) { e.type = EventType::Issue; e.domain = 0; e.pc = pc; e.a = 1; e.what = it != instrAt[0].end() ? it->second->text : "MOV"; });
@@ -274,8 +274,11 @@ void Simulator::Impl::stepMain() {
     oc.latency = 1;
     const auto& h = mainOps[b >> 6];
     if (!h) { raise(Domain::Main, pc, "fault_opcode", "opcode " + std::to_string(b >> 6) + " has no handler"); return; }
+    const bool usesCsr = (b >> 6) == 0, usesXfer = (b >> 6) == 2 && xferContention && mainMoveFromSlot(b & 63);
+    if (gate(0, pc, usesCsr, usesXfer)) return;                                   // a shared resource is taken: not now
     h(oc);
     if (m.faulted || oc.skipAdvance) return;
+    occupy(0, usesCsr, usesXfer, oc.latency);
     m.pc = oc.next;
     m.readyAt = st.now + (Cycle)(oc.latency + fetchExtra[0]);
     m.instrs++;

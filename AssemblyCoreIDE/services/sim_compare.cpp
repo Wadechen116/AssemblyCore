@@ -52,6 +52,7 @@ bool markerOf(const Event& e, TraceMarker& m) {
         case EventType::Consume: m.kind = 'c'; break;
         case EventType::Overrun: m.kind = 'o'; break;
         case EventType::Fault: m.kind = 'f'; break;
+        case EventType::Stall: m.kind = 'z'; m.hasPc = e.domain == 0 || e.domain == 1; m.pc = e.pc; return true;       // a decoder waits for a resource both share
         case EventType::Signal:
             if (e.what == "timer.gen" || e.what == "main_timer.gen") {            // a new generation of a timer: it was (re)started (or cleared)
                 const bool main = e.what[0] == 'm';
@@ -142,6 +143,7 @@ TraceStats traceStats(const RunTrace& t) {
             case 'c': s.taken++; break;
             case 'o': s.overruns++; break;
             case 'f': s.faults++; break;
+            case 'z': if (m.domain == 0 || m.domain == 1) { s.stalls[m.domain]++; s.stallCycles[m.domain] += (asmcore::sim::Cycle)m.a; } break;
             case 'b': s.busTransfers++; if (m.b == 0) s.busNacks++; break;
             case 's': s.timersStarted++; break;
             case 'd': s.timersDone++; break;

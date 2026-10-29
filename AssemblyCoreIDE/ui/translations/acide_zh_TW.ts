@@ -1200,6 +1200,14 @@ Double click on the time line: wind the simulator back to that cycle (what is la
         <source>%1 fault(s)</source>
         <translation>%1 個故障</translation>
     </message>
+    <message>
+        <source>waits for a shared resource</source>
+        <translation>等共用資源</translation>
+    </message>
+    <message>
+        <source>Waits for a shared resource: Main %1 (%2 cycles), Peri %3 (%4 cycles)</source>
+        <translation>等共用資源：Main %1 次（共 %2 週期）、Peri %3 次（共 %4 週期）</translation>
+    </message>
 </context>
 <context>
     <name>IsaTopView</name>
@@ -2291,6 +2299,18 @@ Double click on the time line: wind the simulator back to that cycle (what is la
     <message>
         <source>Click: show the instruction that did it</source>
         <translation>按一下：顯示造成它的那條指令</translation>
+    </message>
+    <message>
+        <source>%1 waits %2 cycles for %3 (cycle %4)</source>
+        <translation>%1 等了 %2 週期，等的是%3（週期 %4）</translation>
+    </message>
+    <message>
+        <source>Data Xfer, which the other one is using</source>
+        <translation>另一個正在使用的 Data Xfer</translation>
+    </message>
+    <message>
+        <source>the CSR arbiter, which the other one is using</source>
+        <translation>另一個正在使用的 CSR 仲裁器</translation>
     </message>
 </context>
 <context>

@@ -942,7 +942,7 @@ static void t_params() {
         bool same = true;
         for (const ParamDef& d : paramCatalog()) if (d.latency) same &= d.def == L.*(d.latency);
         check(same, "the initial values of the cycle model are the Latency defaults (nothing drifts)");
-        check(inactive >= 8, "the parameters of what the simulator does not model yet are in the catalog, marked not active", std::to_string(inactive));
+        check(inactive == 0, "every parameter of the catalog is used by the simulator (the shared resources and the sampling delays, S7, were the last ones)", std::to_string(inactive));
     }
     {
         SimParams p;
@@ -1062,6 +1062,109 @@ static void t_params() {
         f.sim->setParams(w);
         check(f.sim->signal("wcet_pgl") == 55, "frame.wcet_pgl written while running reaches the WCET register at once");
     }
+    {   // S7: the CSR arbiter. Two decoders in a tight EXEC_CSR loop, started together
+        const std::string prog = ".csr A = 0x50\n.csr B = 0x51\n.main\nm: EXEC_CSR WRITE8 A, 1\n JMP m\n.peri\np: EXEC_CSR WRITE8 B, 1\n JMP p\n";
+        // (a CSR access that takes 6 cycles in a loop of 8: the two loops cannot both fit, so they keep meeting at the arbiter)
+        auto counts = [&](SimParams p, uint64_t* stallMain = nullptr, uint64_t* stallPeri = nullptr) {
+            std::string e;
+            p.set("latency.csr_access", "6", e);
+            Fx f(prog, "", CallModel::Inline, &p);
+            RunLimits l; l.maxCycles = 4000; l.stopOnIdle = false;
+            f.sim->run(l);
+            if (stallMain) *stallMain = (uint64_t)ev(*f.sim, "arb.stall_main");
+            if (stallPeri) *stallPeri = (uint64_t)ev(*f.sim, "arb.stall_peri");
+            return std::make_pair((long long)f.sim->instructions(Domain::Main), (long long)f.sim->instructions(Domain::Peri));
+        };
+        const auto none = counts(SimParams());
+        check(std::llabs(none.first - none.second) <= 1 && none.first > 400, "no arbitration (the default): both decoders run at their own pace", std::to_string(none.first) + "/" + std::to_string(none.second));
+        // who gets the arbiter when both want it in the same cycle (the first cycle of this program): the one that goes first has written its CSR, the other has not yet
+        auto first = [&](const char* policy) {
+            std::string e;
+            SimParams p;
+            p.set("latency.csr_access", "6", e);
+            if (policy) p.set("csr.arbiter_policy", policy, e);
+            Fx f(prog, "", CallModel::Inline, &p);
+            RunLimits l; l.maxCycles = 2; l.stopOnIdle = false;
+            f.sim->run(l);
+            return std::make_pair(ev(*f.sim, "csr[0x50]"), ev(*f.sim, "csr[0x51]"));
+        };
+        check(first(nullptr) == std::make_pair<int64_t, int64_t>(1, 1), "no arbitration: both decoders write their CSR in the first cycle");
+        check(first("main_first") == std::make_pair<int64_t, int64_t>(1, 0), "main_first: Main gets the arbiter, Peri has not written yet");
+        check(first("peri_first") == std::make_pair<int64_t, int64_t>(0, 1), "peri_first: Peri does");
+        check(first("round_robin") == std::make_pair<int64_t, int64_t>(1, 0), "round_robin: Main (nobody had it before), and then they take turns");
+        uint64_t sm = 0, sp = 0;
+        const auto mf = counts(P({{"csr.arbiter_policy", "main_first"}}), &sm, &sp);
+        check(sm > 100 && sp > 100 && std::llabs(mf.first - mf.second) <= 2, "after that they keep meeting at the arbiter and settle into taking turns (each waits for the other about every time)", std::to_string(mf.first) + "/" + std::to_string(mf.second) + " waits " + std::to_string(sm) + "/" + std::to_string(sp));
+        check(mf.first + mf.second < none.first + none.second, "a shared arbiter costs time in all (fewer instructions in the same cycles)", std::to_string(mf.first + mf.second) + " < " + std::to_string(none.first + none.second));
+        const auto pen = counts(P({{"csr.arbiter_policy", "main_first"}, {"csr.arbiter_penalty", "10"}}));
+        check(pen.second < mf.second, "csr.arbiter_penalty: the one that waited waits longer", std::to_string(pen.second) + " < " + std::to_string(mf.second));
+        check(pen.first > 200 && pen.second > 200 && std::llabs(pen.first - pen.second) <= 3, "...and both go on at the same slower pace: nobody starves (the one that waits is granted the arbiter, so the other cannot take it again and again)", std::to_string(pen.first) + "/" + std::to_string(pen.second));
+        const auto pen3 = counts(P({{"csr.arbiter_policy", "main_first"}, {"csr.arbiter_penalty", "3"}}));
+        check(pen3.first > 300 && pen3.second > 300 && pen3.first + pen3.second > pen.first + pen.second, "a smaller penalty costs less", std::to_string(pen3.first) + "/" + std::to_string(pen3.second));
+        check(counts(P({{"csr.arbiter_penalty", "10"}})) == none, "a penalty without a policy does nothing (none = not modelled)");
+    }
+    {   // S7: Data Xfer, shared by Peri's EXEC_PUB and Main's MOV from the result slot
+        const std::string prog = ".main\nm: BR.COND PERI_RESULT_VALID, take\n JMP m\ntake: MOV PERI_RESULT_SLOT[0..3] -> MAIN_SCRATCHPAD[0..3]\n JMP m\n.peri\np: EXEC_PUB service=1, src=0, len=4\n JMP p\n";
+        struct Count : EventSink { uint64_t consumes = 0, stalls = 0, overruns = 0; void onEvent(const Event& e) override { consumes += e.type == EventType::Consume; stalls += e.type == EventType::Stall; overruns += e.type == EventType::Overrun; } };
+        auto run = [&](const SimParams& p) {
+            Fx f(prog, "", CallModel::Inline, &p);
+            auto c = std::make_shared<Count>();
+            f.sim->addSink(c);
+            RunLimits l; l.maxCycles = 6000; l.stopOnIdle = false;
+            f.sim->run(l);
+            return c;
+        };
+        const auto off = run(SimParams());
+        const auto on = run(P({{"datapath.contention", "true"}, {"datapath.contention_cycles", "15"}}));
+        check(off->stalls == 0 && off->consumes > 20, "no contention (the default): Main takes the results as fast as Peri publishes them", std::to_string(off->consumes));
+        check(on->stalls > 0 && on->consumes < off->consumes, "datapath.contention: Main's MOV waits while Peri's EXEC_PUB has Data Xfer: fewer results are taken", std::to_string(on->consumes) + " < " + std::to_string(off->consumes) + ", " + std::to_string(on->stalls) + " waits");
+    }
+    {   // S7: the result slot: the copy takes longer, the result is seen later
+        const std::string prog = ".csr A = 0x50\n.main\nm: BR.COND PERI_RESULT_VALID, got\n JMP m\ngot: EXEC_CSR WRITE8 A, 1\nh: JMP h\n.peri\n EXEC_PUB service=1, src=0, len=2\nq: JMP q\n";
+        auto seenAt = [&](const SimParams& p) { Fx f(prog, "", CallModel::Inline, &p); return f.good() ? f.runUntil("csr[0x50] == 1", 5000).now : (Cycle)0; };
+        const Cycle t0 = seenAt(SimParams());
+        auto near = [&](Cycle got, Cycle want) { return got + 3 >= want && got <= want + 3; };      // (Main polls every two cycles)
+        check(t0 > 0 && near(seenAt(P({{"slot.valid_delay", "50"}})), t0 + 50), "slot.valid_delay = 50: Main sees PERI_RESULT_VALID 50 cycles later", std::to_string(t0));
+        check(near(seenAt(P({{"slot.copy_extra", "10"}})), t0 + 10), "slot.copy_extra = 10: the copy takes 10 cycles more: the result is visible 10 cycles later");
+        check(near(seenAt(P({{"slot.copy_extra", "10"}, {"slot.valid_delay", "50"}})), t0 + 60), "...and both add up");
+        // a MOV before the result is visible is the fault it always was (a result that is not valid yet cannot be taken)
+        SimParams late = P({{"slot.valid_delay", "50"}});
+        Fx f(".main\nm: MOV PERI_RESULT_SLOT[0..1] -> MAIN_SCRATCHPAD[0..1]\nh: JMP h\n.peri\n EXEC_PUB service=1, src=0, len=2\nq: JMP q\n", "", CallModel::Inline, &late);
+        RunLimits l; l.maxCycles = 200; l.stopOnIdle = false;
+        f.sim->run(l);
+        check(f.sim->faulted(Domain::Main), "a MOV from the slot before it is visible faults (the slot holds no result yet, as far as Main can see)");
+        // Peri's EXEC_PUB is longer by the copy extra
+        auto periCount = [&](const SimParams& p) { Fx g(".main\nh: JMP h\n.peri\np: EXEC_PUB service=1, src=0, len=2\n JMP p\n", "", CallModel::Inline, &p); RunLimits ll; ll.maxCycles = 1000; ll.stopOnIdle = false; g.sim->run(ll); return (long long)g.sim->instructions(Domain::Peri); };
+        check(periCount(P({{"slot.copy_extra", "20"}})) < periCount(SimParams()), "slot.copy_extra makes the EXEC_PUB itself longer too");
+    }
+    {   // S7: what a BR sees: the flags as they were some cycles ago
+        const std::string mainProg = ".csr A = 0x50\n.main\ns: BR.COND MAIN_TIMER_DONE, go\n JMP s\ngo: EXEC_CSR WRITE8 A, 1\nh: JMP h\n";
+        const std::string env = "[inject]\nat 100 = signal main_timer.done=1\n";
+        auto seen = [&](const SimParams& p) { Fx f(mainProg, env, CallModel::Inline, &p); return f.good() ? f.runUntil("csr[0x50] == 1", 5000).now : (Cycle)0; };
+        const Cycle t0 = seen(SimParams());
+        check(t0 >= 100 && t0 < 110, "the flag changes at cycle 100: a Main BR sees it within a couple of cycles", std::to_string(t0));
+        const Cycle t30 = seen(P({{"flag.sample_delay_main", "30"}}));
+        check(t30 >= t0 + 28 && t30 <= t0 + 34, "flag.sample_delay_main = 30: it sees it 30 cycles later", std::to_string(t30) + " vs " + std::to_string(t0));
+        check(seen(P({{"flag.sample_delay_peri", "30"}})) == t0, "...the Peri delay is Peri's alone");
+        const std::string periProg = ".csr A = 0x50\n.main\nh: JMP h\n.peri\ns: BR.IF_TIMER_DONE go\n JMP s\ngo: EXEC_CSR WRITE8 A, 1\nq: JMP q\n";
+        const std::string env2 = "[inject]\nat 100 = signal timer.done=1\n";
+        auto seenP = [&](const SimParams& p) { Fx f(periProg, env2, CallModel::Inline, &p); return f.good() ? f.runUntil("csr[0x50] == 1", 5000).now : (Cycle)0; };
+        const Cycle p0 = seenP(SimParams());
+        const Cycle p40 = seenP(P({{"flag.sample_delay_peri", "40"}}));
+        check(p0 >= 100 && p40 >= p0 + 38 && p40 <= p0 + 44, "flag.sample_delay_peri = 40: a Peri BR sees it 40 cycles later", std::to_string(p40) + " vs " + std::to_string(p0));
+        // the video window is seen late too
+        const std::string win = ".csr A = 0x50\n.main\ns: BR.COND VBLANK_OPEN, go\n JMP s\ngo: EXEC_CSR WRITE8 A, 1\nh: JMP h\n";
+        const std::string wenv = "[timing]\nframe_cycles = 4000\nvblank_start = 300\nvblank_len = 200\n";
+        auto seenW = [&](const SimParams& p) { Fx f(win, wenv, CallModel::Inline, &p); return f.good() ? f.runUntil("csr[0x50] == 1", 5000).now : (Cycle)0; };
+        check(seenW(P({{"flag.sample_delay_main", "25"}})) >= seenW(SimParams()) + 23, "the blanking window opens for a delayed BR later too");
+    }
+    {   // S7: with everything at its initial value the run is the one it always was (and the arbiter signals say nothing is going on)
+        const std::string prog = ".csr A = 0x50\n.main\nm: EXEC_CSR WRITE8 A, 1\n JMP m\n.peri\np: EXEC_CSR WRITE8 A, 2\n JMP p\n";
+        Fx f(prog, "", CallModel::Inline, nullptr);
+        RunLimits l; l.maxCycles = 500; l.stopOnIdle = false;
+        f.sim->run(l);
+        check(ev(*f.sim, "arb.busy") == 0 && ev(*f.sim, "xfer.busy") == 0 && ev(*f.sim, "arb.stall_main") == 0 && ev(*f.sim, "arb.stall_peri") == 0, "nothing is modelled: the arbiter is never busy and nobody waited");
+    }
     {   // the frame timing: the video windows and the WCET registers are parameters too
         const char* prog = ".main\nstart: BR.COND VBLANK_OPEN, in\n JMP start\nin: EXEC_CSR WRITE8 MARK, 1\nh: JMP h\n";
         Fx f(prog, "", CallModel::Inline, nullptr);
@@ -1071,7 +1174,7 @@ static void t_params() {
         check(rr.reason == StopReason::Condition && rr.now >= 300 && rr.now < 320, "timing.* parameters make the video window: VBLANK_OPEN at cycle 300", std::to_string(rr.now));
         check(ev(*g.sim, "wcet_pgl") == 123 && ev(*f.sim, "wcet_pgl") == 0, "frame.wcet_pgl is the Frame Timing WCET register (the signal's initial value)");
     }
-    {   // the parameters that are listed but not used yet change nothing, so a parameter file can already carry them
+    {   // a parameter file that spells out the initial values of everything changes nothing
         const std::string env = std::string(kEnvCsr) + "[device d]\naddr = 0x68\nregseq 0x10 = 0x11, 0x22\n";
         const std::string prog = ".main\nh: JMP h\n.peri\nl: EXEC_XFER READ dev=0, len=2, ptr=0, ext=[0x10]\n EXEC_PUB service=1, src=0, len=2\n JMP l\n";
         auto final = [&](const SimParams& p) {
@@ -1081,14 +1184,10 @@ static void t_params() {
             return std::to_string(rr.now) + "/" + std::to_string(ev(*f.sim, "peri.instrs")) + "/" + std::to_string(ev(*f.sim, "slot.valid")) + "/" + std::to_string(ev(*f.sim, "slot[0..1]"));
         };
         const std::string ref = final(SimParams());
-        SimParams defaults, inactive;
+        SimParams defaults;
         std::string e;
-        for (const ParamDef& d : paramCatalog()) {
-            if (d.active) defaults.set(d.key, SimParams().text(d.key), e);
-            else inactive.set(d.key, d.kind == ParamDef::Enum ? d.options.back() : d.kind == ParamDef::Bool ? "true" : "7", e);
-        }
-        check(final(defaults) == ref, "every active parameter set explicitly to its initial value: the run is the same as with none set", ref);
-        check(final(inactive) == ref, "every parameter that is not used yet set to something else: the run is the same (they are stored, not applied)");
+        for (const ParamDef& d : paramCatalog()) defaults.set(d.key, SimParams().text(d.key), e);
+        check(final(defaults) == ref, "every parameter set explicitly to its initial value: the run is the same as with none set", ref);
     }
     {   // the document that lists them is the catalog's
         const std::string doc = slurp(dir() + "/docs/SIM_PARAMS.md");

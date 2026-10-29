@@ -123,26 +123,26 @@
 
 | 參數 | 單位 | 初始值 | 範圍 | 說明 | 在 FPGA 上怎麼量 |
 |---|---|---|---|---|---|
-| `csr.arbiter_policy` |  | none | none \| main_first \| peri_first \| round_robin | how the Main/Peri CSR arbiter chooses when both decoders want the CSR bus in the same cycle; none = no arbitration is modelled（**尚未被模擬器使用**） | both decoders issue EXEC_CSR in the same cycle |
-| `csr.arbiter_penalty` | ISA cycles | 0 | 0 … 100000 | extra cycles the decoder that loses the arbitration waits（**尚未被模擬器使用**） | difference in completion between the winner and the loser |
+| `csr.arbiter_policy` |  | none | none \| main_first \| peri_first \| round_robin | the Main/Peri CSR arbiter. none: no arbitration is modelled (the two decoders never wait for each other). Otherwise both decoders reach the CSRs through ONE arbiter: an EXEC_CSR holds it for the access part of the instruction, and an EXEC_CSR of the other decoder that finds it taken does not start until it is free (plus csr.arbiter_penalty). When both want it in the same cycle this policy chooses who goes first: main_first, peri_first, or round_robin (the one that did not have it last). A MODEL: confirm it against the RTL / the FPGA | both decoders issue EXEC_CSR in a loop, started together: who is slowed, and by how much |
+| `csr.arbiter_penalty` | ISA cycles | 0 | 0 … 100000 | extra cycles an EXEC_CSR waits after the arbiter became free (the hand-over); only with csr.arbiter_policy other than none | difference in completion between the winner and the loser, minus the time the winner held the arbiter |
 
 ## Data path
 
 | 參數 | 單位 | 初始值 | 範圍 | 說明 | 在 FPGA 上怎麼量 |
 |---|---|---|---|---|---|
-| `datapath.contention` |  | false | true \| false | MOV and the result slot / EXEC_PUB share Data Xfer: one waits for the other（**尚未被模擬器使用**） | Main MOV from the slot while Peri runs EXEC_PUB |
-| `datapath.contention_cycles` | ISA cycles | 0 | 0 … 100000 | how long the one that waits waits（**尚未被模擬器使用**） | see datapath.contention |
+| `datapath.contention` |  | false | true \| false | Data Xfer is shared by Peri's EXEC_PUB and Main's MOV from PERI_RESULT_SLOT: one that finds it taken waits until it is free (plus datapath.contention_cycles). A MODEL: confirm it against the RTL / the FPGA | Main MOV from the slot while Peri runs EXEC_PUB |
+| `datapath.contention_cycles` | ISA cycles | 0 | 0 … 100000 | extra cycles the one that waited for Data Xfer waits after it became free; only with datapath.contention | see datapath.contention |
 
 ## Result slot
 
 | 參數 | 單位 | 初始值 | 範圍 | 說明 | 在 FPGA 上怎麼量 |
 |---|---|---|---|---|---|
-| `slot.copy_extra` | ISA cycles | 0 | 0 … 100000 | extra cycles for EXEC_PUB to copy rx_buf into result_slot（**尚未被模擬器使用**） | EXEC_PUB of 8 bytes against the model |
-| `slot.valid_delay` | ISA cycles | 0 | 0 … 100000 | delay from the copy to PERI_RESULT_VALID being visible to Main（**尚未被模擬器使用**） | Main polling PERI_RESULT_VALID after a PUB |
+| `slot.copy_extra` | ISA cycles | 0 | 0 … 100000 | extra cycles for EXEC_PUB to copy rx_buf into result_slot: the instruction takes this much longer and the result becomes visible this much later | EXEC_PUB of 8 bytes against the model |
+| `slot.valid_delay` | ISA cycles | 0 | 0 … 100000 | delay from the copy to PERI_RESULT_VALID being visible to Main (a BR or a MOV before that does not see the result) | Main polling PERI_RESULT_VALID after a PUB |
 
 ## Status flags
 
 | 參數 | 單位 | 初始值 | 範圍 | 說明 | 在 FPGA 上怎麼量 |
 |---|---|---|---|---|---|
-| `flag.sample_delay_main` | ISA cycles | 0 | 0 … 100000 | delay from a condition changing to a Main BR seeing it（**尚未被模擬器使用**） | toggle a condition, find the first BR that sees it |
-| `flag.sample_delay_peri` | ISA cycles | 0 | 0 … 100000 | the same for Peri（**尚未被模擬器使用**） | toggle a condition, find the first BR that sees it |
+| `flag.sample_delay_main` | ISA cycles | 0 | 0 … 100000 | a Main BR sees the flags as they were this many cycles ago (stored signals such as the timers, the video windows, the result slot; not the ALU flags) | toggle a condition, find the first BR that sees it |
+| `flag.sample_delay_peri` | ISA cycles | 0 | 0 … 100000 | the same for a Peri BR | toggle a condition, find the first BR that sees it |

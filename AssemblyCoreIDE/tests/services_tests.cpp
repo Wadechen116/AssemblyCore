@@ -1392,6 +1392,7 @@ static void t_trace_ring() {
 static void t_trace_links() {
     std::printf("\nTrace links (what the time line connects)\n");
     using namespace asmcore::sim;
+    std::string err;
     auto ev = [](Cycle t, EventType ty, int domain, const char* what, int64_t a = 0, int64_t b = 0) { Event e; e.t = t; e.type = ty; e.domain = domain; e.what = what; e.a = a; e.b = b; return e; };
     {   // events -> markers
         TraceMarker m;
@@ -1456,6 +1457,28 @@ static void t_trace_links() {
         int closed = 0, open = 0;
         for (const TraceLink& l : traceLinks(t)) if (l.kind == TraceLink::Blanking) { if (l.open) open++; else closed++; }
         check(closed == 1 && open == 1, "the blanking window: a closed one and the one that is open now");
+    }
+    {   // waits for a shared resource (S7)
+        Event st;
+        st.t = 40; st.type = EventType::Stall; st.domain = 1; st.pc = 7; st.what = "csr"; st.a = 6;
+        TraceMarker m;
+        check(markerOf(st, m) && m.kind == 'z' && m.domain == 1 && m.hasPc && m.pc == 7 && m.a == 6 && m.what == "csr", "a stall is a marker: who waited, for what, how long, which instruction");
+        RunTrace t = build({st, ev(90, EventType::Signal, -1, "poll.ready", 0, 1)}, 100);
+        Event st2 = st; st2.t = 60; st2.domain = 0; st2.a = 4;
+        TraceMarker m2; markerOf(st2, m2); t.marks.push_back(m2);
+        const TraceStats ts = traceStats(t);
+        check(ts.stalls[1] == 1 && ts.stallCycles[1] == 6 && ts.stalls[0] == 1 && ts.stallCycles[0] == 4, "...and the statistics add them up per sequencer");
+        // a program in which both decoders fight for the CSR bus
+        const std::string prog = ".csr A = 0x50\n.csr B = 0x51\n.main\nm: EXEC_CSR WRITE8 A, 1\n JMP m\n.peri\np: EXEC_CSR WRITE8 B, 1\n JMP p\n";
+        SnapshotPtr sp = buildSource(prog);
+        SimConfig cfg;
+        cfg.params.set("csr.arbiter_policy", "main_first", err);
+        cfg.params.set("latency.csr_access", "6", err);
+        RunTrace rt = recordRun(sp->result, cfg, 2000);
+        const TraceStats rs = traceStats(rt);
+        check(rs.stalls[0] + rs.stalls[1] > 100 && rs.stallCycles[0] + rs.stallCycles[1] > 300, "a run with the arbiter on: both decoders waited, over and over", std::to_string(rs.stalls[0]) + "/" + std::to_string(rs.stalls[1]));
+        SimConfig off;
+        check(traceStats(recordRun(sp->result, off, 2000)).stalls[0] == 0, "...and without it nobody waited");
     }
     {   // a real run: the shipped example 14 has all of it
         const std::string dir = ACIDE_SAMPLE_DIR;

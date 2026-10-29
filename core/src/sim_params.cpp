@@ -116,14 +116,18 @@ std::vector<ParamDef> build() {
     add("i2c.turnaround", "I2C path", "ISA cycles", 0, 0, 1000000, "extra cycles for the direction change (repeated start) of a read with a register address", "repeated start on the bus");
 
     // ---- what the architecture drawing shows but the simulator does not model yet (stored, not used; a later stage turns them on)
-    choice("csr.arbiter_policy", "CSR arbiter", {"none", "main_first", "peri_first", "round_robin"}, 0, "how the Main/Peri CSR arbiter chooses when both decoders want the CSR bus in the same cycle; none = no arbitration is modelled", "both decoders issue EXEC_CSR in the same cycle", false);
-    add("csr.arbiter_penalty", "CSR arbiter", "ISA cycles", 0, 0, 100000, "extra cycles the decoder that loses the arbitration waits", "difference in completion between the winner and the loser", false);
-    boolean("datapath.contention", "Data path", false, "MOV and the result slot / EXEC_PUB share Data Xfer: one waits for the other", "Main MOV from the slot while Peri runs EXEC_PUB", false);
-    add("datapath.contention_cycles", "Data path", "ISA cycles", 0, 0, 100000, "how long the one that waits waits", "see datapath.contention", false);
-    add("slot.copy_extra", "Result slot", "ISA cycles", 0, 0, 100000, "extra cycles for EXEC_PUB to copy rx_buf into result_slot", "EXEC_PUB of 8 bytes against the model", false);
-    add("slot.valid_delay", "Result slot", "ISA cycles", 0, 0, 100000, "delay from the copy to PERI_RESULT_VALID being visible to Main", "Main polling PERI_RESULT_VALID after a PUB", false);
-    add("flag.sample_delay_main", "Status flags", "ISA cycles", 0, 0, 100000, "delay from a condition changing to a Main BR seeing it", "toggle a condition, find the first BR that sees it", false);
-    add("flag.sample_delay_peri", "Status flags", "ISA cycles", 0, 0, 100000, "the same for Peri", "toggle a condition, find the first BR that sees it", false);
+    choice("csr.arbiter_policy", "CSR arbiter", {"none", "main_first", "peri_first", "round_robin"}, 0,
+           "the Main/Peri CSR arbiter. none: no arbitration is modelled (the two decoders never wait for each other). Otherwise both decoders reach the CSRs through ONE arbiter: an EXEC_CSR holds it for the access part of the instruction, and an EXEC_CSR of the other decoder that finds it taken does not start until it is free (plus csr.arbiter_penalty). When both want it in the same cycle this policy chooses who goes first: main_first, peri_first, or round_robin (the one that did not have it last). A MODEL: confirm it against the RTL / the FPGA",
+           "both decoders issue EXEC_CSR in a loop, started together: who is slowed, and by how much", true);
+    add("csr.arbiter_penalty", "CSR arbiter", "ISA cycles", 0, 0, 100000, "extra cycles an EXEC_CSR waits after the arbiter became free (the hand-over); only with csr.arbiter_policy other than none", "difference in completion between the winner and the loser, minus the time the winner held the arbiter", true);
+    boolean("datapath.contention", "Data path", false,
+            "Data Xfer is shared by Peri's EXEC_PUB and Main's MOV from PERI_RESULT_SLOT: one that finds it taken waits until it is free (plus datapath.contention_cycles). A MODEL: confirm it against the RTL / the FPGA",
+            "Main MOV from the slot while Peri runs EXEC_PUB", true);
+    add("datapath.contention_cycles", "Data path", "ISA cycles", 0, 0, 100000, "extra cycles the one that waited for Data Xfer waits after it became free; only with datapath.contention", "see datapath.contention", true);
+    add("slot.copy_extra", "Result slot", "ISA cycles", 0, 0, 100000, "extra cycles for EXEC_PUB to copy rx_buf into result_slot: the instruction takes this much longer and the result becomes visible this much later", "EXEC_PUB of 8 bytes against the model", true);
+    add("slot.valid_delay", "Result slot", "ISA cycles", 0, 0, 100000, "delay from the copy to PERI_RESULT_VALID being visible to Main (a BR or a MOV before that does not see the result)", "Main polling PERI_RESULT_VALID after a PUB", true);
+    add("flag.sample_delay_main", "Status flags", "ISA cycles", 0, 0, 100000, "a Main BR sees the flags as they were this many cycles ago (stored signals such as the timers, the video windows, the result slot; not the ALU flags)", "toggle a condition, find the first BR that sees it", true);
+    add("flag.sample_delay_peri", "Status flags", "ISA cycles", 0, 0, 100000, "the same for a Peri BR", "toggle a condition, find the first BR that sees it", true);
     return v;
 }
 

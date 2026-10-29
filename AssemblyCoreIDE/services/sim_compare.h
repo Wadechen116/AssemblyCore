@@ -21,7 +21,7 @@ struct TraceMarker {                    // something that happens between the se
     int domain = -1;
     // 'e' hardware event (what = raise / dispatch / eret, a = id), 'b' bus transaction ended (a = device address, b = acknowledged, c = bytes), 'p' publish (a = service,
     // b = length), 'c' slot consumed (a = service), 'o' overrun, 'f' fault (what = code), 's' a timer (re)started (what = "timer" Peri's / "main_timer" Main's),
-    // 'd' a timer is done, 'v' / 'w' the vertical blanking window opens / closes
+    // 'd' a timer is done, 'v' / 'w' the vertical blanking window opens / closes, 'z' a decoder waits for a shared resource (what = csr | xfer, a = cycles)
     char kind = 'n';
     std::string what;
     int64_t a = 0, b = 0, c = 0;
@@ -64,6 +64,8 @@ std::vector<TraceLink> traceLinks(const RunTrace& t);
 
 struct TraceStats {
     struct Span { uint64_t n = 0; asmcore::sim::Cycle sum = 0, max = 0; double avg() const { return n ? (double)sum / (double)n : 0; } void add(asmcore::sim::Cycle v) { n++; sum += v; if (v > max) max = v; } };
+    uint64_t stalls[2] = {0, 0};                         // [0] Main, [1] Peri: how often it had to wait for a shared resource (CSR arbiter, Data Xfer) ...
+    asmcore::sim::Cycle stallCycles[2] = {0, 0};          // ... and for how many cycles in all
     uint64_t published = 0, taken = 0, overruns = 0, lost = 0, faults = 0, busTransfers = 0, busNacks = 0, timersStarted = 0, timersDone = 0, timersCancelled = 0, eventsRaised = 0;
     Span resultLatency;                 // published -> taken
     Span eventWait;                     // raised -> dispatched

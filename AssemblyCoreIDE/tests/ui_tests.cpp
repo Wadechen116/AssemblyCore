@@ -839,9 +839,10 @@ private slots:
         QVERIFY(tie);
         tie->setText(1, "peri_first");
         QCOMPARE((int)store.params().get("sim.tie_order"), 1);
-        // what the simulator does not use yet is marked, and the help of the selected row is shown
+        // every parameter is used by the simulator now: none is marked "not used yet"; the help of the selected row is shown
         QTreeWidgetItem* arb = paramRow(tree, "csr.arbiter_policy");
-        QVERIFY(arb && arb->text(0).contains("not used yet"));
+        QVERIFY(arb && !arb->text(0).contains("not used yet"));
+        for (const asmcore::ParamDef& d : asmcore::paramCatalog()) QVERIFY2(d.active, d.key.c_str());
         tree->setCurrentItem(row);
         QVERIFY(help->text().contains("fetch") && help->text().contains("measure") == false);
         QVERIFY(help->text().contains("on the FPGA"));

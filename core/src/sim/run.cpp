@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <sstream>
 
+#include <cstring>
 #include "impl.h"
 
 namespace asmcore {
@@ -114,6 +115,50 @@ void Simulator::Impl::applyCommand(const std::string& cmd) {
 }
 
 // ---- scheduling ----------------------------------------------------------------------------------------------------------------
+// ---- shared resources (parameters csr.arbiter_*, datapath.*) -------------------------------------------------------------------------------
+bool Simulator::Impl::nextIsCsr(int domain) const {
+    const uint32_t pc = domain == 0 ? st.m.pc : st.p.pc;
+    if (!img[domain].present || pc >= img[domain].codeLimit) return false;
+    return ((uint8_t)img[domain].u8(pc) >> 6) == 0;                          // opcode 0 is EXEC_CSR in both decoders
+}
+
+bool Simulator::Impl::mainMoveFromSlot(int arg) const {
+    uint32_t d = 0;
+    if (!img[0].entry(MT_MOVE, (uint32_t)arg, 4, d)) return false;
+    return codec::unpackMove(d).srcRegion == 2;
+}
+
+// A resource both decoders share. The decoder that finds it taken is GRANTED it next (when the holder lets go plus the hand-over penalty) and waits for that; the other one,
+// if it comes back before that, queues behind it. Returns 0 when the resource is the decoder's now (its turn has come, or it was free), else the cycle to wait for.
+Cycle Simulator::Impl::claim(State::SharedRes& r, int d, int penalty) {
+    if (r.next == d) {                                                       // its turn was announced
+        if (st.now >= r.grantAt) { r.next = -1; return 0; }
+        return r.grantAt;
+    }
+    if (r.next != -1) return r.grantAt + 1;                                  // the other one is next: behind it
+    if (r.freeAt > st.now) { r.next = d; r.grantAt = r.freeAt + (Cycle)penalty; return r.grantAt; }
+    return 0;
+}
+
+// An instruction that needs a resource both decoders share and does not get it now does not start: it tries again when its turn has come.
+bool Simulator::Impl::gate(int d, uint32_t pc, bool csr, bool xfer) {
+    Cycle until = 0;
+    const char* what = nullptr;
+    if (csr && arbPolicy != 0) { const Cycle u = claim(st.arb, d, arbPenalty); if (u) { until = u; what = "csr"; } }
+    if (xfer && xferContention) { const Cycle u = claim(st.xfer, d, xferPenalty); if (u && u > until) { until = u; what = "xfer"; } }
+    if (!what) return false;
+    (d == 0 ? st.m.readyAt : st.p.readyAt) = until;
+    st.stalls[d]++;
+    st.stallCycles[d] += until - st.now;
+    emit([&](Event& e) { e.type = EventType::Stall; e.domain = d; e.pc = pc; e.what = what; e.a = (int64_t)(until - st.now); });
+    return true;
+}
+
+void Simulator::Impl::occupy(int d, bool csr, bool xfer, int latency) {
+    if (csr && arbPolicy != 0) { st.arb.freeAt = st.now + (Cycle)std::max(1, latency - 1); st.arb.last = d; }        // the access part of the instruction
+    if (xfer && xferContention) { st.xfer.freeAt = st.now + (Cycle)std::max(1, latency); st.xfer.last = d; }
+}
+
 Cycle Simulator::Impl::nextTime(int& who) const {
     Cycle tq = st.q.empty() ? kNever : st.q.front().t;
     Cycle tm = (st.m.halted || st.m.faulted) ? kNever : st.m.readyAt;
@@ -121,7 +166,10 @@ Cycle Simulator::Impl::nextTime(int& who) const {
     Cycle best = tq;
     who = tq == kNever ? -1 : 2;
     auto consider = [&](Cycle t, int w) { if (t < best || (t == best && who == -1 && t != kNever)) { best = t; who = w; } };
-    if (tieMainFirst) { consider(tm, 0); consider(tp, 1); }
+    bool mainFirst = tieMainFirst;
+    if (arbPolicy != 0 && tm == tp && tm != kNever && nextIsCsr(0) && nextIsCsr(1))                  // both want the CSR bus in the same cycle: the arbiter chooses
+        mainFirst = arbPolicy == 1 ? true : arbPolicy == 2 ? false : st.arb.last != 0;                // round robin: the one that did not have it last
+    if (mainFirst) { consider(tm, 0); consider(tp, 1); }
     else { consider(tp, 1); consider(tm, 0); }
     if (best == kNever) who = -1;
     return best;

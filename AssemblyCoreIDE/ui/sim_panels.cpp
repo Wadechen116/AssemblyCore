@@ -483,7 +483,7 @@ public:
     bool live() const { return live_; }
     bool follow() const { return follow_; }
     void setFollow(bool f) { follow_ = f; if (f && live_) followNow(); publish(); update(); }
-    enum Show { ShowEvents = 1, ShowBus = 2, ShowResults = 4, ShowTimers = 8, ShowBlanking = 16 };
+    enum Show { ShowEvents = 1, ShowBus = 2, ShowResults = 4, ShowTimers = 8, ShowBlanking = 16, ShowWaits = 32 };
     void setShown(unsigned mask) { shown_ = mask; update(); }
     unsigned shown() const { return shown_; }
     const std::vector<TraceLink>& links() const { return links_; }
@@ -662,6 +662,7 @@ protected:
                 else if (m.kind == 'c') { p.setBrush(QColor("#84cc16")); p.drawEllipse(QPointF(x, y), 3.5 * z, 3.5 * z); }
                 else if (m.kind == 's') { p.setBrush(QColor("#f59e0b")); p.drawPolygon(QPolygonF({QPointF(x - 2, y - 4 * z), QPointF(x + 5 * z, y), QPointF(x - 2, y + 4 * z)})); }
                 else if (m.kind == 'd') { p.setBrush(QColor("#f59e0b")); p.drawRect(QRectF(x - 1.5 * z, y - 4 * z, 3 * z, 8 * z)); }
+                else if (m.kind == 'z') { p.setBrush(QColor("#f97316")); p.drawPolygon(QPolygonF({QPointF(x - 4 * z, y - 4 * z), QPointF(x + 4 * z, y - 4 * z), QPointF(x, y + 4 * z)})); p.setPen(QPen(QColor("#7c2d12"), 1)); p.drawLine(QPointF(x - 4 * z, y + 5 * z), QPointF(x + 4 * z, y + 5 * z)); p.setPen(Qt::NoPen); }
                 else { p.setBrush(QColor("#ef4444")); p.drawRect(QRectF(x - 4 * z, y - 4 * z, 8 * z, 8 * z)); }
                 if (hot) { p.setPen(QPen(text, 1)); p.setBrush(Qt::NoBrush); p.drawEllipse(QPointF(x, y), 7, 7); p.setPen(Qt::NoPen); }
             }
@@ -835,7 +836,7 @@ private:
     std::vector<size_t> idx_[2], bidx_[2];
     const std::vector<TraceRing::Gap>* gaps_ = nullptr;
     std::vector<TraceLink> links_;
-    unsigned shown_ = 31;
+    unsigned shown_ = 63;
     int hovMark_ = -1, hovLink_ = -1;
     mutable std::vector<int> nearMarks_;                    // the markers under the pointer, the most important first
     bool kindShown(char k) const {
@@ -844,6 +845,7 @@ private:
             case 'b': return shown_ & ShowBus;
             case 'p': case 'c': case 'o': return shown_ & ShowResults;
             case 's': case 'd': return shown_ & ShowTimers;
+            case 'z': return shown_ & ShowWaits;
             case 'v': case 'w': return false;
             default: return true;                                                          // faults are always shown
         }
@@ -984,6 +986,7 @@ QString ExecutionView::describeMarker(int i) const {
         case 'f': s = tr("FAULT on %1: %2 (cycle %3)").arg(lane(m.domain)).arg(fromStd(m.what)).arg(cyc(m.at)); break;
         case 's': s = tr("%1 started (cycle %2)").arg(fromStd(m.what)).arg(cyc(m.at)); break;
         case 'd': s = tr("%1 is done (cycle %2)").arg(fromStd(m.what)).arg(cyc(m.at)); break;
+        case 'z': s = tr("%1 waits %2 cycles for %3 (cycle %4)").arg(lane(m.domain)).arg(m.a).arg(m.what == "xfer" ? tr("Data Xfer, which the other one is using") : tr("the CSR arbiter, which the other one is using")).arg(cyc(m.at)); break;
         default: s = fromStd(m.what); break;
     }
     for (const TraceLink& l : links_)                                                        // what it belongs to
@@ -1036,7 +1039,8 @@ public:
             struct K { const char* name; QString text; const char* colour; unsigned bit; };
             const K ks[] = {{"executionShowEvents", tr("events"), "#d946ef", ExecutionView::ShowEvents}, {"executionShowBus", tr("bus"), "#14b8a6", ExecutionView::ShowBus},
                             {"executionShowResults", tr("results Peri to Main"), "#65a30d", ExecutionView::ShowResults}, {"executionShowTimers", tr("timers"), "#d97706", ExecutionView::ShowTimers},
-                            {"executionShowBlanking", tr("blanking window"), "#3b82f6", ExecutionView::ShowBlanking}};
+                            {"executionShowBlanking", tr("blanking window"), "#3b82f6", ExecutionView::ShowBlanking},
+                            {"executionShowWaits", tr("waits for a shared resource"), "#f97316", ExecutionView::ShowWaits}};
             for (const K& k : ks) {
                 auto* c = new QCheckBox(k.text);
                 c->setObjectName(k.name);
@@ -1174,6 +1178,7 @@ private:
             if (st.timersCancelled) s += tr(" %1 started again before done").arg((qulonglong)st.timersCancelled);
             parts << s;
         }
+        if (st.stalls[0] || st.stalls[1]) parts << tr("Waits for a shared resource: Main %1 (%2 cycles), Peri %3 (%4 cycles)").arg((qulonglong)st.stalls[0]).arg((qulonglong)st.stallCycles[0]).arg((qulonglong)st.stalls[1]).arg((qulonglong)st.stallCycles[1]);
         if (st.busTransfers) parts << tr("Bus: %1 transfer(s), %2 not acknowledged").arg((qulonglong)st.busTransfers).arg((qulonglong)st.busNacks);
         if (st.faults) parts << tr("%1 fault(s)").arg((qulonglong)st.faults);
         stats_->setText(parts.join("    \xC2\xB7    "));
@@ -1299,7 +1304,7 @@ private:
     QComboBox* compare_;
     QSpinBox* maxCycles_;
     QLabel *summary_, *stats_, *detail_;
-    unsigned shownMask_ = 31;
+    unsigned shownMask_ = 63;
     ExecutionView* view_;
     QTableWidget* table_;
     QTimer timer_;

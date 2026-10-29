@@ -559,6 +559,7 @@ const char* typeName(asmcore::sim::EventType t) {
         case EventType::Inject: return "inject";
         case EventType::Note: return "note";
         case EventType::HwEvent: return "event";
+        case EventType::Stall: return "stall";
     }
     return "?";
 }

@@ -70,6 +70,14 @@ void Simulator::Impl::applyParams() {
     i2cAck = (int)get("i2c.ack_delay");
     i2cStretch = (int)get("i2c.stretch");
     i2cTurnaround = (int)get("i2c.turnaround");
+    arbPolicy = (int)get("csr.arbiter_policy");
+    arbPenalty = (int)get("csr.arbiter_penalty");
+    xferContention = get("datapath.contention") != 0;
+    xferPenalty = (int)get("datapath.contention_cycles");
+    slotCopyExtra = (int)get("slot.copy_extra");
+    slotValidDelay = (int)get("slot.valid_delay");
+    sampleDelay[0] = (int)get("flag.sample_delay_main");
+    sampleDelay[1] = (int)get("flag.sample_delay_peri");
 }
 
 // New values for a simulator that is running: the state (registers, time, pending events) stays, what is still to be timed follows the new numbers.
@@ -128,11 +136,15 @@ void Simulator::Impl::buildSignals() {
                           "pgl_pending", "ae_pending", "line_pending", "wcet_pgl", "wcet_ae", "wcet_line", "poll_mask", "timer_period", "main_timer_period", "timer.gen", "main_timer.gen"})
         defStored(n, 0);
     // the result slot (spec 12)
+    defComputed("arb.busy", [](const Impl& I) { return (int64_t)(I.arbPolicy != 0 && (I.st.now < I.st.arb.freeAt || I.st.arb.next != -1)); });
+    defComputed("xfer.busy", [](const Impl& I) { return (int64_t)(I.xferContention && (I.st.now < I.st.xfer.freeAt || I.st.xfer.next != -1)); });
+    defComputed("arb.stall_main", [](const Impl& I) { return (int64_t)I.st.stalls[0]; });
+    defComputed("arb.stall_peri", [](const Impl& I) { return (int64_t)I.st.stalls[1]; });
     defComputed("main.in_handler", [](const Impl& I) { return (int64_t)I.st.ev[0].active; });
     defComputed("peri.in_handler", [](const Impl& I) { return (int64_t)I.st.ev[1].active; });
     defComputed("main.events_pending", [](const Impl& I) { return (int64_t)I.st.ev[0].pending; });
     defComputed("peri.events_pending", [](const Impl& I) { return (int64_t)I.st.ev[1].pending; });
-    defComputed("slot.valid", [](const Impl& I) { return (int64_t)I.st.slot.valid; }, [](Impl& I, int64_t v) { I.st.slot.valid = v != 0; });
+    defComputed("slot.valid", [](const Impl& I) { return (int64_t)I.slotVisible(); }, [](Impl& I, int64_t v) { I.st.slot.valid = v != 0; I.st.slot.validAt = I.st.now; });
     defComputed("slot.busy", [](const Impl& I) { return (int64_t)I.st.slot.busy; }, [](Impl& I, int64_t v) { I.st.slot.busy = v != 0; });
     defComputed("slot.overrun", [](const Impl& I) { return (int64_t)I.st.slot.overrun; }, [](Impl& I, int64_t v) { I.st.slot.overrun = v != 0; });
     defComputed("slot.service_id", [](const Impl& I) { return (int64_t)I.st.slot.svc; });
@@ -148,25 +160,25 @@ void Simulator::Impl::buildSignals() {
     defComputed("vblank_open", [](const Impl& I) {
         const TimingCfg& t = I.timing;
         if (t.frameCycles <= 0 || t.vLen <= 0) return (int64_t)0;
-        int64_t p = (int64_t)(I.st.now % (Cycle)t.frameCycles);
+        int64_t p = (int64_t)(I.viewNow() % (Cycle)t.frameCycles);
         return (int64_t)(p >= t.vStart && p < t.vStart + t.vLen);
     });
     defComputed("remaining_vblank_cycles", [](const Impl& I) {
         const TimingCfg& t = I.timing;
         if (t.frameCycles <= 0 || t.vLen <= 0) return (int64_t)0;
-        int64_t p = (int64_t)(I.st.now % (Cycle)t.frameCycles);
+        int64_t p = (int64_t)(I.viewNow() % (Cycle)t.frameCycles);
         return (p >= t.vStart && p < t.vStart + t.vLen) ? t.vStart + t.vLen - p : (int64_t)0;
     });
     defComputed("hblank_open", [](const Impl& I) {
         const TimingCfg& t = I.timing;
         if (t.lineCycles <= 0 || t.hLen <= 0) return (int64_t)0;
-        int64_t p = (int64_t)(I.st.now % (Cycle)t.lineCycles);
+        int64_t p = (int64_t)(I.viewNow() % (Cycle)t.lineCycles);
         return (int64_t)(p >= t.hStart && p < t.hStart + t.hLen);
     });
     defComputed("remaining_hblank_cycles", [](const Impl& I) {
         const TimingCfg& t = I.timing;
         if (t.lineCycles <= 0 || t.hLen <= 0) return (int64_t)0;
-        int64_t p = (int64_t)(I.st.now % (Cycle)t.lineCycles);
+        int64_t p = (int64_t)(I.viewNow() % (Cycle)t.lineCycles);
         return (p >= t.hStart && p < t.hStart + t.hLen) ? t.hStart + t.hLen - p : (int64_t)0;
     });
 }
@@ -196,6 +208,8 @@ void Simulator::Impl::resetState() {
     State n;
     n.sig.assign((size_t)nStored, 0);
     for (const SigDef& d : sigs) if (d.stored >= 0) n.sig[(size_t)d.stored] = d.init;
+    n.sigPrev = n.sig;
+    n.sigAt.assign((size_t)nStored, kNever);
     n.dev.resize(devs.size());
     st = n;
     st.m.bufOk = pf.csrBufResetDefined ? 0xFFFFFFFFu : 0u;
@@ -217,7 +231,11 @@ void Simulator::Impl::resetState() {
 // ---- signals -------------------------------------------------------------------------------------------------------------------
 int64_t Simulator::Impl::sigGet(int id) const {
     const SigDef& d = sigs[(size_t)id];
-    if (d.stored >= 0) return st.sig[(size_t)d.stored];
+    if (d.stored >= 0) {
+        const size_t i = (size_t)d.stored;
+        if (viewDelay_ && st.sigAt[i] != kNever && st.now - st.sigAt[i] < viewDelay_) return st.sigPrev[i];       // a BR does not see a change that is younger than its sampling delay
+        return st.sig[i];
+    }
     return getters[(size_t)id] ? getters[(size_t)id](*this) : 0;
 }
 void Simulator::Impl::sigSet(int id, int64_t v) {
@@ -225,6 +243,8 @@ void Simulator::Impl::sigSet(int id, int64_t v) {
     if (d.stored >= 0) {
         int64_t old = st.sig[(size_t)d.stored];
         if (old == v) return;
+        st.sigPrev[(size_t)d.stored] = old;
+        st.sigAt[(size_t)d.stored] = st.now;
         st.sig[(size_t)d.stored] = v;
         emit([&](Event& e) { e.type = EventType::Signal; e.what = d.name; e.a = old; e.b = v; });
     } else if (setters[(size_t)id]) {

@@ -60,7 +60,7 @@ void Simulator::Impl::opPeriBr(OpCtx& oc) {
         }
         if (type > 7 || !cond[1][type].defined) { fail("fault_cond_undefined", "Peri branch condition " + std::to_string(type) + " is reserved"); return; }
         emit([&](Event& e) { e.type = EventType::Issue; e.domain = 1; e.pc = pc; e.a = 1; e.what = text("BR"); });
-        const bool taken = evalBool(cond[1][type].e);
+        const bool taken = evalCondition(1, cond[1][type].e);
         if (taken && target >= im.codeLimit) { fail("fault_branch_target", "branch target " + std::to_string(target) + " is outside the code"); return; }
         if (taken && type == 0 && target == pc && !pb.eventSafe) {
             p.halted = true;
@@ -95,13 +95,14 @@ void Simulator::Impl::opPeriPub(OpCtx& oc) {
         if (svc == 0) { fail("fault_publish_service", "service_id 0 is reserved"); return; }
         if (src + len > 32) { fail("fault_range", "src_ptr + len exceeds PERI_RX_BUF"); return; }
         emit([&](Event& e) { e.type = EventType::Issue; e.domain = 1; e.pc = pc; e.a = 1; e.what = text("EXEC_PUB"); });
-        latency = lat.pub(len);
+        latency = lat.pub(len) + slotCopyExtra;
         if (st.slot.valid || st.slot.busy) {          // spec 12.8 / 13.7: keep the old result, drop this one
             st.slot.overrun = true;
             emit([&](Event& e) { e.type = EventType::Overrun; e.domain = 1; e.pc = pc; e.a = svc; e.b = len; });
         } else {
             std::memcpy(st.slot.payload, p.rx + src, (size_t)len);
             st.slot.svc = (uint8_t)svc;
+            st.slot.validAt = st.now + (Cycle)(slotCopyExtra + slotValidDelay);        // (when Main can see it)
             st.slot.valid = true;                      // last
             emit([&](Event& e) { e.type = EventType::Publish; e.domain = 1; e.pc = pc; e.a = svc; e.b = len; });
         }
@@ -187,8 +188,11 @@ void Simulator::Impl::stepPeri() {
     oc.latency = 1;
     const auto& h = periOps[op];
     if (!h) { raise(Domain::Peri, pc, "fault_opcode", "opcode " + std::to_string(op) + " has no handler"); return; }
+    const bool usesCsr = op == 0, usesXfer = op == 2 && xferContention;
+    if (gate(1, pc, usesCsr, usesXfer)) return;                                   // a shared resource is taken: not now
     h(oc);
     if (p.faulted || oc.skipAdvance) return;
+    occupy(1, usesCsr, usesXfer, oc.latency);
     p.pc = oc.next;
     if (oc.latency >= 0) p.readyAt = st.now + (Cycle)(oc.latency + fetchExtra[1]);
     p.instrs++;
