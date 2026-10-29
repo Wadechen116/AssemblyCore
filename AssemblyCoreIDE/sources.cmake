@@ -48,6 +48,7 @@ set(ACIDE_UI_SOURCES
   ${CMAKE_CURRENT_LIST_DIR}/ui/comment_edit.cpp
   ${CMAKE_CURRENT_LIST_DIR}/ui/field_editor.cpp
   ${CMAKE_CURRENT_LIST_DIR}/ui/block_toolbox.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/ui/cursor_bar.cpp
   ${CMAKE_CURRENT_LIST_DIR}/ui/isa_top_view.cpp
   ${CMAKE_CURRENT_LIST_DIR}/ui/sim_panels.cpp
   ${CMAKE_CURRENT_LIST_DIR}/ui/custom_block_dialog.cpp

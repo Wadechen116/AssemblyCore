@@ -985,6 +985,85 @@ private slots:
         QCOMPARE(box->currentText(), QString("1000 cycles/s"));
     }
 
+    void theTwoCursorsAreLoudInTheEditorTheBarAndTheStepButtons() {
+        Rig r(".csr C = 0x10\n.main\ns: MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]\n JMP s\n.peri\np: EXEC_CSR WRITE8 C, 2\n JMP p\n");
+        r.w->openFile("/w/main.asm");
+        CodeEditor* ed = r.w->currentEditor();
+        QVERIFY(ed);
+        r.w->resize(1400, 900);
+        auto* bar = r.w->findChild<QToolBar*>("cursorBar");
+        QVERIFY(bar);
+        QVERIFY2(!bar->isVisible(), "no debugging: no cursors");
+        QVERIFY(ed->cursorMarks().empty());
+        std::string err;
+        r.f.dbg.simParams().set("sim.speed", "1", err);
+        r.w->debugAction("start")->trigger();
+        QVERIFY(r.until([&] { return r.f.dbg.running(); }));
+        r.f.dbg.pause();
+        QVERIFY(r.until([&] { return !r.f.dbg.running(); }));
+        r.f.dbg.restart();
+        QVERIFY(r.until([&] { return r.f.dbg.session().view() && r.f.dbg.session().view()->cycle == 0 && !r.f.dbg.running(); }));
+        QApplication::processEvents();
+        QVERIFY(bar->isVisible());
+        // the editor: a cursor for each sequencer on its line; Step acts on Main
+        auto marks = ed->cursorMarks();
+        QCOMPARE((int)marks.size(), 2);
+        QCOMPARE(marks[0].domain, 0); QCOMPARE(marks[0].line, 3); QVERIFY(marks[0].focus);
+        QCOMPARE(marks[1].domain, 1); QCOMPARE(marks[1].line, 6); QVERIFY(!marks[1].focus);
+        // ... and they are LOUD: a bar of the sequencer's colour down the left edge of the line
+        auto pixelAt = [&](int line, int x) { QImage img(ed->viewport()->size(), QImage::Format_ARGB32); ed->viewport()->render(&img); return img.pixelColor(x, ed->lineY(line)); };
+        const QColor mainBar = pixelAt(3, 3), periBar = pixelAt(6, 3);
+        QVERIFY2(mainBar.red() > 220 && mainBar.green() > 150 && mainBar.blue() < 60, qPrintable(mainBar.name()));      // amber
+        QVERIFY2(periBar.red() < 60 && periBar.green() > 170 && periBar.blue() > 190, qPrintable(periBar.name()));        // cyan
+        const QColor plain = pixelAt(4, 3);
+        QVERIFY2(plain != mainBar && plain != periBar, "a line without a cursor has no bar");
+        // the cursor bar: where each is, what it will execute
+        auto* goMain = bar->findChild<QPushButton*>("cursorGoMain");
+        auto* goPeri = bar->findChild<QPushButton*>("cursorGoPeri");
+        auto* badgeMain = bar->findChild<QLabel*>("cursorBadgeMain");
+        auto* badgePeri = bar->findChild<QLabel*>("cursorBadgePeri");
+        QVERIFY(goMain && goPeri && badgeMain && badgePeri);
+        QVERIFY2(goMain->text().contains("main.asm:3") && goMain->text().contains("MOV"), qPrintable(goMain->text()));
+        QVERIFY2(goPeri->text().contains("main.asm:6") && goPeri->text().contains("EXEC_CSR"), qPrintable(goPeri->text()));
+        QVERIFY(badgeMain->text().contains("STEP") && !badgePeri->text().contains("STEP"));
+        // a click on Peri's cursor: Step acts on Peri, and its line is shown
+        goPeri->click();
+        QCOMPARE((int)r.f.dbg.focus(), (int)asmcore::Domain::Peri);
+        QVERIFY(badgePeri->text().contains("STEP") && !badgeMain->text().contains("STEP"));
+        QCOMPARE(ed->textCursor().blockNumber() + 1, 6);
+        QVERIFY(ed->cursorMarks()[1].focus);
+        // Peri's own Step button: one Peri instruction
+        auto instrs = [&](int d) { return (long long)r.f.dbg.session().view()->instrs[d]; };
+        const long long peri0 = instrs(1);
+        bar->findChild<QPushButton*>("cursorStepPeri")->click();
+        QVERIFY(r.until([&] { return instrs(1) == peri0 + 1; }));
+        QCOMPARE((int)r.f.dbg.focus(), (int)asmcore::Domain::Peri);
+        // Main's Step button, and the menu actions (a sequencer by name, the focus follows)
+        const long long main0 = instrs(0);
+        bar->findChild<QPushButton*>("cursorStepMain")->click();
+        QVERIFY(r.until([&] { return instrs(0) == main0 + 1; }));
+        QCOMPARE((int)r.f.dbg.focus(), (int)asmcore::Domain::Main);
+        const long long peri1 = instrs(1);
+        r.w->findChild<QAction*>("stepPeriAction")->trigger();
+        QVERIFY(r.until([&] { return instrs(1) == peri1 + 1; }));
+        QCOMPARE((int)r.f.dbg.focus(), (int)asmcore::Domain::Peri);
+        r.w->findChild<QAction*>("stepMainAction")->trigger();
+        QVERIFY(r.until([&] { return (int)r.f.dbg.focus() == (int)asmcore::Domain::Main; }));
+        // a click on the flag in the gutter chooses the sequencer too
+        int periLine = 0;
+        for (const auto& m : ed->cursorMarks()) if (m.domain == 1) periLine = m.line;
+        QVERIFY(periLine > 0);
+        QTest::mouseClick(ed->gutterWidget(), Qt::LeftButton, Qt::NoModifier, QPoint(43, ed->lineY(periLine)));
+        QCOMPARE((int)r.f.dbg.focus(), (int)asmcore::Domain::Peri);
+        QVERIFY(!r.f.dbg.hasLineBreakpoint("/w/main.asm", periLine));                          // (not a breakpoint)
+        r.f.dbg.setFocus(asmcore::Domain::Peri);
+        QApplication::processEvents();
+        r.w->grab().save(QDir::tempPath() + "/acide_cursors.png");
+        // stopping takes the cursors away
+        r.f.dbg.stop();
+        QVERIFY(r.until([&] { return !bar->isVisible() && ed->cursorMarks().empty(); }));
+    }
+
     void theIsaTopDiagramShowsWhatTheSimulatorHoldsAndWhereItIsGoing() {
         Rig r(".csr C = 0x10\n.main\ns: MOV CONST(5,2) -> MAIN_SCRATCHPAD[0..1]\n MOV MAIN_SCRATCHPAD[0..1] -> ALU_OPA\n MOV MAIN_SCRATCHPAD[0..1] -> ALU_OPB\n ALU ADD unsigned\n EXEC_CSR WRITE8 C, 1\n JMP s\n.peri\np: JMP p\n");
         QWidget* page = r.w->openSimulator();
@@ -2179,13 +2258,19 @@ private slots:
         }
         QVERIFY(!mov.empty() && !alu.empty());
         // not debugging: the blocks are still
-        auto still = [&] { return !sc().execShowsAnything() && sc().execFlashing().empty() && sc().execFlows() == 0 && sc().execution().empty() && !sc().execDimmed(alu) && sc().execHits(mov) == 0 && sc().execValue(mov).isEmpty(); };
+        auto still = [&] { return sc().execCursor(0).empty() && sc().execCursor(1).empty() && !sc().execShowsAnything() && sc().execFlashing().empty() && sc().execFlows() == 0 && sc().execution().empty() && !sc().execDimmed(alu) && sc().execHits(mov) == 0 && sc().execValue(mov).isEmpty(); };
         QVERIFY(still());
         std::string why;
         r.f.dbg.simParams().set("sim.speed", "1", *new std::string);                         // (so slow that nothing runs while the test looks)
         QVERIFY(r.f.dbg.start(why));
         for (int i = 0; i < 300 && sc().execution().empty(); i++) QTest::qWait(10);
         QVERIFY(!sc().execution().empty());
+        QCOMPARE(sc().execCursor(0), mov);                                                     // Main's cursor is on the MOV, Peri's on its own block
+        QVERIFY(!sc().execCursor(1).empty() && sc().execCursor(1) != mov);
+        QCOMPARE(sc().execFocus(), 0);
+        r.f.dbg.setFocus(asmcore::Domain::Peri);
+        QCOMPARE(sc().execFocus(), 1);                                                         // the focus is shown on the flags
+        r.f.dbg.setFocus(asmcore::Domain::Main);
         // two steps: the MOV, then the ALU
         r.f.dbg.stepInto();
         for (int i = 0; i < 300 && sc().execHits(mov) == 0; i++) QTest::qWait(10);
@@ -2211,6 +2296,10 @@ private slots:
         QImage img(r.ed->view().viewport()->size(), QImage::Format_ARGB32);
         r.ed->view().viewport()->render(&img);
         img.save(QDir::tempPath() + "/acide_block_run.png");
+        r.f.dbg.setFocus(asmcore::Domain::Peri);
+        QTest::qWait(100);
+        { QImage im(r.ed->view().viewport()->size(), QImage::Format_ARGB32); r.ed->view().viewport()->render(&im); im.save(QDir::tempPath() + "/acide_block_cursors.png"); }
+        r.f.dbg.setFocus(asmcore::Domain::Main);
         // Stop: the run is gone from the blocks, they are as they were before
         r.f.dbg.stop();
         for (int i = 0; i < 300 && !still(); i++) QTest::qWait(10);

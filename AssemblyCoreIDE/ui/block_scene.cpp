@@ -830,6 +830,14 @@ QRectF BlockScene::headRect(const std::string& id) const {
     return QRectF(s->origin.x + box->head.x, s->origin.y + box->head.y, box->head.w, box->head.h);
 }
 
+void BlockScene::execSetCursors(const std::string& mainBlock, const std::string& periBlock, int focus) {
+    if (cursorBlock_[0] == mainBlock && cursorBlock_[1] == periBlock && cursorFocus_ == focus) return;
+    cursorBlock_[0] = mainBlock;
+    cursorBlock_[1] = periBlock;
+    cursorFocus_ = focus;
+    update();
+}
+
 void BlockScene::execSetOptions(bool values, bool flash, bool heat) {
     showValues_ = values;
     exec_.showFlash = flash;
@@ -953,6 +961,35 @@ void BlockScene::drawForeground(QPainter* p, const QRectF& rect) {
             p->drawRoundedRect(pill, 9, 9);
             p->setPen(Qt::white);
             p->drawText(pill, Qt::AlignCenter, kv.second.text);
+        }
+    }
+    // the cursors: a pennant in front of the block each sequencer is about to execute
+    for (int d = 0; d < 2; d++) {
+        if (cursorBlock_[d].empty()) continue;
+        const QRectF head = headRect(cursorBlock_[d]);
+        if (head.isEmpty() || !rect.intersects(head.adjusted(-70, -20, 10, 20))) continue;
+        const bool shared = d == 1 && cursorBlock_[0] == cursorBlock_[1];                    // both on one block: Peri's flag hangs below Main's
+        const double y = head.top() + (head.height() - 22) / 2 + (shared ? 24 : 0) - (cursorBlock_[0] == cursorBlock_[1] && d == 0 ? 12 : 0);
+        const double x = head.left() - 52;
+        QPolygonF flag;
+        flag << QPointF(x, y) << QPointF(x + 30, y) << QPointF(x + 40, y + 11) << QPointF(x + 30, y + 22) << QPointF(x, y + 22);
+        const QColor c = d == 1 ? QColor("#19c8e0") : QColor("#ffb300");
+        const bool focus = cursorFocus_ == d;
+        p->setPen(QPen(focus ? QColor(Qt::white) : c.darker(170), focus ? 3 : 1));
+        p->setBrush(c);
+        p->drawPolygon(flag);
+        QFont f = font();
+        f.setPixelSize(14);
+        f.setBold(true);
+        p->setFont(f);
+        p->setPen(QColor(20, 24, 32));
+        p->drawText(QRectF(x, y, 30, 22), Qt::AlignCenter, d == 0 ? "M" : "P");
+        if (focus) {                                                                       // the one Step acts on
+            QFont s = f;
+            s.setPixelSize(9);
+            p->setFont(s);
+            p->setPen(c.darker(110));
+            p->drawText(QRectF(x - 6, y + 23, 52, 11), Qt::AlignCenter, "STEP");
         }
     }
     p->restore();

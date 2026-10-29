@@ -94,6 +94,10 @@ public:
     // ---- the simulator on the blocks (what the block editor feeds from the debugger)
     //   heat: how often each instruction block ran (a bar on its left edge, "x12", the ones that never ran grayed out); flash: a ring round the block at the moment it
     //   executes, and a flowing line from the block that ran before it; values: a small label next to the block with what it just did ("scratch[0..1] = 05 00").
+    // The cursors: the block each sequencer is about to execute gets a flag with its letter (M amber, P cyan) in front of it; the one Step acts on has a white ring.
+    void execSetCursors(const std::string& mainBlock, const std::string& periBlock, int focusDomain);
+    std::string execCursor(int domain) const { return domain == 0 || domain == 1 ? cursorBlock_[domain] : std::string(); }
+    int execFocus() const { return cursorFocus_; }
     void execSetOptions(bool values, bool flash, bool heat);
     void execIssued(const std::string& blockId, int domain, const QString& value);
     void execSetHits(const std::map<std::string, uint64_t>& hits, const std::set<std::string>& executable);
@@ -255,6 +259,8 @@ private:
     std::map<std::string, Badge> badges_;
     std::vector<Flow> flows_;
     std::string lastIssued_[2];
+    std::string cursorBlock_[2];
+    int cursorFocus_ = 0;
     bool showValues_ = true;
     QElapsedTimer execClock_;
     QTimer execTimer_;

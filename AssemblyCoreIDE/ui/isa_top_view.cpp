@@ -160,6 +160,18 @@ protected:
                 p.setPen(Qt::white);
                 p.drawText(QRectF(b.x + 8 + lw, y, b.w - 16 - lw, 19), Qt::AlignRight | Qt::AlignVCenter, QFontMetrics(mono_).elidedText(value, Qt::ElideLeft, (int)(b.w - 16 - lw)));
             }
+            if (v_.live_ && b.kind == "decoder" && b.domain >= 0 && v_.ctx_.debugger.focus() == (b.domain == 1 ? asmcore::Domain::Peri : asmcore::Domain::Main)) {      // the one Step acts on
+                QFont sf = ui_;
+                sf.setPixelSize(10);
+                sf.setBold(true);
+                p.setFont(sf);
+                const QRectF tag(b.x + b.w - 62, b.y + 4, 56, 16);
+                p.setPen(QPen(Qt::white, 1.5));
+                p.setBrush(domainColour(b.domain == 1));
+                p.drawRoundedRect(tag, 4, 4);
+                p.setPen(QColor(20, 24, 32));
+                p.drawText(tag, Qt::AlignCenter, QString::fromUtf8("STEP \xE2\x96\xB6"));
+            }
             const auto pu = v_.pulse_.find(b.id);                                          // a decoder that just executed
             if (pu != v_.pulse_.end() && now - pu->second.first < kPulseMs) {
                 QColor c = domainColour(pu->second.second);
@@ -243,6 +255,7 @@ IsaTopView::IsaTopView(AppContext& ctx, QWidget* parent) : QScrollArea(parent), 
     timer_.setInterval(40);
     connect(&timer_, &QTimer::timeout, this, [this] { tick(); });
     conns_.add(ctx.debugger.updated, [this](const SimUpdate& u) { feed(u); });
+    conns_.add(ctx.debugger.focusChanged, [this](asmcore::Domain) { canvas_->update(); });
     refreshValues();
     rescale();
 }

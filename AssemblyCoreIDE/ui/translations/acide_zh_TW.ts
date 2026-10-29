@@ -865,6 +865,33 @@ Drag it to change the order; double-click the end of it to write a comment</sour
     </message>
 </context>
 <context>
+    <name>CursorBar</name>
+    <message>
+        <source>Cursors</source>
+        <translation>游標</translation>
+    </message>
+    <message>
+        <source>Where this sequencer is about to execute. Click: Step acts on it, and its line is shown</source>
+        <translation>這個序列器接下來要執行的位置。按一下：單步改作用在它身上，並顯示它所在的那一行</translation>
+    </message>
+    <message>
+        <source>Step</source>
+        <translation>單步</translation>
+    </message>
+    <message>
+        <source>Execute one instruction of this sequencer (what falls due before it, in the other one, runs first)</source>
+        <translation>執行這個序列器的一條指令（另一個序列器在它之前到期的動作會先執行）</translation>
+    </message>
+    <message>
+        <source>Over</source>
+        <translation>跨過</translation>
+    </message>
+    <message>
+        <source>Like Step, but a CALL is run to its return</source>
+        <translation>和單步一樣，但 CALL 會一次跑到返回</translation>
+    </message>
+</context>
+<context>
     <name>CustomBlockCheck</name>
     <message>
         <source>Give the block a name</source>
@@ -1973,6 +2000,10 @@ Drag it to change the order; double-click the end of it to write a comment</sour
     <message>
         <source>%1 is used in %2, which is generated from %3. Rename it in the blocks instead.</source>
         <translation>%1 用在 %2，而它是由 %3 產生的。請改在積木裡重新命名。</translation>
+    </message>
+    <message>
+        <source>Step now acts on the %1 sequencer</source>
+        <translation>單步現在作用在 %1 序列器</translation>
     </message>
 </context>
 <context>
@@ -3197,6 +3228,14 @@ An IDE for the Sensor Micro-Sequencer ISA, built on the AssemblyCore assembler.<
     <message>
         <source>Already at the slowest speed</source>
         <translation>已經是最慢的速度</translation>
+    </message>
+    <message>
+        <source>Step Main</source>
+        <translation>單步 Main</translation>
+    </message>
+    <message>
+        <source>Step Peri</source>
+        <translation>單步 Peri</translation>
     </message>
 </context>
 <context>

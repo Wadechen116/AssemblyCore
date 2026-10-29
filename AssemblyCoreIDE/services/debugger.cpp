@@ -291,6 +291,14 @@ DebugLocation Debugger::locationOf(Domain d, uint32_t pc) const {
     return l;
 }
 
+std::string Debugger::instructionText(Domain d) const {
+    ViewPtr v = session_.view();
+    SnapshotPtr p = session_.program();
+    if (!v || !p || !p->map) return std::string();
+    const InstrInfo* in = p->map->instrAt(d, v->pc[d == Domain::Main ? 0 : 1]);
+    return in ? in->text : std::string();
+}
+
 DebugLocation Debugger::location(Domain d) const {
     ViewPtr v = session_.view();
     if (!v) return DebugLocation();

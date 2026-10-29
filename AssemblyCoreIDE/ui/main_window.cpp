@@ -22,6 +22,7 @@
 #include "artifacts.h"
 #include "asmcore/blocks.h"
 #include "block_editor.h"
+#include "cursor_bar.h"
 #include "document_tab.h"
 #include "block_link.h"
 #include "hardware_designer.h"
@@ -935,6 +936,16 @@ void MainWindow::createDebugActions() {
     actInto_ = make(tr("Step Into"), QKeySequence("F11"), [this] { if (!ctx_.debugger.active()) startDebug(false); else ctx_.debugger.stepInto(); });
     actOver_ = make(tr("Step Over"), QKeySequence("F10"), [this] { if (!ctx_.debugger.active()) startDebug(false); else ctx_.debugger.stepOver(); });
     actOut_ = make(tr("Step Out"), QKeySequence("Shift+F11"), [this] { ctx_.debugger.stepOut(); });
+    {   // one instruction of a chosen sequencer, whatever the focus is
+        QAction* sm = dbg->addAction(tr("Step Main"));
+        sm->setShortcut(QKeySequence("Ctrl+F11"));
+        sm->setObjectName("stepMainAction");
+        connect(sm, &QAction::triggered, this, [this] { if (ctx_.debugger.active() && !ctx_.debugger.running()) { ctx_.debugger.setFocus(asmcore::Domain::Main); ctx_.debugger.stepInto(); } });
+        QAction* sp = dbg->addAction(tr("Step Peri"));
+        sp->setShortcut(QKeySequence("Ctrl+Shift+F11"));
+        sp->setObjectName("stepPeriAction");
+        connect(sp, &QAction::triggered, this, [this] { if (ctx_.debugger.active() && !ctx_.debugger.running()) { ctx_.debugger.setFocus(asmcore::Domain::Peri); ctx_.debugger.stepInto(); } });
+    }
     actToCursor_ = make(tr("Run to Cursor"), QKeySequence("Ctrl+F10"), [this] {
         CodeEditor* e = currentEditor();
         if (!e || !ctx_.debugger.active()) { statusBar()->showMessage(tr("Start debugging first"), 4000); return; }
@@ -1050,6 +1061,8 @@ void MainWindow::createDebugActions() {
     }
     dbg->addSeparator();
     dbg->addAction(tr("Edit Environment File..."), this, [this] { editEnvironmentFile(); });
+    addToolBarBreak(Qt::TopToolBarArea);                                    // the two cursors on a row of their own, under the debug tool bar
+    addToolBar(Qt::TopToolBarArea, createCursorBar(ctx_, this));
     updateDebugActions();
 }
 

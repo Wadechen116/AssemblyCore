@@ -286,7 +286,8 @@ BlockEditor::BlockEditor(AppContext& ctx, const std::string& path, QWidget* pare
     conns_->add(session_.changed, [this] { refreshCode(); refreshInfo(); syncToWorkspace(); applyBuildProblems(); refreshExecution(); });
     snap_ = ctx.snapshot;
     conns_->add(ctx.snapshotChanged, [this](SnapshotPtr s) { snap_ = s; applyBuildProblems(); refreshExecution(); });
-    conns_->add(ctx.debugger.updated, [this](const SimUpdate& u) { refreshExecution(&u); });                  // while the simulator runs: the line of each sequencer, ~30 times a second
+    conns_->add(ctx.debugger.updated, [this](const SimUpdate& u) { refreshExecution(&u); });
+    conns_->add(ctx.debugger.focusChanged, [this](asmcore::Domain) { refreshExecution(); });                  // while the simulator runs: the line of each sequencer, ~30 times a second
     conns_->add(session_.selectionChanged, [this] {
         if (!syncing_) code_->setMarkedLines(session_.selectedLines(), page() == Page::Code);
         refreshInfo();
@@ -359,6 +360,7 @@ void BlockEditor::rebuildPcMap() {
 
 void BlockEditor::refreshExecution(const SimUpdate* update) {
     std::map<std::string, QColor> tint;
+    std::string cursor[2];
     bool match = false;
     if (ctx_.debugger.active() && !ctx_.debugger.stale() && snap_) {
         const std::string gen = generatedPath();
@@ -380,10 +382,12 @@ void BlockEditor::refreshExecution(const SimUpdate* update) {
             if (!loc.valid || loc.file != generatedPath()) continue;
             const std::string id = session_.blockAtLine(loc.line);
             if (id.empty()) continue;
+            cursor[i] = id;
             if (const asmcore::blocks::Block* b = session_.document().find(id)) add(*b, colour[i]);
         }
     }
     scene_->setExecution(tint);
+    scene_->execSetCursors(cursor[0], cursor[1], ctx_.debugger.focus() == asmcore::Domain::Peri ? 1 : 0);
     // heat, flash and values
     if (!match) { scene_->execClear(); return; }
     rebuildPcMap();

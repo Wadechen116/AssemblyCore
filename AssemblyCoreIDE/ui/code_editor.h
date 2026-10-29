@@ -39,6 +39,10 @@ public:
     QWidget* generatedBanner() const { return banner_; }
     bool refuseIfGenerated();                              // says why an edit is not possible and returns true for a generated file
     void gutterClicked(int y);                             // a click in the line-number area: toggle a breakpoint
+    void gutterPressed(const QPoint& pos);                 // ... or, on the flag of a sequencer's cursor, make that sequencer the one Step acts on
+    // The cursors of the two sequencers in this file (the line each is about to execute), and which one Step acts on; for tests
+    struct CursorMark { int domain = 0; int line = 0; bool focus = false; };   // domain: 0 Main, 1 Peri
+    std::vector<CursorMark> cursorMarks() const;
 
     // used by the line number area
     int lineNumberAreaWidth() const;
@@ -59,6 +63,7 @@ signals:
 protected:
     void resizeEvent(QResizeEvent* e) override;
     void keyPressEvent(QKeyEvent* e) override;
+    void paintEvent(QPaintEvent* e) override;
     bool event(QEvent* e) override;
     void contextMenuEvent(QContextMenuEvent* e) override;
     void mouseReleaseEvent(QMouseEvent* e) override;

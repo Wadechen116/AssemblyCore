@@ -52,6 +52,7 @@ UI_SOURCES = \
     $$IDE_DIR/ui/comment_edit.cpp \
     $$IDE_DIR/ui/field_editor.cpp \
     $$IDE_DIR/ui/block_toolbox.cpp \
+    $$IDE_DIR/ui/cursor_bar.cpp \
     $$IDE_DIR/ui/isa_top_view.cpp \
     $$IDE_DIR/ui/sim_panels.cpp \
     $$IDE_DIR/ui/custom_block_dialog.cpp \

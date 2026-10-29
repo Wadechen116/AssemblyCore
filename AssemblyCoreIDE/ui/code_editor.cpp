@@ -32,7 +32,7 @@ public:
 
 protected:
     void paintEvent(QPaintEvent* e) override { editor_->lineNumberAreaPaint(e); }
-    void mousePressEvent(QMouseEvent* e) override { editor_->gutterClicked(e->pos().y()); }
+    void mousePressEvent(QMouseEvent* e) override { editor_->gutterPressed(e->pos()); }
 
 private:
     CodeEditor* editor_;
@@ -40,9 +40,16 @@ private:
 
 using asmcore::lang::Dom;
 
+namespace {
+const int kFlagArea = 38;                                           // the gutter's room for the two cursor flags (Main's, Peri's)
+const int kFlagX[2] = {18, 36};                                     // where each flag starts
+QColor cursorColour(int domain) { return domain == 1 ? QColor("#19c8e0") : QColor("#ffb300"); }       // Peri cyan, Main amber: the same everywhere (blocks, diagram, cursor bar)
+}
+
 CodeEditor::CodeEditor(AppContext& ctx, const std::string& path, QWidget* parent)
     : QPlainTextEdit(parent), ctx_(ctx), path_(path), theme_(Theme::fromSettings(ctx.settings)) {
     setLineWrapMode(NoWrap);
+    document()->setDocumentMargin(10);                     // room for the cursor bar at the left edge of a line
     setFont(editorFont(ctx.settings));
     setTabStopDistance(fontMetrics().horizontalAdvance(' ') * 4);
     {
@@ -93,7 +100,8 @@ CodeEditor::CodeEditor(AppContext& ctx, const std::string& path, QWidget* parent
     lastBlockCount_ = std::max(1, blockCount());
     updateGutterWidth();
     conns_.add(ctx.debugger.breakpointsChanged, [this] { updateExtra(); gutter_->update(); });
-    conns_.add(ctx.debugger.updated, [this](const SimUpdate&) { updateExtra(); gutter_->update(); });
+    conns_.add(ctx.debugger.updated, [this](const SimUpdate&) { updateExtra(); gutter_->update(); viewport()->update(); });
+    conns_.add(ctx.debugger.focusChanged, [this](asmcore::Domain) { gutter_->update(); viewport()->update(); });
     conns_.add(ctx.workspace.documentChanged, [this](const std::string& p) { if (p == path_) syncFromWorkspace(); });
 }
 
@@ -295,7 +303,7 @@ void CodeEditor::updateExtra() {
 int CodeEditor::lineNumberAreaWidth() const {
     int digits = 1;
     for (int n = std::max(1, blockCount()); n >= 10; n /= 10) digits++;
-    return 26 + fontMetrics().horizontalAdvance(QLatin1Char('9')) * std::max(3, digits);
+    return 26 + kFlagArea + fontMetrics().horizontalAdvance(QLatin1Char('9')) * std::max(3, digits);
 }
 int CodeEditor::bannerHeight() const { return banner_ && !banner_->isHidden() ? banner_->sizeHint().height() : 0; }
 void CodeEditor::updateGutterWidth() { setViewportMargins(lineNumberAreaWidth(), bannerHeight(), 0, 0); }
@@ -373,17 +381,21 @@ void CodeEditor::lineNumberAreaPaint(QPaintEvent* ev) {
                 p.setBrush(enabled && resolved ? QBrush(theme_.breakpoint) : Qt::NoBrush);
                 p.drawEllipse(QPoint(8, cy), 5, 5);
             }
-            if (ctx_.debugger.active())
-                for (asmcore::Domain dom : {asmcore::Domain::Main, asmcore::Domain::Peri}) {
-                    DebugLocation loc = ctx_.debugger.location(dom);
-                    if (!loc.valid || loc.file != path_ || loc.line != n + 1) continue;
-                    p.setRenderHint(QPainter::Antialiasing);
-                    p.setPen(Qt::NoPen);
-                    p.setBrush(dom == asmcore::Domain::Main ? QColor("#f5c518") : QColor("#18c5c5"));
-                    QPolygon tri;
-                    tri << QPoint(2, cy - 5) << QPoint(12, cy) << QPoint(2, cy + 5);
-                    p.drawPolygon(tri);
-                }
+            for (const CursorMark& m : cursorMarks()) {                  // the flags: M for Main, P for Peri; the one Step acts on has a white ring
+                if (m.line != n + 1) continue;
+                p.setRenderHint(QPainter::Antialiasing);
+                const QRectF flag(kFlagX[m.domain], cy - 8, 15, 16);
+                p.setPen(m.focus ? QPen(Qt::white, 2) : QPen(cursorColour(m.domain).darker(160), 1));
+                p.setBrush(cursorColour(m.domain));
+                p.drawRoundedRect(flag, 3, 3);
+                QFont f = font();
+                f.setPixelSize(11);
+                f.setBold(true);
+                p.setFont(f);
+                p.setPen(QColor(20, 24, 32));
+                p.drawText(flag, Qt::AlignCenter, m.domain == 0 ? "M" : "P");
+                p.setFont(font());
+            }
             p.setPen(n == cur ? theme_.foreground : theme_.lineNumberFg);
             p.drawText(0, top, gutter_->width() - 6, fontMetrics().height(), Qt::AlignRight, QString::number(n + 1));
         }
@@ -392,6 +404,84 @@ void CodeEditor::lineNumberAreaPaint(QPaintEvent* ev) {
         bottom = top + (int)blockBoundingRect(b).height();
         n++;
     }
+}
+
+std::vector<CodeEditor::CursorMark> CodeEditor::cursorMarks() const {
+    std::vector<CursorMark> v;
+    if (!ctx_.debugger.active()) return v;
+    for (int d = 0; d < 2; d++) {
+        const DebugLocation loc = ctx_.debugger.location(d == 0 ? asmcore::Domain::Main : asmcore::Domain::Peri);
+        if (!loc.valid || loc.file != path_) continue;
+        v.push_back(CursorMark{d, loc.line, ctx_.debugger.focus() == (d == 0 ? asmcore::Domain::Main : asmcore::Domain::Peri)});
+    }
+    return v;
+}
+
+// The cursors, loud: a bar down the left edge of the line (broader on the sequencer Step acts on) and a label after the text ("< MAIN . STEP"), over the line's tint.
+void CodeEditor::paintEvent(QPaintEvent* e) {
+    QPlainTextEdit::paintEvent(e);
+    const std::vector<CursorMark> marks = cursorMarks();
+    if (marks.empty()) return;
+    QPainter p(viewport());
+    p.setRenderHint(QPainter::Antialiasing);
+    QFont f = font();
+    f.setBold(true);
+    f.setPixelSize(std::max(10, f.pixelSize() > 0 ? f.pixelSize() - 2 : 11));
+    const QFontMetrics fm(f);
+    std::map<int, double> nextX;                                                       // two labels on one line stand side by side
+    for (const CursorMark& m : marks) {
+        const QTextBlock b = document()->findBlockByNumber(m.line - 1);
+        if (!b.isValid() || !b.isVisible()) continue;
+        const QRectF g = blockBoundingGeometry(b).translated(contentOffset());
+        if (g.bottom() < e->rect().top() || g.top() > e->rect().bottom()) continue;
+        const QColor c = cursorColour(m.domain);
+        QColor tint = c;
+        tint.setAlpha(m.focus ? 55 : 32);
+        p.fillRect(QRectF(0, g.top(), viewport()->width(), g.height()), tint);            // the line itself
+        p.fillRect(QRectF(0, g.top(), m.focus ? 7 : 4, g.height()), c);                    // the bar
+        if (m.focus) {
+            QColor edge = c;
+            p.setPen(QPen(edge, 2));
+            p.setBrush(Qt::NoBrush);
+            p.drawRect(QRectF(1, g.top() + 1, viewport()->width() - 2, g.height() - 2));
+        }
+        double x = nextX.count(m.line) ? nextX[m.line] : g.left() + document()->documentMargin() + (b.layout() && b.layout()->lineCount() ? b.layout()->lineAt(0).naturalTextWidth() : 0) + 16;
+        const QString text = QString::fromUtf8(m.domain == 0 ? "\xE2\x97\x80 MAIN" : "\xE2\x97\x80 PERI") + (m.focus ? QString::fromUtf8("  \xC2\xB7 STEP") : QString());
+        const double w = fm.horizontalAdvance(text) + 14;
+        x = std::min(x, (double)viewport()->width() - w - 6);
+        const QRectF pill(x, g.top() + 1, w, g.height() - 2);
+        p.setPen(m.focus ? QPen(Qt::white, 2) : Qt::NoPen);
+        p.setBrush(c);
+        p.drawRoundedRect(pill, 4, 4);
+        p.setFont(f);
+        p.setPen(QColor(20, 24, 32));
+        p.drawText(pill, Qt::AlignCenter, text);
+        nextX[m.line] = x + w + 8;
+    }
+}
+
+void CodeEditor::gutterPressed(const QPoint& pos) {
+    if (pos.x() >= kFlagX[0] - 2 && pos.x() < kFlagX[1] + 17) {                       // on a cursor flag: that sequencer is the one Step acts on
+        QTextBlock b = firstVisibleBlock();
+        int top = (int)blockBoundingGeometry(b).translated(contentOffset()).top();
+        while (b.isValid()) {
+            const int bottom = top + (int)blockBoundingRect(b).height();
+            if (pos.y() >= top && pos.y() < bottom) {
+                for (const CursorMark& m : cursorMarks()) {
+                    if (m.line != b.blockNumber() + 1) continue;
+                    if ((m.domain == 0 && pos.x() >= kFlagX[0] - 2 && pos.x() < kFlagX[1] - 1) || (m.domain == 1 && pos.x() >= kFlagX[1] - 1)) {
+                        ctx_.debugger.setFocus(m.domain == 0 ? asmcore::Domain::Main : asmcore::Domain::Peri);
+                        ctx_.status.fire(tr("Step now acts on the %1 sequencer").arg(m.domain == 0 ? "Main" : "Peri"));
+                        return;
+                    }
+                }
+                break;
+            }
+            top = bottom;
+            b = b.next();
+        }
+    }
+    gutterClicked(pos.y());
 }
 
 void CodeEditor::gutterClicked(int y) {
