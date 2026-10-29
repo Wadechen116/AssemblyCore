@@ -300,6 +300,21 @@ std::string Debugger::instructionText(Domain d) const {
     return in ? in->text : std::string();
 }
 
+DebugLocation Debugger::locationForPc(Domain d, uint32_t pc) const {
+    DebugLocation l;
+    SnapshotPtr p = programForMapping();
+    if (!p || !p->map) return l;
+    const InstrInfo* in = p->map->instrAt(d, pc);
+    if (!in) return l;
+    l.valid = true;
+    l.domain = d;
+    l.pc = pc;
+    l.file = in->loc.file;
+    l.line = in->loc.line;
+    l.frames = in->frames;
+    return l;
+}
+
 DebugLocation Debugger::location(Domain d) const {
     ViewPtr v = session_.view();
     if (!v) return DebugLocation();

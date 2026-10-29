@@ -1389,6 +1389,104 @@ static void t_trace_ring() {
     }
 }
 
+static void t_trace_links() {
+    std::printf("\nTrace links (what the time line connects)\n");
+    using namespace asmcore::sim;
+    auto ev = [](Cycle t, EventType ty, int domain, const char* what, int64_t a = 0, int64_t b = 0) { Event e; e.t = t; e.type = ty; e.domain = domain; e.what = what; e.a = a; e.b = b; return e; };
+    {   // events -> markers
+        TraceMarker m;
+        check(markerOf(ev(5, EventType::Signal, -1, "timer.gen", 1, 2), m) && m.kind == 's' && m.domain == 1 && m.what == "timer", "a new timer generation is a start (Peri's timer)");
+        check(markerOf(ev(5, EventType::Signal, -1, "main_timer.gen", 1, 2), m) && m.kind == 's' && m.domain == 0 && m.what == "main_timer", "...Main's timer");
+        check(markerOf(ev(9, EventType::Signal, -1, "timer.done", 0, 1), m) && m.kind == 'd' && m.domain == 1, "a timer's done going to 1 is a done");
+        check(!markerOf(ev(9, EventType::Signal, -1, "timer.done", 1, 0), m) && !markerOf(ev(9, EventType::Signal, -1, "poll.ready", 0, 1), m), "...going to 0, and signals that are no markers, are not");
+        check(markerOf(ev(3, EventType::Signal, -1, "vblank_open", 0, 1), m) && m.kind == 'v' && markerOf(ev(4, EventType::Signal, -1, "vblank_open", 1, 0), m) && m.kind == 'w', "the blanking window opens and closes");
+        Event pub = ev(7, EventType::Publish, 1, "", 3, 6);
+        pub.pc = 12;
+        check(markerOf(pub, m) && m.kind == 'p' && m.hasPc && m.pc == 12 && m.a == 3 && m.b == 6, "a publish knows its instruction");
+        check(markerOf(ev(8, EventType::Consume, 0, "", 3), m) && m.kind == 'c' && !m.hasPc, "a consume does not");
+        check(!markerOf(ev(1, EventType::CsrAccess, 0, "write"), m), "CSR traffic is no marker");
+    }
+    auto build = [&](std::vector<Event> evs, Cycle end) {
+        RunTrace t;
+        for (const Event& e : evs) { TraceMarker m; if (markerOf(e, m)) t.marks.push_back(m); }
+        t.endAt = end;
+        return t;
+    };
+    {   // a result: published, taken; one that is not taken yet; an overrun
+        RunTrace t = build({ev(10, EventType::Publish, 1, "", 1, 2), ev(25, EventType::Consume, 0, "", 1), ev(40, EventType::Publish, 1, "", 1, 2), ev(45, EventType::Overrun, 1, "", 1)}, 100);
+        const auto links = traceLinks(t);
+        int results = 0, open = 0, lost = 0;
+        for (const TraceLink& l : links) if (l.kind == TraceLink::Result) { results++; open += l.open; lost += l.lost; }
+        check(results == 3 && open == 1 && lost == 1, "a result is a link from the publish to the take; one not taken is open; an overrun is a lost one", std::to_string(results) + "/" + std::to_string(open) + "/" + std::to_string(lost));
+        check(links[0].from == 10 && links[0].to == 25 && links[0].length() == 15 && links[0].fromMark == 0 && links[0].toMark == 1, "the first goes from cycle 10 to 25 (15 cycles)");
+        const TraceStats st = traceStats(t);
+        check(st.published == 2 && st.taken == 1 && st.overruns == 1 && st.resultLatency.n == 1 && st.resultLatency.max == 15, "the numbers: 2 published, 1 taken, 1 overrun, latency 15");
+    }
+    {   // events: raised, dispatched, returned
+        RunTrace t = build({ev(100, EventType::HwEvent, 0, "raise", 2), ev(130, EventType::HwEvent, 0, "dispatch", 2), ev(180, EventType::HwEvent, 0, "eret", 2), ev(200, EventType::HwEvent, 1, "raise", 1)}, 300);
+        const auto links = traceLinks(t);
+        bool wait = false, handler = false, openWait = false;
+        for (const TraceLink& l : links) {
+            if (l.kind == TraceLink::EventWait && !l.open && l.length() == 30 && l.domain == 0) wait = true;
+            if (l.kind == TraceLink::EventHandler && l.length() == 50) handler = true;
+            if (l.kind == TraceLink::EventWait && l.open && l.domain == 1 && l.to == 300) openWait = true;
+        }
+        check(wait && handler && openWait, "an event: waiting for the checkpoint (30), the handler (50); one that is not dispatched is open up to the end");
+        const TraceStats st = traceStats(t);
+        check(st.eventsRaised == 2 && st.eventWait.n == 1 && st.eventWait.max == 30 && st.eventHandler.max == 50, "...and its numbers");
+    }
+    {   // timers: started, done; restarted before done; a clear and a start in the same cycle
+        RunTrace t = build({ev(10, EventType::Signal, -1, "timer.gen", 0, 1), ev(70, EventType::Signal, -1, "timer.done", 0, 1),
+                            ev(100, EventType::Signal, -1, "timer.gen", 1, 2), ev(120, EventType::Signal, -1, "timer.gen", 2, 3),
+                            ev(200, EventType::Signal, -1, "main_timer.gen", 0, 1), ev(200, EventType::Signal, -1, "main_timer.gen", 1, 2), ev(260, EventType::Signal, -1, "main_timer.done", 0, 1)}, 400);
+        int run = 0, cancelled = 0, openT = 0;
+        TraceLink mainRun;
+        for (const TraceLink& l : traceLinks(t)) {
+            if (l.kind != TraceLink::Timer) continue;
+            if (l.lost) cancelled++; else if (l.open) openT++; else run++;
+            if (l.domain == 0 && !l.lost && !l.open) mainRun = l;
+        }
+        check(run == 2 && cancelled == 1 && openT == 1, "a timer: start -> done; started again before done: the first is cancelled; the last start is open", std::to_string(run) + "/" + std::to_string(cancelled) + "/" + std::to_string(openT));
+        check(mainRun.from == 200 && mainRun.to == 260, "a clear and a start in the same cycle are one start (60 cycles to done)");
+        const TraceStats st = traceStats(t);
+        check(st.timerRun[1].n == 1 && st.timerRun[1].max == 60 && st.timerRun[0].max == 60 && st.timersCancelled == 1, "...and its numbers");
+    }
+    {   // blanking
+        RunTrace t = build({ev(300, EventType::Signal, -1, "vblank_open", 0, 1), ev(400, EventType::Signal, -1, "vblank_open", 1, 0), ev(700, EventType::Signal, -1, "vblank_open", 0, 1)}, 800);
+        int closed = 0, open = 0;
+        for (const TraceLink& l : traceLinks(t)) if (l.kind == TraceLink::Blanking) { if (l.open) open++; else closed++; }
+        check(closed == 1 && open == 1, "the blanking window: a closed one and the one that is open now");
+    }
+    {   // a real run: the shipped example 14 has all of it
+        const std::string dir = ACIDE_SAMPLE_DIR;
+        auto slurp = [](const std::string& path) { std::ifstream f(path, std::ios::binary); std::stringstream ss; ss << f.rdbuf(); return ss.str(); };
+        const std::string d = dir + "/14_main_peri_sim/";
+        const std::string src = slurp(d + "main_peri.asm");
+        if (!src.empty()) {
+            auto fs = std::make_shared<MemoryFileSystem>();
+            fs->write("/p/p.acproj", "name = p\nsource = main_peri.asm\ninclude_dir = common\n");
+            fs->write("/p/main_peri.asm", src);
+            fs->write("/p/common/defs.inc", slurp(dir + "/common/defs.inc"));
+            Workspace ws(fs);
+            std::vector<std::string> errs;
+            ws.openProject("/p/p.acproj", errs);
+            auto lang = asmcore::lang::Language::defaults();
+            SnapshotPtr prog = buildNow(ws.snapshot(), lang);
+            SimConfig cfg;
+            cfg.env = slurp(d + "main_peri_env.cfg");
+            RunTrace t = recordRun(prog->result, cfg, 12000);
+            const TraceStats st = traceStats(t);
+            check(st.published >= 1 && st.taken >= 1 && st.resultLatency.n >= 1, "example 14: Peri publishes, Main takes (with a latency)", std::to_string(st.published) + "/" + std::to_string(st.taken));
+            check(st.timersStarted >= 2 && st.timersDone >= 1 && st.timerRun[1].n >= 1, "...Peri's timer runs and finishes", std::to_string(st.timersStarted) + "/" + std::to_string(st.timersDone));
+            check(st.busTransfers >= 1, "...the I2C read is a bus transfer");
+            int blanking = 0;
+            for (const TraceLink& l : traceLinks(t)) blanking += l.kind == TraceLink::Blanking;
+            check(blanking >= 2, "...the blanking window opens and closes (the commit waits for it)", std::to_string(blanking));
+            std::printf("        example 14 in 12000 cycles: %llu published, %llu taken, latency avg %.0f max %llu; Peri timer avg %.0f; %llu bus transfers\n", (unsigned long long)st.published, (unsigned long long)st.taken, st.resultLatency.avg(), (unsigned long long)st.resultLatency.max, st.timerRun[1].avg(), (unsigned long long)st.busTransfers);
+        }
+    }
+}
+
 int main() {
     t_realfs();
     t_paths();
@@ -1411,6 +1509,7 @@ int main() {
     t_isa_layout();
     t_exec_values();
     t_trace_ring();
+    t_trace_links();
     t_debugger();
     std::printf("\n%s  %d passed, %d failed\n", g_fail ? "FAILED" : "OK    ", g_pass, g_fail);
     return g_fail ? 1 : 0;

@@ -106,6 +106,7 @@ public:
     DebugLocation location(asmcore::Domain d) const;       // from the latest view
     std::string instructionText(asmcore::Domain d) const;  // the instruction that sequencer is about to execute ("" if unknown)
     DebugLocation locationOf(asmcore::Domain d, uint32_t pc) const;
+    DebugLocation locationForPc(asmcore::Domain d, uint32_t pc) const;   // the same, also without a session (the newest build is used then)
     // Where the user should be taken after `stop`: the sequencer that caused it.
     DebugLocation stopLocation(const SimUpdate& u) const;
     SimSession& session() { return session_; }

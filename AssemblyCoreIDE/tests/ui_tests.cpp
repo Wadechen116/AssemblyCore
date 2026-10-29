@@ -1,4 +1,5 @@
 // UI tests (Qt Test, run with QT_QPA_PLATFORM=offscreen).
+#include <QSplitter>
 #include <QApplication>
 #include <QtTest>
 
@@ -1128,6 +1129,87 @@ private slots:
         QVERIFY(r.f.dbg.trace().trace().rows.empty());
     }
 
+    void theTimeLineConnectsWhatBelongsTogetherAndAnswersWhenAskedAboutIt() {
+        Rig r(".main\nh: JMP h\n");
+        auto slurp = [](const QString& path) { QFile f(path); f.open(QIODevice::ReadOnly); return f.readAll().toStdString(); };
+        const QString dir = QString::fromUtf8(ACIDE_SAMPLE_DIR) + "/";
+        if (!QFileInfo::exists(dir + "14_main_peri_sim/main_peri.asm")) QSKIP("the example is not next to the tests");
+        for (const char* n : {"14_main_peri_sim.acproj", "main_peri.asm", "main_peri_env.cfg", "main_peri.scn", "main_peri.simparams"}) r.f.fs->write(std::string("/w/s14/") + n, slurp(dir + "14_main_peri_sim/" + n));
+        r.f.fs->write("/w/common/defs.inc", slurp(dir + "common/defs.inc"));
+        QVERIFY(r.w->openProject("/w/s14/14_main_peri_sim.acproj"));
+        QWidget* page = r.w->openSimulator();
+        QWidget* view = page->findChild<QWidget*>("executionView");
+        auto* stats = page->findChild<QLabel*>("executionStats");
+        auto* detail = page->findChild<QLabel*>("executionDetail");
+        QVERIFY(view && stats && detail);
+        r.w->resize(1500, 950);
+        QApplication::processEvents();
+        QVERIFY(r.waitBuild());
+        QVERIFY(r.until([&] { return view->property("links").toInt() > 0; }, 8000));
+        QVERIFY2(stats->text().contains("Results: ") && stats->text().contains(" published, ") && stats->text().contains("waited avg 21 / max 21 cycles") && stats->text().contains("Timers: Main ") && stats->text().contains("Peri ") && stats->text().contains("Bus: "), qPrintable(stats->text()));
+        // the same run, to know where things are
+        std::string env = slurp(dir + "14_main_peri_sim/main_peri_env.cfg");
+        asmcore::sim::SimConfig cfg;
+        cfg.env = env;
+        cfg.params = r.f.dbg.simParams().params();
+        const RunTrace t = recordRun(r.f.ctx.snapshot->result, cfg, 100000);
+        const TraceMarker *pub = nullptr, *take = nullptr;
+        for (const TraceMarker& m : t.marks) { if (m.kind == 'p' && !pub) pub = &m; if (m.kind == 'c' && !take) take = &m; }
+        QVERIFY(pub && take && pub->hasPc);
+        if (auto* split = page->findChild<QSplitter*>("simulatorRight")) split->setSizes({60, 800});         // room for both lanes
+        QApplication::processEvents();
+        QVERIFY2(view->height() > 200, qPrintable(QString::number(view->height())));
+        r.sf<QPushButton>("executionFit")->click();
+        auto xOfCycle = [&](double c) { const double a = view->property("t0").toDouble(), b = view->property("t1").toDouble(), l = view->property("plotLeft").toDouble(), rr = view->property("plotRight").toDouble(); return (int)(l + (c - a) / (b - a) * (rr - l)); };
+        const int yPeri = (int)view->property("laneTop1").toDouble() - 6, yMain = (int)view->property("laneTop0").toDouble() - 6;
+        // (mouse events go straight to the widget: no window system, no global mouse state)
+        auto hover = [&](QPoint at) { QMouseEvent e(QEvent::MouseMove, QPointF(at), QPointF(view->mapToGlobal(at)), Qt::NoButton, Qt::NoButton, Qt::NoModifier); QApplication::sendEvent(view, &e); };
+        auto click = [&](QPoint at) {
+            QMouseEvent down(QEvent::MouseButtonPress, QPointF(at), QPointF(view->mapToGlobal(at)), Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+            QApplication::sendEvent(view, &down);
+            QMouseEvent up(QEvent::MouseButtonRelease, QPointF(at), QPointF(view->mapToGlobal(at)), Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+            QApplication::sendEvent(view, &up);
+        };
+        // hovering the publish says what it is and what it belongs to
+        hover(QPoint(xOfCycle((double)pub->at), yPeri));
+        QVERIFY2(view->property("hoverText").toString().contains("Peri published a result: service 1") && view->property("hoverText").toString().contains("taken by Main"), qPrintable(view->property("hoverText").toString()));
+        hover(QPoint(xOfCycle((double)take->at), yMain));
+        QVERIFY2(view->property("hoverText").toString().contains("Main took the result of service 1") && view->property("hoverText").toString().contains("published by Peri"), qPrintable(view->property("hoverText").toString()));
+        // a click shows the instruction that did it (the EXEC_PUB)
+        Location where;
+        ConnectionBag bag;
+        bag.add(r.f.ctx.showExecution, [&](const Location& l) { where = l; });
+        click(QPoint(xOfCycle((double)pub->at), yPeri));
+        const std::string asmText = slurp(dir + "14_main_peri_sim/main_peri.asm");
+        int pubLine = 1, line = 1;
+        for (size_t i = 0, st = 0; i <= asmText.size(); i++) if (i == asmText.size() || asmText[i] == '\n') { if (asmText.substr(st, i - st).find("EXEC_PUB service=") != std::string::npos && asmText.substr(st, i - st).find(";") == std::string::npos && pubLine == 1) pubLine = line; line++; st = i + 1; }
+        QCOMPARE(where.line, pubLine);
+        QVERIFY(detail->text().contains("Peri published a result"));
+        QVERIFY2(r.w->tabs()->currentWidget() != page, "the click took us to the code");
+        r.w->openSimulator();                                                                   // ... back to the simulator page
+        QApplication::processEvents();
+        // a timer: a bar on Peri's lane, from the start to the done
+        const TraceLink* timer = nullptr;
+        const std::vector<TraceLink> links = traceLinks(t);
+        for (const TraceLink& l : links) if (l.kind == TraceLink::Timer && l.domain == 1 && !l.lost && !l.open && !timer) timer = &l;
+        QVERIFY(timer);
+        const int yBar = (int)view->property("laneTop1").toDouble() + 27;
+        hover(QPoint(xOfCycle(((double)timer->from + (double)timer->to) / 2), yBar));
+        QVERIFY2(view->property("hoverText").toString().contains("Peri timer: started at cycle") && view->property("hoverText").toString().contains("done at cycle"), qPrintable(view->property("hoverText").toString()));
+        // the kinds can be switched off: the marker is gone
+        page->findChild<QCheckBox*>("executionShowResults")->setChecked(false);
+        hover(QPoint(5, 5));
+        hover(QPoint(xOfCycle((double)pub->at), yPeri));
+        QVERIFY2(!view->property("hoverText").toString().contains("Peri published a result") && view->property("hoverText").toString().contains("I2C"), "the results are hidden; the bus transfer that ends in the same cycle is still there");
+        page->findChild<QCheckBox*>("executionShowResults")->setChecked(true);
+        page->findChild<QCheckBox*>("executionShowBus")->setChecked(true);
+        hover(QPoint(5, 5));
+        hover(QPoint(xOfCycle((double)pub->at), yPeri));
+        QVERIFY(view->property("hoverText").toString().contains("Peri published a result"));
+        QVERIFY(view->property("hoverText").toString().contains("I2C"));                         // (both markers stand there: the tooltip lists them all)
+        page->grab().save(QDir::tempPath() + "/acide_timeline_links.png");
+    }
+
     void theIsaTopDiagramShowsWhatTheSimulatorHoldsAndWhereItIsGoing() {
         Rig r(".csr C = 0x10\n.main\ns: MOV CONST(5,2) -> MAIN_SCRATCHPAD[0..1]\n MOV MAIN_SCRATCHPAD[0..1] -> ALU_OPA\n MOV MAIN_SCRATCHPAD[0..1] -> ALU_OPB\n ALU ADD unsigned\n EXEC_CSR WRITE8 C, 1\n JMP s\n.peri\np: JMP p\n");
         QWidget* page = r.w->openSimulator();
@@ -1174,7 +1256,6 @@ private slots:
         // the ALU: step to the ADD
         for (int i = 0; i < 3; i++) { r.f.dbg.stepInto(); QTest::qWait(150); }
         QTest::qWait(500);
-        qInfo() << "DBG2 running" << r.f.dbg.running() << "pc" << QString::fromStdString(view->valueOf("main_dec", "PC")) << "next" << QString::fromStdString(view->valueOf("main_dec", "next")) << "exec" << QString::fromStdString(view->valueOf("main_dec", "executed")) << "OPA" << QString::fromStdString(view->valueOf("alu", "OPA")) << "OUT" << QString::fromStdString(view->valueOf("alu", "OUT"));
         QVERIFY(r.until([&] { return QString::fromStdString(view->valueOf("alu", "OUT")) == "0A 00"; }));
         QCOMPARE(QString::fromStdString(view->valueOf("alu", "OPA")), QString("05 00"));
         QCOMPARE(QString::fromStdString(view->valueOf("alu", "OPB")), QString("05 00"));

@@ -17,34 +17,20 @@ void TraceRing::feed(const SimUpdate& u) {
     const Cycle before = t_.endAt;
     if (u.droppedEvents > 0 && !u.events.empty() && u.events.front().t > before) gaps_.push_back(Gap{before, u.events.front().t});
     for (const Event& e : u.events) {
-        TraceMarker m;
-        m.at = e.t;
-        m.domain = e.domain;
-        m.a = e.a;
-        m.b = e.b;
-        m.what = e.what;
-        switch (e.type) {
-            case EventType::Issue: {
-                if (e.domain < 0 || e.domain > 1) continue;
-                TraceRow r;
-                r.domain = e.domain;
-                r.pc = e.pc;
-                r.at = e.t;
-                r.what = e.what;
-                r.len = (int)e.a;
-                t_.rows.push_back(r);
-                t_.instrs[e.domain]++;
-                continue;
-            }
-            case EventType::HwEvent: m.kind = 'e'; break;
-            case EventType::Bus: m.kind = 'b'; break;
-            case EventType::Publish: m.kind = 'p'; break;
-            case EventType::Consume: m.kind = 'c'; break;
-            case EventType::Overrun: m.kind = 'o'; break;
-            case EventType::Fault: m.kind = 'f'; break;
-            default: continue;
+        if (e.type == EventType::Issue) {
+            if (e.domain < 0 || e.domain > 1) continue;
+            TraceRow r;
+            r.domain = e.domain;
+            r.pc = e.pc;
+            r.at = e.t;
+            r.what = e.what;
+            r.len = (int)e.a;
+            t_.rows.push_back(r);
+            t_.instrs[e.domain]++;
+            continue;
         }
-        t_.marks.push_back(m);
+        TraceMarker m;
+        if (markerOf(e, m)) t_.marks.push_back(m);
     }
     if (u.view) t_.endAt = std::max(t_.endAt, u.view->cycle);
     if (!t_.rows.empty()) t_.endAt = std::max(t_.endAt, t_.rows.back().at);

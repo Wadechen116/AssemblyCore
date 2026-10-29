@@ -1132,6 +1132,74 @@ Double click on the time line: wind the simulator back to that cycle (what is la
         <source>Winding the simulator back to cycle %1</source>
         <translation>正在把模擬器倒回週期 %1</translation>
     </message>
+    <message>
+        <source>events</source>
+        <translation>事件</translation>
+    </message>
+    <message>
+        <source>bus</source>
+        <translation>匯流排</translation>
+    </message>
+    <message>
+        <source>results Peri to Main</source>
+        <translation>結果（Peri → Main）</translation>
+    </message>
+    <message>
+        <source>timers</source>
+        <translation>計時器</translation>
+    </message>
+    <message>
+        <source>blanking window</source>
+        <translation>消隱視窗</translation>
+    </message>
+    <message>
+        <source>Hover over a marker, a bar or an arrow: what it is. Click a marker: the instruction that did it.</source>
+        <translation>游標停在標記、色條或箭頭上：看它是什麼。點標記：跳到造成它的那條指令。</translation>
+    </message>
+    <message>
+        <source>Results: %1 published, %2 taken</source>
+        <translation>結果：發佈 %1 筆、取走 %2 筆</translation>
+    </message>
+    <message>
+        <source>, waited avg %1 / max %2 cycles</source>
+        <translation>，在結果槽裡等了平均 %1／最多 %2 週期</translation>
+    </message>
+    <message>
+        <source>, %1 lost (overrun)</source>
+        <translation>，%1 筆遺失（overrun）</translation>
+    </message>
+    <message>
+        <source>Events: %1 raised</source>
+        <translation>事件：提出 %1 次</translation>
+    </message>
+    <message>
+        <source>, wait for a checkpoint avg %1 / max %2</source>
+        <translation>，等檢查點平均 %1／最多 %2</translation>
+    </message>
+    <message>
+        <source>, handler avg %1 / max %2 cycles</source>
+        <translation>，處理程式平均 %1／最多 %2 週期</translation>
+    </message>
+    <message>
+        <source>Timers:</source>
+        <translation>計時器：</translation>
+    </message>
+    <message>
+        <source> %1 %2 runs avg %3 cycles;</source>
+        <translation>%1 %2 次、平均 %3 週期；</translation>
+    </message>
+    <message>
+        <source> %1 started again before done</source>
+        <translation>%1 次在到期前又被啟動</translation>
+    </message>
+    <message>
+        <source>Bus: %1 transfer(s), %2 not acknowledged</source>
+        <translation>匯流排：%1 次傳輸，%2 次沒有回應</translation>
+    </message>
+    <message>
+        <source>%1 fault(s)</source>
+        <translation>%1 個故障</translation>
+    </message>
 </context>
 <context>
     <name>IsaTopView</name>
@@ -2127,6 +2195,102 @@ Double click on the time line: wind the simulator back to that cycle (what is la
     <message>
         <source>now</source>
         <translation>現在</translation>
+    </message>
+    <message>
+        <source>%1 cycles</source>
+        <translation>%1 週期</translation>
+    </message>
+    <message>
+        <source>Overrun: %1 published service %2 while the slot was still full (cycle %3): the result was lost</source>
+        <translation>Overrun：%1 在結果槽還滿的時候又發佈了 service %2（週期 %3）：這筆結果遺失了</translation>
+    </message>
+    <message>
+        <source>Result of service %1, published by Peri at cycle %2, not taken by Main yet (%3 cycles so far)</source>
+        <translation>service %1 的結果：Peri 在週期 %2 發佈，Main 還沒取走（目前已過 %3 週期）</translation>
+    </message>
+    <message>
+        <source>Result of service %1: published by Peri at cycle %2, taken by Main at cycle %3 (it waited %4 cycles)</source>
+        <translation>service %1 的結果：Peri 在週期 %2 發佈，Main 在週期 %3 取走（等了 %4 週期）</translation>
+    </message>
+    <message>
+        <source>%1 event %2: raised at cycle %3, still waiting for a checkpoint (%4 cycles so far)</source>
+        <translation>%1 事件 %2：週期 %3 提出，還在等檢查點（目前已過 %4 週期）</translation>
+    </message>
+    <message>
+        <source>%1 event %2: raised at cycle %3, dispatched at cycle %4 (it waited %5 cycles for a checkpoint)</source>
+        <translation>%1 事件 %2：週期 %3 提出，週期 %4 派送（等檢查點等了 %5 週期）</translation>
+    </message>
+    <message>
+        <source>%1 handler of event %2: running since cycle %3 (%4 cycles so far)</source>
+        <translation>%1 的事件 %2 處理程式：從週期 %3 開始執行（目前已 %4 週期）</translation>
+    </message>
+    <message>
+        <source>%1 handler of event %2: cycles %3 to %4 (%5 cycles)</source>
+        <translation>%1 的事件 %2 處理程式：週期 %3 到 %4（%5 週期）</translation>
+    </message>
+    <message>
+        <source>%1 timer: started at cycle %2 and started again at cycle %3 before it was done (%4 cycles)</source>
+        <translation>%1 計時器：週期 %2 啟動，在到期前於週期 %3 又被啟動（%4 週期）</translation>
+    </message>
+    <message>
+        <source>%1 timer: started at cycle %2, still counting (%3 cycles so far)</source>
+        <translation>%1 計時器：週期 %2 啟動，還在計時（目前已 %3 週期）</translation>
+    </message>
+    <message>
+        <source>%1 timer: started at cycle %2, done at cycle %3 (%4 cycles)</source>
+        <translation>%1 計時器：週期 %2 啟動，週期 %3 到期（%4 週期）</translation>
+    </message>
+    <message>
+        <source>Vertical blanking window: open since cycle %1</source>
+        <translation>垂直消隱視窗：從週期 %1 開啟，還開著</translation>
+    </message>
+    <message>
+        <source>Vertical blanking window: cycles %1 to %2 (%3 cycles)</source>
+        <translation>垂直消隱視窗：週期 %1 到 %2（%3 週期）</translation>
+    </message>
+    <message>
+        <source>Peri published a result: service %1, %2 byte(s) (cycle %3)</source>
+        <translation>Peri 發佈一筆結果：service %1、%2 位元組（週期 %3）</translation>
+    </message>
+    <message>
+        <source>Main took the result of service %1 (cycle %2)</source>
+        <translation>Main 取走 service %1 的結果（週期 %2）</translation>
+    </message>
+    <message>
+        <source>Overrun: Peri published service %1 while the slot was still full (cycle %2)</source>
+        <translation>Overrun：結果槽還滿的時候 Peri 又發佈了 service %1（週期 %2）</translation>
+    </message>
+    <message>
+        <source>%1 event %2: %3 (cycle %4)</source>
+        <translation>%1 事件 %2：%3（週期 %4）</translation>
+    </message>
+    <message>
+        <source>I2C %1: device 0x%2, %3, %4 byte(s) (cycle %5)</source>
+        <translation>I2C %1：裝置 0x%2，%3，%4 位元組（週期 %5）</translation>
+    </message>
+    <message>
+        <source>acknowledged</source>
+        <translation>有回應</translation>
+    </message>
+    <message>
+        <source>NOT acknowledged</source>
+        <translation>沒有回應（NACK）</translation>
+    </message>
+    <message>
+        <source>FAULT on %1: %2 (cycle %3)</source>
+        <translation>%1 故障：%2（週期 %3）</translation>
+    </message>
+    <message>
+        <source>%1 started (cycle %2)</source>
+        <translation>%1 啟動（週期 %2）</translation>
+    </message>
+    <message>
+        <source>%1 is done (cycle %2)</source>
+        <translation>%1 到期（週期 %2）</translation>
+    </message>
+    <message>
+        <source>Click: show the instruction that did it</source>
+        <translation>按一下：顯示造成它的那條指令</translation>
     </message>
 </context>
 <context>

@@ -444,6 +444,7 @@ public:
         if (base_) for (size_t i = 0; i < base_->rows.size(); i++) bidx_[base_->rows[i].domain].push_back(i);
         maxDrift_ = 1;
         if (diff_) for (const RowDelta& r : diff_->moved) maxDrift_ = std::max<long long>(maxDrift_, std::llabs(r.delta));
+        links_ = cur_ ? traceLinks(*cur_) : std::vector<TraceLink>();
         fit();
     }
     double t0() const { return t0_; }
@@ -452,7 +453,8 @@ public:
     void fit() {
         t0_ = live_ && cur_ && !cur_->rows.empty() ? (double)cur_->rows.front().at : 0;
         t1_ = std::max(t0_ + 8.0, end() * 1.02);
-        if (live_) { follow_ = false; publish(); }
+        if (live_) follow_ = false;
+        publish();
         update();
     }
     // ---- live: the history of the running (or stopped) debug session. The index is kept up to date by adding the rows that came, and made again when the old end was cut.
@@ -467,6 +469,7 @@ public:
             epoch_ = epoch;
         }
         for (; idxRows_ < cur_->rows.size(); idxRows_++) idx_[cur_->rows[idxRows_].domain].push_back(idxRows_);
+        links_ = traceLinks(*cur_);
         maxDrift_ = 1;
         if (liveFresh_ || t1_ <= t0_) {
             liveFresh_ = false;
@@ -480,6 +483,13 @@ public:
     bool live() const { return live_; }
     bool follow() const { return follow_; }
     void setFollow(bool f) { follow_ = f; if (f && live_) followNow(); publish(); update(); }
+    enum Show { ShowEvents = 1, ShowBus = 2, ShowResults = 4, ShowTimers = 8, ShowBlanking = 16 };
+    void setShown(unsigned mask) { shown_ = mask; update(); }
+    unsigned shown() const { return shown_; }
+    const std::vector<TraceLink>& links() const { return links_; }
+    Signal<int> markerClicked;                             // the index of a marker (RunTrace::marks) that was clicked
+    QString describeMarker(int i) const;
+    QString describeLink(const TraceLink& l) const;
     Signal<> userMoved;                                    // the user zoomed or panned the live view: it no longer follows
     Signal<double> rewindRequested;                        // a double click on the live time line: the cycle
     double plotLeft() const { return kLeft; }
@@ -526,6 +536,9 @@ public:
         }
         return s;
     }
+
+    static QString cyc(Cycle v) { return QString::number((qulonglong)v); }
+    static const char* lane(int d) { return d == 1 ? "Peri" : "Main"; }
 
 protected:
     void paintEvent(QPaintEvent*) override {
@@ -584,6 +597,25 @@ protected:
                     if (x1 - x0 > 60) { p.setPen(faint); p.drawText(QRectF(x0 + 2, lane.top(), x1 - x0 - 4, lane.height()), Qt::AlignCenter, tr("events missing")); }
                 }
             }
+            for (size_t li = 0; li < links_.size(); li++) {                                  // blanking windows behind the instructions; what an event / a timer spans on the lane
+                const TraceLink& l = links_[li];
+                if (!linkShown(l)) continue;
+                const double x0 = xOf((double)l.from), x1 = xOf((double)l.to);
+                if (x1 < kLeft || x0 > width() - kRight) continue;
+                const bool hot = (int)li == hovLink_ || (hovMark_ >= 0 && (l.fromMark == hovMark_ || l.toMark == hovMark_));
+                if (l.kind == TraceLink::Blanking) {
+                    p.fillRect(QRectF(x0, lane.top(), std::max(1.0, x1 - x0), lane.height()), QColor(80, 140, 220, hot ? 70 : 38));
+                } else if (l.kind != TraceLink::Result && (l.domain == 1 ? 1 : 0) == d) {
+                    const QRectF bar = linkBar(l);
+                    QColor c = l.kind == TraceLink::Timer ? QColor("#f59e0b") : QColor("#d946ef");
+                    if (l.kind == TraceLink::EventWait) { p.setPen(QPen(c, 1)); p.setBrush(QBrush(c, Qt::BDiagPattern)); }
+                    else if (l.lost) { p.setPen(QPen(c, 1, Qt::DashLine)); p.setBrush(Qt::NoBrush); }
+                    else { p.setPen(Qt::NoPen); p.setBrush(c); }
+                    p.drawRect(bar.adjusted(0, 0, 0, hot ? 1 : 0));
+                    if (hot) { p.setPen(QPen(text, 1)); p.setBrush(Qt::NoBrush); p.drawRect(bar.adjusted(-0.5, -0.5, 0.5, 1.5)); }
+                    if (l.open) { p.setPen(QPen(c, 1, Qt::DotLine)); p.drawLine(QPointF(bar.right(), bar.center().y()), QPointF(std::min((double)width() - kRight, bar.right() + 18), bar.center().y())); }
+                }
+            }
             size_t kFirst = 0;                                                               // (only what is in view: a long history is not walked every time)
             {
                 size_t lo = 0, hi = idx_[d].size();
@@ -614,18 +646,58 @@ protected:
             for (auto mi = firstMark; mi != cur_->marks.end(); ++mi) {                       // what happens between the sequencers
                 const TraceMarker& m = *mi;
                 if ((double)m.at > t1_) break;
+                if (!kindShown(m.kind)) continue;
                 const int md = m.domain == 1 ? 1 : 0;
                 if (md != d && m.kind != 'e') continue;
                 if (m.domain >= 0 && m.domain != d) continue;
                 const double x = xOf((double)m.at);
                 if (x < kLeft || x > width() - kRight) continue;
                 const double y = lane.top() - 6;
+                const bool hot = (int)(mi - cur_->marks.begin()) == hovMark_;
                 p.setPen(Qt::NoPen);
-                if (m.kind == 'e') { p.setBrush(QColor("#d946ef")); p.drawPolygon(QPolygonF({QPointF(x - 4, y - 4), QPointF(x + 4, y - 4), QPointF(x, y + 3)})); }
-                else if (m.kind == 'b') { p.setBrush(QColor("#14b8a6")); p.drawRect(QRectF(x - 3, y - 3, 6, 6)); }
-                else if (m.kind == 'p') { p.setBrush(QColor("#22d3ee")); p.drawPolygon(QPolygonF({QPointF(x, y - 4), QPointF(x + 4, y), QPointF(x, y + 4), QPointF(x - 4, y)})); }
-                else if (m.kind == 'c') { p.setBrush(QColor("#84cc16")); p.drawEllipse(QPointF(x, y), 3.5, 3.5); }
-                else { p.setBrush(QColor("#ef4444")); p.drawRect(QRectF(x - 4, y - 4, 8, 8)); }
+                const double z = hot ? 1.5 : 1.0;
+                if (m.kind == 'e') { p.setBrush(QColor("#d946ef")); p.drawPolygon(QPolygonF({QPointF(x - 4 * z, y - 4 * z), QPointF(x + 4 * z, y - 4 * z), QPointF(x, y + 3 * z)})); }
+                else if (m.kind == 'b') { p.setBrush(QColor("#14b8a6")); p.drawRect(QRectF(x - 3 * z, y - 3 * z, 6 * z, 6 * z)); }
+                else if (m.kind == 'p') { p.setBrush(QColor("#22d3ee")); p.drawPolygon(QPolygonF({QPointF(x, y - 4 * z), QPointF(x + 4 * z, y), QPointF(x, y + 4 * z), QPointF(x - 4 * z, y)})); }
+                else if (m.kind == 'c') { p.setBrush(QColor("#84cc16")); p.drawEllipse(QPointF(x, y), 3.5 * z, 3.5 * z); }
+                else if (m.kind == 's') { p.setBrush(QColor("#f59e0b")); p.drawPolygon(QPolygonF({QPointF(x - 2, y - 4 * z), QPointF(x + 5 * z, y), QPointF(x - 2, y + 4 * z)})); }
+                else if (m.kind == 'd') { p.setBrush(QColor("#f59e0b")); p.drawRect(QRectF(x - 1.5 * z, y - 4 * z, 3 * z, 8 * z)); }
+                else { p.setBrush(QColor("#ef4444")); p.drawRect(QRectF(x - 4 * z, y - 4 * z, 8 * z, 8 * z)); }
+                if (hot) { p.setPen(QPen(text, 1)); p.setBrush(Qt::NoBrush); p.drawEllipse(QPointF(x, y), 7, 7); p.setPen(Qt::NoPen); }
+            }
+            p.restore();
+        }
+        if (shown_ & ShowResults) {                                                          // a result: from the publish (Peri) to the take (Main)
+            p.save();
+            p.setClipRect(QRectF(kLeft, kAxis - 16, width() - kLeft - kRight, driftRect().top() - kAxis + 16));
+            for (size_t li = 0; li < links_.size(); li++) {
+                const TraceLink& l = links_[li];
+                if (l.kind != TraceLink::Result) continue;
+                const double x0 = xOf((double)l.from), x1 = xOf((double)l.to);
+                if (std::max(x0, x1) < kLeft || std::min(x0, x1) > width() - kRight) continue;
+                const bool hot = (int)li == hovLink_ || (hovMark_ >= 0 && (l.fromMark == hovMark_ || l.toMark == hovMark_));
+                const double yP = laneRect(1).top() - 6;
+                if (l.lost) {                                                                // overwritten: a cross at the publish
+                    p.setPen(QPen(QColor("#ef4444"), hot ? 3 : 2));
+                    p.drawLine(QPointF(x0 - 5, yP - 5), QPointF(x0 + 5, yP + 5));
+                    p.drawLine(QPointF(x0 - 5, yP + 5), QPointF(x0 + 5, yP - 5));
+                    continue;
+                }
+                const QPolygonF poly = resultPath(l);
+                QColor c("#84cc16");
+                p.setPen(QPen(c, hot ? 3.5 : 1.8, l.open ? Qt::DashLine : Qt::SolidLine));
+                p.setBrush(Qt::NoBrush);
+                p.drawPolyline(poly);
+                if (!l.open) {
+                    const QPointF tip = poly.last();
+                    p.setPen(Qt::NoPen);
+                    p.setBrush(c);
+                    p.drawPolygon(QPolygonF({tip, QPointF(tip.x() - 4, tip.y() + 8), QPointF(tip.x() + 4, tip.y() + 8)}));
+                    if (x1 - x0 > 44) {                                                      // how long the result waited in the slot
+                        p.setPen(text);
+                        p.drawText(QPointF(x0 + 4, (poly[1].y()) - 2), tr("%1 cycles").arg((qulonglong)l.length()));
+                    }
+                }
             }
             p.restore();
         }
@@ -696,6 +768,20 @@ protected:
             update();
             return;
         }
+        int mark = -1, link = -1;
+        hitMarkOrLink(e->position(), mark, link);
+        if (mark < 0 && link < 0) hitBlanking(e->position(), link);
+        if (mark != hovMark_ || link != hovLink_) { hovMark_ = mark; hovLink_ = link; update(); }
+        if (mark >= 0 || link >= 0) {
+            hov_[0] = hov_[1] = -1;
+            QString tip;
+            if (mark >= 0) { for (size_t k = 0; k < nearMarks_.size(); k++) tip += (k ? "\n\n" : "") + describeMarker(nearMarks_[k]); }
+            else tip = describeLink(links_[(size_t)link]);
+            setProperty("hoverText", tip);
+            QToolTip::showText(e->globalPosition().toPoint(), tip, this);
+            return;
+        }
+        setProperty("hoverText", QString());
         int d = -1, k = -1;
         hit(e->position(), d, k);
         if (d != hov_[0] || k != hov_[1]) { hov_[0] = d; hov_[1] = k; update(); }
@@ -704,6 +790,11 @@ protected:
     }
     void mouseReleaseEvent(QMouseEvent* e) override {
         if (moved_ || !cur_) return;
+        {
+            int mark = -1, link = -1;
+            hitMarkOrLink(e->position(), mark, link);
+            if (mark >= 0) { markerClicked.fire(mark); return; }
+        }
         int d = -1, k = -1;
         hit(e->position(), d, k);
         if (d >= 0) { sel_[0] = d; sel_[1] = k; update(); clicked.fire(d, (size_t)k); }
@@ -717,7 +808,8 @@ protected:
         const double first = cur_ && !cur_->rows.empty() ? (double)cur_->rows.front().at : 0;
         rewindRequested.fire(std::max(first, std::min(t, end())));
     }
-    void leaveEvent(QEvent*) override { hov_[0] = hov_[1] = -1; update(); }
+    void leaveEvent(QEvent*) override { hov_[0] = hov_[1] = -1; hovMark_ = hovLink_ = -1; update(); }
+    void resizeEvent(QResizeEvent* e) override { QWidget::resizeEvent(e); publish(); }
 
 private:
     void hit(const QPointF& at, int& d, int& k) const {
@@ -742,6 +834,90 @@ private:
     const TraceDiff* diff_ = nullptr;
     std::vector<size_t> idx_[2], bidx_[2];
     const std::vector<TraceRing::Gap>* gaps_ = nullptr;
+    std::vector<TraceLink> links_;
+    unsigned shown_ = 31;
+    int hovMark_ = -1, hovLink_ = -1;
+    mutable std::vector<int> nearMarks_;                    // the markers under the pointer, the most important first
+    bool kindShown(char k) const {
+        switch (k) {
+            case 'e': return shown_ & ShowEvents;
+            case 'b': return shown_ & ShowBus;
+            case 'p': case 'c': case 'o': return shown_ & ShowResults;
+            case 's': case 'd': return shown_ & ShowTimers;
+            case 'v': case 'w': return false;
+            default: return true;                                                          // faults are always shown
+        }
+    }
+    bool linkShown(const TraceLink& l) const {
+        switch (l.kind) {
+            case TraceLink::Result: return shown_ & ShowResults;
+            case TraceLink::EventWait: case TraceLink::EventHandler: return shown_ & ShowEvents;
+            case TraceLink::Timer: return shown_ & ShowTimers;
+            case TraceLink::Blanking: return shown_ & ShowBlanking;
+        }
+        return true;
+    }
+    // where a marker's glyph is, and the polyline of a result's arrow (Peri's lane up to Main's)
+    QPointF glyphAt(const TraceMarker& m) const { return QPointF(xOf((double)m.at), laneRect(m.domain == 1 ? 1 : 0).top() - 6); }
+    QPolygonF resultPath(const TraceLink& l) const {
+        const double x0 = xOf((double)l.from), x1 = xOf((double)l.to);
+        const double yP = laneRect(1).top() - 6, yM = laneRect(0).bottom();
+        const double ym = (yP + yM) / 2;
+        return QPolygonF({QPointF(x0, yP), QPointF(x0, ym), QPointF(x1, ym), QPointF(x1, yM)});
+    }
+    static double distanceToSegment(const QPointF& p, const QPointF& a, const QPointF& b) {
+        const QPointF ab = b - a;
+        const double len2 = ab.x() * ab.x() + ab.y() * ab.y();
+        double t = len2 > 0 ? ((p.x() - a.x()) * ab.x() + (p.y() - a.y()) * ab.y()) / len2 : 0;
+        t = std::max(0.0, std::min(1.0, t));
+        const QPointF q = a + ab * t;
+        return std::hypot(p.x() - q.x(), p.y() - q.y());
+    }
+    QRectF linkBar(const TraceLink& l) const {                                             // events above the lane, timers on its lower edge
+        const QRectF lane = laneRect(l.domain == 1 ? 1 : 0);
+        const double x0 = xOf((double)l.from), x1 = std::max(x0 + 2, xOf((double)l.to));
+        if (l.kind == TraceLink::Timer) return QRectF(x0, lane.bottom() - 6, x1 - x0, 6);
+        return QRectF(x0, lane.top() - 4, x1 - x0, 4);
+    }
+    void hitMarkOrLink(const QPointF& at, int& mark, int& link) const {
+        mark = link = -1;
+        if (!cur_) return;
+        const auto first = std::lower_bound(cur_->marks.begin(), cur_->marks.end(), tOf(at.x() - 8), [](const TraceMarker& m, double t) { return (double)m.at < t; });
+        // every marker within reach (several can stand on one spot: a bus transfer and the publish that follows in the same cycle); the most important one is "the" marker
+        struct Near { int index; double dist; int rank; };
+        std::vector<Near> near;
+        auto rankOf = [](char k) { switch (k) { case 'f': return 0; case 'p': return 1; case 'o': return 2; case 'e': return 3; case 'c': return 4; case 's': case 'd': return 5; default: return 6; } };
+        for (auto it = first; it != cur_->marks.end() && (double)it->at <= tOf(at.x() + 8); ++it) {
+            if (!kindShown(it->kind)) continue;
+            const QPointF g = glyphAt(*it);
+            const double dd = std::hypot(at.x() - g.x(), at.y() - g.y());
+            if (dd < 7.5) near.push_back({(int)(it - cur_->marks.begin()), dd, rankOf(it->kind)});
+        }
+        nearMarks_.clear();
+        if (!near.empty()) {
+            std::sort(near.begin(), near.end(), [](const Near& a, const Near& b) { return a.rank != b.rank ? a.rank < b.rank : a.dist < b.dist; });
+            for (const Near& n : near) nearMarks_.push_back(n.index);
+            mark = near.front().index;
+            return;
+        }
+        for (size_t i = 0; i < links_.size(); i++) {
+            const TraceLink& l = links_[i];
+            if (!linkShown(l) || l.kind == TraceLink::Blanking) continue;
+            if (l.kind == TraceLink::Result) {
+                if (l.lost && l.fromMark == l.toMark) continue;
+                const QPolygonF poly = resultPath(l);
+                for (int k = 0; k + 1 < poly.size(); k++) if (distanceToSegment(at, poly[k], poly[k + 1]) < 4) { link = (int)i; return; }
+            } else if (linkBar(l).adjusted(0, -2, 0, 2).contains(at)) { link = (int)i; return; }
+        }
+    }
+    void hitBlanking(const QPointF& at, int& link) const {
+        link = -1;
+        for (size_t i = 0; i < links_.size(); i++) {
+            const TraceLink& l = links_[i];
+            if (l.kind != TraceLink::Blanking || !linkShown(l)) continue;
+            if (at.x() >= xOf((double)l.from) && at.x() <= xOf((double)l.to) && at.y() >= kAxis - 4 && at.y() <= driftRect().top()) { link = (int)i; return; }
+        }
+    }
     bool live_ = false, follow_ = false, liveFresh_ = false;
     uint64_t epoch_ = 0;
     size_t idxRows_ = 0;
@@ -757,6 +933,9 @@ private:
         setProperty("t1", t1_);
         setProperty("liveEnd", cur_ ? (double)cur_->endAt : 0.0);
         setProperty("gaps", gaps_ ? (int)gaps_->size() : 0);
+        setProperty("laneTop0", laneRect(0).top());
+        setProperty("laneTop1", laneRect(1).top());
+        setProperty("links", (int)links_.size());
         setProperty("plotLeft", kLeft);
         setProperty("plotRight", (double)(width() - kRight));
     }
@@ -769,6 +948,49 @@ public:
     void setMessage(const QString& m) { message_ = m; update(); }
     static QString tr(const char* s) { return QCoreApplication::translate("acide::ExecutionView", s); }
 };
+
+QString ExecutionView::describeLink(const TraceLink& l) const {
+    switch (l.kind) {
+        case TraceLink::Result:
+            if (l.lost) return tr("Overrun: %1 published service %2 while the slot was still full (cycle %3): the result was lost").arg(lane(1)).arg(l.a).arg(cyc(l.from));
+            if (l.open) return tr("Result of service %1, published by Peri at cycle %2, not taken by Main yet (%3 cycles so far)").arg(l.a).arg(cyc(l.from)).arg(cyc(l.length()));
+            return tr("Result of service %1: published by Peri at cycle %2, taken by Main at cycle %3 (it waited %4 cycles)").arg(l.a).arg(cyc(l.from)).arg(cyc(l.to)).arg(cyc(l.length()));
+        case TraceLink::EventWait:
+            return l.open ? tr("%1 event %2: raised at cycle %3, still waiting for a checkpoint (%4 cycles so far)").arg(lane(l.domain)).arg(l.a).arg(cyc(l.from)).arg(cyc(l.length()))
+                          : tr("%1 event %2: raised at cycle %3, dispatched at cycle %4 (it waited %5 cycles for a checkpoint)").arg(lane(l.domain)).arg(l.a).arg(cyc(l.from)).arg(cyc(l.to)).arg(cyc(l.length()));
+        case TraceLink::EventHandler:
+            return l.open ? tr("%1 handler of event %2: running since cycle %3 (%4 cycles so far)").arg(lane(l.domain)).arg(l.a).arg(cyc(l.from)).arg(cyc(l.length()))
+                          : tr("%1 handler of event %2: cycles %3 to %4 (%5 cycles)").arg(lane(l.domain)).arg(l.a).arg(cyc(l.from)).arg(cyc(l.to)).arg(cyc(l.length()));
+        case TraceLink::Timer:
+            if (l.lost) return tr("%1 timer: started at cycle %2 and started again at cycle %3 before it was done (%4 cycles)").arg(lane(l.domain)).arg(cyc(l.from)).arg(cyc(l.to)).arg(cyc(l.length()));
+            return l.open ? tr("%1 timer: started at cycle %2, still counting (%3 cycles so far)").arg(lane(l.domain)).arg(cyc(l.from)).arg(cyc(l.length()))
+                          : tr("%1 timer: started at cycle %2, done at cycle %3 (%4 cycles)").arg(lane(l.domain)).arg(cyc(l.from)).arg(cyc(l.to)).arg(cyc(l.length()));
+        case TraceLink::Blanking:
+            return l.open ? tr("Vertical blanking window: open since cycle %1").arg(cyc(l.from)) : tr("Vertical blanking window: cycles %1 to %2 (%3 cycles)").arg(cyc(l.from)).arg(cyc(l.to)).arg(cyc(l.length()));
+    }
+    return QString();
+}
+
+QString ExecutionView::describeMarker(int i) const {
+    if (!cur_ || i < 0 || (size_t)i >= cur_->marks.size()) return QString();
+    const TraceMarker& m = cur_->marks[(size_t)i];
+    QString s;
+    switch (m.kind) {
+        case 'p': s = tr("Peri published a result: service %1, %2 byte(s) (cycle %3)").arg(m.a).arg(m.b).arg(cyc(m.at)); break;
+        case 'c': s = tr("Main took the result of service %1 (cycle %2)").arg(m.a).arg(cyc(m.at)); break;
+        case 'o': s = tr("Overrun: Peri published service %1 while the slot was still full (cycle %2)").arg(m.a).arg(cyc(m.at)); break;
+        case 'e': s = tr("%1 event %2: %3 (cycle %4)").arg(lane(m.domain)).arg(m.a).arg(fromStd(m.what)).arg(cyc(m.at)); break;
+        case 'b': s = tr("I2C %1: device 0x%2, %3, %4 byte(s) (cycle %5)").arg(fromStd(m.what)).arg(QString::number((qulonglong)m.a, 16).toUpper()).arg(m.b ? tr("acknowledged") : tr("NOT acknowledged")).arg(m.c).arg(cyc(m.at)); break;
+        case 'f': s = tr("FAULT on %1: %2 (cycle %3)").arg(lane(m.domain)).arg(fromStd(m.what)).arg(cyc(m.at)); break;
+        case 's': s = tr("%1 started (cycle %2)").arg(fromStd(m.what)).arg(cyc(m.at)); break;
+        case 'd': s = tr("%1 is done (cycle %2)").arg(fromStd(m.what)).arg(cyc(m.at)); break;
+        default: s = fromStd(m.what); break;
+    }
+    for (const TraceLink& l : links_)                                                        // what it belongs to
+        if (l.fromMark == i || l.toMark == i) { s += "\n" + describeLink(l); break; }
+    if (m.hasPc) s += "\n" + tr("Click: show the instruction that did it");
+    return s;
+}
 
 class ExecutionPanel : public QWidget {
     Q_DECLARE_TR_FUNCTIONS(ExecutionPanel)
@@ -809,10 +1031,37 @@ public:
         for (QWidget* w : std::initializer_list<QWidget*>{live_, follow_, run_, auto_, compare_, saveBase_, maxCycles_, fit_, first_}) bar->addWidget(w);
         bar->addStretch(1);
         lay->addLayout(bar);
+        {   // what the time line shows: the kinds can be switched, each in its own colour
+            auto* kinds = new QHBoxLayout;
+            struct K { const char* name; QString text; const char* colour; unsigned bit; };
+            const K ks[] = {{"executionShowEvents", tr("events"), "#d946ef", ExecutionView::ShowEvents}, {"executionShowBus", tr("bus"), "#14b8a6", ExecutionView::ShowBus},
+                            {"executionShowResults", tr("results Peri to Main"), "#65a30d", ExecutionView::ShowResults}, {"executionShowTimers", tr("timers"), "#d97706", ExecutionView::ShowTimers},
+                            {"executionShowBlanking", tr("blanking window"), "#3b82f6", ExecutionView::ShowBlanking}};
+            for (const K& k : ks) {
+                auto* c = new QCheckBox(k.text);
+                c->setObjectName(k.name);
+                c->setChecked(true);
+                c->setStyleSheet(QString("QCheckBox { color:%1; font-weight:bold; }").arg(k.colour));
+                const unsigned bit = k.bit;
+                connect(c, &QCheckBox::toggled, this, [this, bit](bool on) { shownMask_ = on ? (shownMask_ | bit) : (shownMask_ & ~bit); view_->setShown(shownMask_); });
+                kinds->addWidget(c);
+            }
+            kinds->addStretch(1);
+            lay->addLayout(kinds);
+        }
         summary_ = new QLabel;
         summary_->setObjectName("executionSummary");
         summary_->setWordWrap(true);
         lay->addWidget(summary_);
+        stats_ = new QLabel;
+        stats_->setObjectName("executionStats");
+        stats_->setWordWrap(true);
+        lay->addWidget(stats_);
+        detail_ = new QLabel(tr("Hover over a marker, a bar or an arrow: what it is. Click a marker: the instruction that did it."));
+        detail_->setObjectName("executionDetail");
+        detail_->setWordWrap(true);
+        detail_->setTextInteractionFlags(Qt::TextSelectableByMouse);
+        lay->addWidget(detail_);
         view_ = new ExecutionView;
         lay->addWidget(view_, 3);
         table_ = new QTableWidget(0, 6);
@@ -838,6 +1087,7 @@ public:
             view_->focusRow(it->data(Qt::UserRole).toInt(), (size_t)it->data(Qt::UserRole + 1).toInt());
         });
         view_->clicked.connect([this](int d, size_t k) { goTo(d, k); });
+        view_->markerClicked.connect([this](int i) { markerClicked(i); });
         view_->userMoved.connect([this] { QSignalBlocker b(follow_); follow_->setChecked(false); });
         view_->rewindRequested.connect([this](double t) { rewindTo((Cycle)t); });
         connect(live_, &QCheckBox::toggled, this, [this](bool on) { ctx_.settings.set("execution.live", on ? "1" : "0"); refreshMode(); });
@@ -881,6 +1131,7 @@ private:
     void updateLive() {
         const TraceRing& ring = ctx_.debugger.trace();
         view_->setLive(&ring.trace(), &ring.gaps(), ring.trimEpoch());
+        updateStats(ring.trace());
         const RunTrace& t = ring.trace();
         QString s = ctx_.debugger.running() ? tr("Live: running, at cycle %1").arg((qulonglong)t.endAt) : tr("Live: stopped at cycle %1").arg((qulonglong)t.endAt);
         s += tr("  \xC2\xB7  the history has %1 Main and %2 Peri instructions").arg((qulonglong)t.instrs[0]).arg((qulonglong)t.instrs[1]);
@@ -889,6 +1140,44 @@ private:
         s += tr("\nDouble click on the time line: wind the simulator back to that cycle (what is later is forgotten; the run goes on from there).");
         summary_->setText(s);
         saveBase_->setEnabled(false);
+    }
+    const RunTrace& shownTrace() const { return liveShown_ ? ctx_.debugger.trace().trace() : cur_; }
+    void markerClicked(int i) {
+        const RunTrace& t = shownTrace();
+        if (i < 0 || (size_t)i >= t.marks.size()) return;
+        detail_->setText(view_->describeMarker(i));
+        const TraceMarker& m = t.marks[(size_t)i];
+        if (!m.hasPc || (m.domain != 0 && m.domain != 1)) return;
+        const DebugLocation l = ctx_.debugger.locationForPc(m.domain == 0 ? asmcore::Domain::Main : asmcore::Domain::Peri, m.pc);
+        if (l.valid) { Location loc; loc.file = l.file; loc.line = l.line; ctx_.showExecution.fire(loc); }
+    }
+    // what the markers add up to
+    void updateStats(const RunTrace& t) {
+        const TraceStats st = traceStats(t);
+        auto avg = [](const TraceStats::Span& s) { return QString::number(s.avg(), 'f', s.avg() < 10 ? 1 : 0); };
+        QStringList parts;
+        if (st.published || st.taken || st.overruns) {
+            QString s = tr("Results: %1 published, %2 taken").arg((qulonglong)st.published).arg((qulonglong)st.taken);
+            if (st.resultLatency.n) s += tr(", waited avg %1 / max %2 cycles").arg(avg(st.resultLatency)).arg((qulonglong)st.resultLatency.max);
+            if (st.lost || st.overruns) s += tr(", %1 lost (overrun)").arg((qulonglong)std::max(st.lost, st.overruns));
+            parts << s;
+        }
+        if (st.eventsRaised) {
+            QString s = tr("Events: %1 raised").arg((qulonglong)st.eventsRaised);
+            if (st.eventWait.n) s += tr(", wait for a checkpoint avg %1 / max %2").arg(avg(st.eventWait)).arg((qulonglong)st.eventWait.max);
+            if (st.eventHandler.n) s += tr(", handler avg %1 / max %2 cycles").arg(avg(st.eventHandler)).arg((qulonglong)st.eventHandler.max);
+            parts << s;
+        }
+        if (st.timersStarted) {
+            QString s = tr("Timers:");
+            for (int d = 0; d < 2; d++) if (st.timerRun[d].n) s += tr(" %1 %2 runs avg %3 cycles;").arg(d == 0 ? "Main" : "Peri").arg((qulonglong)st.timerRun[d].n).arg(avg(st.timerRun[d]));
+            if (st.timersCancelled) s += tr(" %1 started again before done").arg((qulonglong)st.timersCancelled);
+            parts << s;
+        }
+        if (st.busTransfers) parts << tr("Bus: %1 transfer(s), %2 not acknowledged").arg((qulonglong)st.busTransfers).arg((qulonglong)st.busNacks);
+        if (st.faults) parts << tr("%1 fault(s)").arg((qulonglong)st.faults);
+        stats_->setText(parts.join("    \xC2\xB7    "));
+        stats_->setVisible(!parts.isEmpty());
     }
     void rewindTo(Cycle t) {
         if (!ctx_.debugger.active()) return;
@@ -938,6 +1227,7 @@ private:
         if (haveBase_) diff_ = compareTraces(base_, cur_);
         view_->setMessage(QString());
         view_->setData(&cur_, haveBase_ ? &base_ : nullptr, haveBase_ ? &diff_ : nullptr);
+        updateStats(cur_);
         fillTable();
         summary_->setText(summaryText());
         first_->setEnabled(haveBase_ && !diff_.moved.empty());
@@ -995,7 +1285,7 @@ private:
         for (const TraceRow& r : source.rows) {
             if (r.domain != d) continue;
             if (n++ != k) continue;
-            const DebugLocation l = ctx_.debugger.locationOf(d == 0 ? asmcore::Domain::Main : asmcore::Domain::Peri, r.pc);
+            const DebugLocation l = ctx_.debugger.locationForPc(d == 0 ? asmcore::Domain::Main : asmcore::Domain::Peri, r.pc);
             if (l.valid) { Location loc; loc.file = l.file; loc.line = l.line; ctx_.goTo.fire(loc); }
             return;
         }
@@ -1008,7 +1298,8 @@ private:
     bool liveShown_ = false;
     QComboBox* compare_;
     QSpinBox* maxCycles_;
-    QLabel* summary_;
+    QLabel *summary_, *stats_, *detail_;
+    unsigned shownMask_ = 31;
     ExecutionView* view_;
     QTableWidget* table_;
     QTimer timer_;
