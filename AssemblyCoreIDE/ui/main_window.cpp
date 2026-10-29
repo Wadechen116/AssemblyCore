@@ -5,6 +5,9 @@
 #include <QApplication>
 #include <QCloseEvent>
 #include <QDir>
+#include <QComboBox>
+#include <QLineEdit>
+#include <QSignalBlocker>
 #include <QDockWidget>
 #include <QScrollArea>
 #include <QFileDialog>
@@ -980,6 +983,42 @@ void MainWindow::createDebugActions() {
         tb->addAction(autoDebug);
         dbg->addSeparator();
     }
+    {   // the speed of the simulator: a drop-down in the tool bar (a preset or any number), and Faster / Slower
+        tb->addSeparator();
+        auto* label = new QLabel(tr("Speed:"));
+        label->setToolTip(tr("How fast the simulator runs, in ISA cycles per second of real time (the parameter sim.speed). It can be changed while it runs."));
+        tb->addWidget(label);
+        speedBox_ = new QComboBox;
+        speedBox_->setObjectName("speedBox");
+        speedBox_->setEditable(true);
+        speedBox_->setInsertPolicy(QComboBox::NoInsert);
+        speedBox_->setMinimumWidth(130);
+        speedBox_->setToolTip(label->toolTip() + "\n" + tr("Pick a speed or type a number (0 or \"full\" = full speed). Ctrl+Alt+Up / Down: faster / slower."));
+        speedBox_->addItem(tr("Full speed"), QVariant::fromValue<qlonglong>(0));
+        for (qlonglong v : {100000LL, 10000LL, 1000LL, 100LL, 10LL, 1LL}) speedBox_->addItem(tr("%1 cycles/s").arg(v), QVariant::fromValue<qlonglong>(v));
+        tb->addWidget(speedBox_);
+        connect(speedBox_, QOverload<int>::of(&QComboBox::activated), this, [this](int i) { setSimSpeed(speedBox_->itemData(i).toLongLong()); });
+        connect(speedBox_->lineEdit(), &QLineEdit::editingFinished, this, [this] {
+            const QString t = speedBox_->lineEdit()->text().trimmed();
+            for (int i = 0; i < speedBox_->count(); i++) if (t == speedBox_->itemText(i)) { setSimSpeed(speedBox_->itemData(i).toLongLong()); return; }     // a preset as it is written
+            QString digits;
+            for (QChar c : t) if (c.isDigit()) digits += c;
+            if (t.compare("full", Qt::CaseInsensitive) == 0 || t.compare(tr("Full speed"), Qt::CaseInsensitive) == 0) setSimSpeed(0);
+            else if (!digits.isEmpty() && digits.size() <= 10) setSimSpeed(digits.toLongLong());
+            else { statusBar()->showMessage(tr("A speed is a number of cycles per second (0 = full speed)"), 4000); syncSpeedBox(); }
+        });
+        QAction* faster = dbg->addAction(tr("Faster"));
+        faster->setShortcut(QKeySequence("Ctrl+Alt+Up"));
+        faster->setObjectName("speedFasterAction");
+        connect(faster, &QAction::triggered, this, [this] { stepSimSpeed(+1); });
+        QAction* slower = dbg->addAction(tr("Slower"));
+        slower->setShortcut(QKeySequence("Ctrl+Alt+Down"));
+        slower->setObjectName("speedSlowerAction");
+        connect(slower, &QAction::triggered, this, [this] { stepSimSpeed(-1); });
+        dbg->addSeparator();
+        conns_.add(ctx_.debugger.simParams().changed, [this] { syncSpeedBox(); });
+        syncSpeedBox();
+    }
     dbg->addAction(tr("Run for N Cycles..."), this, [this] {
         if (!ctx_.debugger.active() || ctx_.debugger.running()) { statusBar()->showMessage(tr("Start debugging first (and pause it)"), 4000); return; }
         bool ok = false;
@@ -1052,6 +1091,34 @@ void MainWindow::restartDebug() {
     bool wasRunning = false;
     if (ctx_.debugger.active()) { wasRunning = false; ctx_.debugger.stop(); }
     startDebug(wasRunning);
+}
+
+void MainWindow::setSimSpeed(int64_t v) {
+    std::string err;
+    if (!ctx_.debugger.simParams().set("sim.speed", std::to_string(v), err)) { statusBar()->showMessage(fromStd(err), 5000); syncSpeedBox(); return; }       // (a running simulator follows at once)
+    syncSpeedBox();
+    statusBar()->showMessage(v == 0 ? tr("Simulator speed: full speed") : tr("Simulator speed: %1 cycles per second").arg((qlonglong)v), 3000);
+}
+
+void MainWindow::stepSimSpeed(int direction) {
+    const int64_t now = ctx_.debugger.simParams().params().get("sim.speed");
+    const int64_t presets[] = {1, 10, 100, 1000, 10000, 100000, 0};                              // slow ... fast; 0 (full speed) is the fastest
+    auto rank = [](int64_t v) { return v == 0 ? (int64_t)1 << 60 : v; };
+    int64_t pick = now;
+    if (direction > 0) { for (int64_t p : presets) if (rank(p) > rank(now)) { pick = p; break; } }
+    else { for (int i = 6; i >= 0; i--) if (rank(presets[i]) < rank(now)) { pick = presets[i]; break; } }
+    if (pick != now) setSimSpeed(pick);
+    else statusBar()->showMessage(direction > 0 ? tr("Already at full speed") : tr("Already at the slowest speed"), 3000);
+}
+
+void MainWindow::syncSpeedBox() {
+    if (!speedBox_) return;
+    const int64_t v = ctx_.debugger.simParams().params().get("sim.speed");
+    QSignalBlocker block(speedBox_);
+    int at = -1;
+    for (int i = 0; i < speedBox_->count(); i++) if (speedBox_->itemData(i).toLongLong() == v) at = i;
+    if (at >= 0) speedBox_->setCurrentIndex(at);
+    else speedBox_->setEditText(tr("%1 cycles/s").arg((qlonglong)v));
 }
 
 AutoFixOutcome MainWindow::runAutoFix(bool apply) {

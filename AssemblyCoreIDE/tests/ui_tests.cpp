@@ -923,6 +923,68 @@ private slots:
         QCOMPARE(cycle(), frozen);
     }
 
+    void theSpeedOfTheSimulatorIsAControlOfTheToolBar() {
+        Rig r(".csr MARK = 0x50\n.main\ns: EXEC_CSR WRITE8 MARK, 1\n JMP s\n");
+        auto* box = r.w->findChild<QComboBox*>("speedBox");
+        QVERIFY(box);
+        auto speed = [&] { return (long long)r.f.dbg.simParams().params().get("sim.speed"); };
+        auto cycle = [&] { return r.f.dbg.session().view() ? (long long)r.f.dbg.session().view()->cycle : -1LL; };
+        QCOMPARE(speed(), 1000LL);                                                           // the default: slow enough to watch
+        QCOMPARE(box->currentText(), QString("1000 cycles/s"));
+        r.w->debugAction("start")->trigger();
+        QVERIFY(r.until([&] { return r.f.dbg.running(); }));
+        QTest::qWait(300);
+        const long long slow = cycle();
+        QVERIFY2(slow < 2000, qPrintable(QString::number(slow)));
+        // a preset: full speed, at once, without stopping
+        emit box->activated(0);
+        QCOMPARE(speed(), 0LL);
+        QVERIFY(r.until([&] { return cycle() > slow + 10000; }));
+        QVERIFY(r.f.dbg.running());
+        // a number typed in
+        box->lineEdit()->setText("50");
+        emit box->lineEdit()->editingFinished();
+        QCOMPARE(speed(), 50LL);
+        QCOMPARE(box->currentText(), QString("50 cycles/s"));
+        // ... or the word
+        box->lineEdit()->setText("full");
+        emit box->lineEdit()->editingFinished();
+        QCOMPARE(speed(), 0LL);
+        // nonsense is refused and the box shows the speed that is in force
+        box->lineEdit()->setText("fast please");
+        emit box->lineEdit()->editingFinished();
+        QCOMPARE(speed(), 0LL);
+        QCOMPARE(box->currentText(), QString("Full speed"));
+        // Faster / Slower: the next preset
+        QAction* faster = r.w->findChild<QAction*>("speedFasterAction");
+        QAction* slower = r.w->findChild<QAction*>("speedSlowerAction");
+        QVERIFY(faster && slower);
+        r.f.dbg.simParams().set("sim.speed", "1000", *new std::string);
+        faster->trigger();
+        QCOMPARE(speed(), 10000LL);
+        slower->trigger();
+        slower->trigger();
+        QCOMPARE(speed(), 100LL);
+        r.f.dbg.simParams().set("sim.speed", "37", *new std::string);                        // between two presets
+        faster->trigger();
+        QCOMPARE(speed(), 100LL);
+        slower->trigger();
+        QCOMPARE(speed(), 10LL);
+        r.f.dbg.simParams().set("sim.speed", "1", *new std::string);
+        slower->trigger();
+        QCOMPARE(speed(), 1LL);                                                              // (nothing slower)
+        r.f.dbg.simParams().set("sim.speed", "0", *new std::string);
+        faster->trigger();
+        QCOMPARE(speed(), 0LL);
+        // the box follows the parameter (the parameter page, the quick popup, a file)
+        r.f.dbg.simParams().set("sim.speed", "100", *new std::string);
+        QCOMPARE(box->currentText(), QString("100 cycles/s"));
+        r.f.dbg.simParams().set("sim.speed", "777", *new std::string);
+        QCOMPARE(box->currentText(), QString("777 cycles/s"));
+        r.f.dbg.simParams().clear("sim.speed");
+        QCOMPARE(box->currentText(), QString("1000 cycles/s"));
+    }
+
     void theIsaTopDiagramShowsWhatTheSimulatorHoldsAndWhereItIsGoing() {
         Rig r(".csr C = 0x10\n.main\ns: MOV CONST(5,2) -> MAIN_SCRATCHPAD[0..1]\n MOV MAIN_SCRATCHPAD[0..1] -> ALU_OPA\n MOV MAIN_SCRATCHPAD[0..1] -> ALU_OPB\n ALU ADD unsigned\n EXEC_CSR WRITE8 C, 1\n JMP s\n.peri\np: JMP p\n");
         QWidget* page = r.w->openSimulator();

@@ -5,6 +5,7 @@
 #include <memory>
 
 #include <QAction>
+#include <QComboBox>
 #include <QLabel>
 #include <QToolBar>
 #include <QMessageBox>
@@ -117,6 +118,10 @@ private:
     QAction *actStart_ = nullptr, *actPause_ = nullptr, *actStop_ = nullptr, *actRestart_ = nullptr, *actInto_ = nullptr, *actOver_ = nullptr,
             *actOut_ = nullptr, *actToCursor_ = nullptr, *actToggleBp_ = nullptr;
     QLabel* debugLabel_ = nullptr;
+    QComboBox* speedBox_ = nullptr;                          // the simulator's speed in the debug tool bar (the parameter sim.speed)
+    void setSimSpeed(int64_t cyclesPerSecond);               // 0 = full speed; refused (with a message) outside 0 .. 1e9
+    void stepSimSpeed(int direction);                        // +1 faster, -1 slower: the next preset
+    void syncSpeedBox();
     QPushButton* paramsChip_ = nullptr;                      // "Parameters: 3 changed" in the status bar: a click opens the simulator page
     QAction* quickParamsAct_ = nullptr;
     bool pendingStart_ = false;                            // a build is awaited before the debug session starts

@@ -3150,6 +3150,54 @@ An IDE for the Sensor Micro-Sequencer ISA, built on the AssemblyCore assembler.<
         <source>No panel named %1</source>
         <translation>沒有名為 %1 的面板</translation>
     </message>
+    <message>
+        <source>Speed:</source>
+        <translation>速度：</translation>
+    </message>
+    <message>
+        <source>How fast the simulator runs, in ISA cycles per second of real time (the parameter sim.speed). It can be changed while it runs.</source>
+        <translation>模擬器執行的速度，單位是每秒（真實時間）幾個 ISA 週期（參數 sim.speed）。執行中也可以隨時調整。</translation>
+    </message>
+    <message>
+        <source>Pick a speed or type a number (0 or &quot;full&quot; = full speed). Ctrl+Alt+Up / Down: faster / slower.</source>
+        <translation>選一個速度，或直接輸入數字（0 或 &quot;full&quot; = 全速）。Ctrl+Alt+上／下：加快／減慢。</translation>
+    </message>
+    <message>
+        <source>Full speed</source>
+        <translation>全速</translation>
+    </message>
+    <message>
+        <source>%1 cycles/s</source>
+        <translation>每秒 %1 週期</translation>
+    </message>
+    <message>
+        <source>A speed is a number of cycles per second (0 = full speed)</source>
+        <translation>速度是每秒的週期數（0 = 全速）</translation>
+    </message>
+    <message>
+        <source>Faster</source>
+        <translation>加快</translation>
+    </message>
+    <message>
+        <source>Slower</source>
+        <translation>減慢</translation>
+    </message>
+    <message>
+        <source>Simulator speed: full speed</source>
+        <translation>模擬器速度：全速</translation>
+    </message>
+    <message>
+        <source>Simulator speed: %1 cycles per second</source>
+        <translation>模擬器速度：每秒 %1 週期</translation>
+    </message>
+    <message>
+        <source>Already at full speed</source>
+        <translation>已經是全速</translation>
+    </message>
+    <message>
+        <source>Already at the slowest speed</source>
+        <translation>已經是最慢的速度</translation>
+    </message>
 </context>
 <context>
     <name>acide::TypeBlockBox</name>
