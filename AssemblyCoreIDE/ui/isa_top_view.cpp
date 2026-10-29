@@ -25,6 +25,7 @@ namespace acide {
 namespace {
 
 const qint64 kLitMs = 700, kPulseMs = 500, kFlashMs = 800;
+const double kWireWidth = 3.2, kLitWidth = 6.5;                                   // the connecting lines: thick, so that they can be followed at a glance
 
 QColor kindColour(const QString& kind, int domain) {
     if (kind == "decoder") return domain == 1 ? QColor("#14707d") : QColor("#8a6414");
@@ -78,7 +79,7 @@ protected:
                 if (i == 0) path.moveTo(q); else path.lineTo(q);
             }
             p.setBrush(Qt::NoBrush);
-            p.setPen(QPen(wire, 1.6));
+            p.setPen(QPen(wire, kWireWidth));
             p.drawPath(path);
             const QPointF a(w.points[w.points.size() - 2].first, w.points[w.points.size() - 2].second), b(w.points.back().first, w.points.back().second);
             arrow(p, a, b, wire);
@@ -110,10 +111,10 @@ protected:
                 const QPointF q(w->points[i].first, w->points[i].second);
                 if (i == 0) path.moveTo(q); else path.lineTo(q);
             }
-            QPen pen(c, 4);
+            QPen pen(c, kLitWidth);
             pen.setStyle(Qt::CustomDashLine);
-            pen.setDashPattern({3, 2});
-            pen.setDashOffset(-(double)age / 40.0);                                        // flows towards the arrow
+            pen.setDashPattern({2.2, 1.4});                                                // (in pen widths)
+            pen.setDashOffset(-(double)age / 60.0);                                        // flows towards the arrow
             p.setPen(pen);
             p.setBrush(Qt::NoBrush);
             p.drawPath(path);
@@ -209,7 +210,7 @@ private:
         if (len < 1) return;
         const QPointF u(d.x() / len, d.y() / len), n(-u.y(), u.x());
         QPolygonF poly;
-        poly << b << (b - u * 9 + n * 4.5) << (b - u * 9 - n * 4.5);
+        poly << b << (b - u * 15 + n * 7.5) << (b - u * 15 - n * 7.5);
         p.setPen(Qt::NoPen);
         p.setBrush(c);
         p.drawPolygon(poly);
