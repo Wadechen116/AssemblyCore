@@ -836,7 +836,7 @@ public:
 
 private:
     struct Row {
-        enum Kind { Fixed, CanFix, Error, Warning, Note } kind = Note;
+        enum Kind { Fixed, CanFix, Error, Warning, Note, Guess } kind = Note;          // Guess: mended, but with a value that had to be chosen
         asmcore::sim::Cycle at = 0;
         QString where, title, detail, hint;
         std::string file;
@@ -887,14 +887,16 @@ private:
         for (const FixStep& s : fx.result.steps) {
             Row r;
             const bool notDone = applied && left.count({s.file, s.line});
-            r.kind = notDone ? Row::Warning : applied ? Row::Fixed : Row::CanFix;
+            r.kind = notDone ? Row::Warning : applied ? (s.needsCheck ? Row::Guess : Row::Fixed) : Row::CanFix;
             if (!notDone) mended++;
             r.file = s.file;
             r.line = s.line;
             r.where = shortFile(s.file) + ":" + QString::number(s.line);
             r.title = (notDone ? tr("Could not mend in the blocks: ") : QString()) + fromStd(s.what);
             r.detail = tr("%1 line %2 (%3)\n  before: %4\n  after:  %5").arg(shortFile(s.file)).arg(s.line).arg(fromStd(s.code)).arg(lineOf(s.before).trimmed()).arg(lineOf(s.after).trimmed());
-            r.hint = notDone ? tr("The word is not a field of any block: change it in the block by hand.") : applied ? tr("Ctrl+Z in the editor takes the repairs back (all of them in one step).") : QString();
+            r.hint = notDone ? tr("The word is not a field of any block: change it in the block by hand.")
+                   : s.needsCheck ? tr("A good guess, not a certainty: check that this is what you meant. Ctrl+Z in the editor takes the repairs back (all of them in one step).")
+                   : applied ? tr("Ctrl+Z in the editor takes the repairs back (all of them in one step).") : QString();
             rows_.push_back(r);
         }
         // what is left of the assembler's complaints
@@ -956,8 +958,8 @@ private:
         else parts << tr("%1 error(s), %2 warning(s) left.").arg(errors).arg(warnings);
         parts.removeAll(QString());
         summary_->setText(parts.isEmpty() ? tr("Nothing wrong found.") : parts.join("  "));
-        const QColor colour[5] = {QColor("#2e8b57"), QColor("#0b6bcb"), QColor("#d13438"), QColor("#c77700"), QColor("#767676")};
-        const QString kind[5] = {tr("Fixed"), tr("Can fix"), tr("Error"), tr("Warning"), tr("Note")};
+        const QColor colour[6] = {QColor("#2e8b57"), QColor("#0b6bcb"), QColor("#d13438"), QColor("#c77700"), QColor("#767676"), QColor("#9a7d0a")};
+        const QString kind[6] = {tr("Fixed"), tr("Can fix"), tr("Error"), tr("Warning"), tr("Note"), tr("Fixed (check)")};
         for (size_t i = 0; i < rows_.size(); i++) {
             const Row& r = rows_[i];
             auto* it = new QTreeWidgetItem({kind[r.kind], r.at ? QString::number((qulonglong)r.at) : QString("-"), r.where, r.title});

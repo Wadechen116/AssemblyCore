@@ -75,7 +75,9 @@ std::string formatLike(const std::string& old, long long v) {                // 
 
 struct Edit {
     std::string newLine;                 // replaces the line
+    std::string before;                  // lines added in front of it ("\n" separated, no trailing newline)
     std::string extra;                   // lines added after it ("\n" separated, no trailing newline)
+    bool needsCheck = false;
     std::string code, what;
     std::vector<std::pair<std::string, std::string>> words;
     bool closingJump = false;
@@ -118,6 +120,11 @@ std::vector<std::string> symbolNames(const Ctx& cx, const std::set<std::string>&
         v.push_back(s.name);
     }
     return v;
+}
+
+const std::regex& write_re() {                                           // "-> MAIN_SCRATCHPAD[a..b]" or "[a]"
+    static const std::regex re("->\\s*MAIN_SCRATCHPAD\\s*\\[\\s*(\\d+)\\s*(?:\\.\\.\\s*(\\d+))?\\s*\\]", std::regex::icase);
+    return re;
 }
 
 // The bytes of MAIN_SCRATCHPAD that the program names anywhere: [a..b] and [a].
@@ -166,6 +173,70 @@ std::vector<Num> numbersIn(const std::string& line) {
         }
     }
     return v;
+}
+
+// "s: ALU ADD" -> head "s: ", rest "ALU ADD"; without a label the head is the indentation.
+void splitHead(const std::string& line, std::string& head, std::string& rest) {
+    static const std::regex re("^(\\s*[A-Za-z_][A-Za-z_0-9]*:\\s*)(.*)$");
+    std::smatch m;
+    if (std::regex_match(line, m, re)) { head = m[1].str(); rest = m[2].str(); return; }
+    const size_t p = line.find_first_not_of(" \t");
+    head = line.substr(0, p == std::string::npos ? line.size() : p);
+    rest = line.substr(head.size());
+}
+
+// New instructions in FRONT of the line: a label on the line moves to the first of them (a jump to it must still run them all).
+void insertInFront(const std::string& line, const std::vector<std::string>& ins, Edit& out, std::string& newLine) {
+    std::string head, rest;
+    splitHead(line, head, rest);
+    const bool labelled = head.find(':') != std::string::npos;
+    const std::string indent = labelled ? std::string(" ") : head;
+    std::string text;
+    for (size_t i = 0; i < ins.size(); i++) text += (i ? "\n" + indent : head) + ins[i];
+    out.before = text;
+    newLine = labelled ? indent + rest : line;
+}
+
+std::string mnemonicOf(const std::string& line) {
+    std::string head, rest;
+    splitHead(stripComment(line), head, rest);
+    std::string m;
+    for (char c : rest) { if (std::isspace((unsigned char)c)) break; m += (char)std::toupper((unsigned char)c); }
+    return m;
+}
+bool hasLabel(const std::string& line) {
+    std::string head, rest;
+    splitHead(stripComment(line), head, rest);
+    return head.find(':') != std::string::npos;
+}
+bool endsStraightLine(const std::string& line) {                                 // something that makes the code after it reachable another way, or not at all
+    const std::string m = mnemonicOf(line);
+    return hasLabel(line) || m.compare(0, 2, "BR") == 0 || m == "JMP" || m == "CALL" || m == "RET" || m.compare(0, 7, "CASCADE") == 0;
+}
+std::vector<std::string> domainPerLine(const std::vector<std::string>& lines) {
+    std::vector<std::string> v;
+    std::string d;
+    for (const std::string& l : lines) {
+        const std::string t = upper(stripComment(l));
+        const size_t p = t.find_first_not_of(" \t");
+        if (p != std::string::npos && t.compare(p, 5, ".MAIN") == 0) d = "main";
+        if (p != std::string::npos && t.compare(p, 5, ".PERI") == 0) d = "peri";
+        v.push_back(d);
+    }
+    return v;
+}
+// Is there any line of the domain that matches `re`?
+bool anyInDomain(const std::vector<std::string>& lines, const std::string& dom, const std::regex& re) {
+    const std::vector<std::string> doms = domainPerLine(lines);
+    for (size_t i = 0; i < lines.size(); i++)
+        if (doms[i] == dom && std::regex_search(stripComment(lines[i]), re)) return true;
+    return false;
+}
+int freePair(const std::vector<std::string>& lines, Ctx& cx) {
+    std::set<int> used = scratchpadInUse(lines);
+    used.insert(cx.reserved.begin(), cx.reserved.end());
+    for (int a = 30; a >= 0; a -= 2) if (!used.count(a) && !used.count(a + 1)) { cx.reserved.insert(a); cx.reserved.insert(a + 1); return a; }
+    return -1;
 }
 
 bool makeEdit(const Diagnostic& d, const std::vector<std::string>& lines, Ctx& cx, bool wordsOnly, Edit& out) {
@@ -241,6 +312,7 @@ bool makeEdit(const Diagnostic& d, const std::vector<std::string>& lines, Ctx& c
             line = line.substr(0, (size_t)r.position(0)) + r[1].str() + std::to_string(na) + r[2].str() + std::to_string(nb) + r[3].str() + line.substr((size_t)(r.position(0) + r.length(0)));
             exchanged(std::to_string(a), std::to_string(na));
             exchanged(std::to_string(b), std::to_string(nb));
+            out.needsCheck = true;
             return done(std::to_string(a) + ".." + std::to_string(b) + " -> " + std::to_string(na) + ".." + std::to_string(nb) + " (the range ran past the end)");
         }
         if (std::regex_search(d.msg, m, std::regex("CSR address (\\d+) does not fit (\\d+) bits"))) {
@@ -251,6 +323,7 @@ bool makeEdit(const Diagnostic& d, const std::vector<std::string>& lines, Ctx& c
                     const std::string old = line.substr(n.pos, n.len), now = formatLike(old.size() > 2 && (old[1] == 'x' || old[1] == 'X') ? old : "0x0", v & mask);
                     line.replace(n.pos, n.len, now);
                     exchanged(old, now);
+                    out.needsCheck = true;
                     return done(old + " -> " + now + " (a CSR address is " + m[2].str() + " bits)");
                 }
         }
@@ -260,6 +333,7 @@ bool makeEdit(const Diagnostic& d, const std::vector<std::string>& lines, Ctx& c
         const size_t p = findWord(stripComment(line), "WRITE_BUF");
         if (!replaceAt(line, p, 9, "WRITE_SP")) return false;
         exchanged("WRITE_BUF", "WRITE_SP");
+        out.needsCheck = true;
         return done("WRITE_BUF -> WRITE_SP (renamed in spec v31; check that ptr points into MAIN_SCRATCHPAD)");
     }
     if (d.code == "E202" && d.msg.find("MAIN_CONST_POOL can only be moved to MAIN_SCRATCHPAD") != std::string::npos && !wordsOnly) {
@@ -307,6 +381,114 @@ bool makeEdit(const Diagnostic& d, const std::vector<std::string>& lines, Ctx& c
         out.domain = dom;
         out.label = label;
         return done("added: JMP " + target + " (the " + m[1].str() + " code ran off its end)");
+    }
+    if (d.code == "E203" && std::regex_search(d.msg, m, std::regex("unknown ALU operation '([^']+)'"))) {
+        std::vector<std::string> cands;
+        for (const lang::Entry* e : cx.lang.all(lang::Tok::SubOp)) if (e->group == "alu") cands.push_back(e->name);
+        const std::string w = m[1].str();
+        const std::string best = closestWord(w, cands);
+        if (best.empty() || !replaceWord(line, d, w, best)) return false;
+        exchanged(w, best);
+        return done(w + " -> " + best + " (unknown ALU operation)");
+    }
+    if (d.code == "E104" && std::regex_search(d.msg, m, std::regex("label '([^']+)' is already defined")) && !wordsOnly) {
+        const std::string name = m[1].str();
+        std::set<std::string> taken;
+        for (const IndexSymbol& s : cx.snap->index.symbols()) taken.insert(upper(s.name));
+        std::string fresh;
+        for (int i = 2; i < 100 && fresh.empty(); i++) if (!taken.count(upper(name + "_" + std::to_string(i)))) fresh = name + "_" + std::to_string(i);
+        std::smatch r;
+        if (fresh.empty() || !std::regex_search(line, r, std::regex("^(\\s*)" + name + "(\\s*:)"))) return false;
+        line = r[1].str() + fresh + r[2].str() + line.substr((size_t)r.length(0));
+        out.needsCheck = true;
+        return done("label " + name + " -> " + fresh + " (it was defined twice; jumps to " + name + " still go to the first)");
+    }
+    if (d.code == "E105" && d.msg.find("instruction before any") != std::string::npos && !wordsOnly) {
+        const std::string mn = mnemonicOf(line);
+        const std::string dir = mn == "EXEC_XFER" || mn == "EXEC_PUB" ? ".peri" : ".main";
+        out.before = dir;
+        out.needsCheck = true;
+        return done("added " + dir + " in front of the first instruction");
+    }
+    if (d.code == "W501" && !wordsOnly && std::regex_search(d.msg, m, std::regex("ALU_OP([AB]) is not loaded on every path"))) {
+        const std::string reg = "ALU_OP" + m[1].str();
+        const std::string dom = domainAtLine(lines, d.loc.line);
+        if (dom.empty() || anyInDomain(lines, dom, std::regex("->\\s*" + reg + "\\b", std::regex::icase))) return false;       // loaded somewhere: which value belongs here is for you to say
+        std::smatch op;
+        const std::string code = stripComment(line);
+        if (!std::regex_search(code, op, std::regex("\\bALU\\s+([A-Za-z_.]+)", std::regex::icase))) return false;
+        const std::string alu = upper(op[1].str());
+        // the last 2-byte value that was written into the scratchpad in this stretch of code, and not already taken for the other operand
+        std::string source;
+        const std::string other = reg == "ALU_OPA" ? "ALU_OPB" : "ALU_OPA";
+        static const std::regex write("->\\s*MAIN_SCRATCHPAD\\s*\\[\\s*(\\d+)\\s*\\.\\.\\s*(\\d+)\\s*\\]", std::regex::icase);
+        for (int i = d.loc.line - 2; i >= 0 && source.empty(); i--) {
+            const std::string t = stripComment(lines[(size_t)i]);
+            std::smatch w;
+            if (std::regex_search(t, w, write) && std::atoi(w[2].str().c_str()) == std::atoi(w[1].str().c_str()) + 1) {
+                const std::string pair = "MAIN_SCRATCHPAD[" + w[1].str() + ".." + w[2].str() + "]";
+                bool usedByOther = false;
+                for (int j = i + 1; j < d.loc.line - 1; j++) {
+                    const std::string u = upper(stripComment(lines[(size_t)j]));
+                    if (u.find(upper(pair)) != std::string::npos && u.find(other) != std::string::npos) usedByOther = true;
+                }
+                if (!usedByOther) source = pair;
+            }
+            if (endsStraightLine(lines[(size_t)i])) break;
+        }
+        std::vector<std::string> ins;
+        std::string why;
+        if (!source.empty()) {
+            ins.push_back("MOV " + source + " -> " + reg);
+            why = reg + " had no value: loaded from " + source + ", the last 2-byte value written before it";
+        } else {
+            const std::string neutral = alu == "AND" ? "0xFFFF" : alu == "MUL" ? "1" : "0";
+            const int k = freePair(lines, cx);
+            if (k < 0) return false;
+            const std::string slot = "MAIN_SCRATCHPAD[" + std::to_string(k) + ".." + std::to_string(k + 1) + "]";
+            ins.push_back("MOV CONST(" + neutral + ", 2) -> " + slot);
+            ins.push_back("MOV " + slot + " -> " + reg);
+            why = reg + " had no value: loaded " + neutral + ", the neutral value of " + alu + " - put the value you meant there";
+        }
+        std::string nl;
+        insertInFront(line, ins, out, nl);
+        line = nl;
+        out.needsCheck = true;
+        return done(why);
+    }
+    if (d.code == "W502" && !wordsOnly && std::regex_search(d.msg, m, std::regex("MAIN_SCRATCHPAD\\[(\\d+)\\.\\.(\\d+)\\] is read here"))) {
+        const int a = std::atoi(m[1].str().c_str()), b = std::atoi(m[2].str().c_str());
+        const std::string dom = domainAtLine(lines, d.loc.line);
+        if (dom.empty() || b < a || b - a + 1 > 8) return false;
+        const std::vector<std::string> doms = domainPerLine(lines);
+        for (size_t i = 0; i < lines.size(); i++) {                          // nothing in the domain writes any of these bytes: a read of something never set
+            if (doms[i] != dom) continue;
+            const std::string t = stripComment(lines[i]);
+            std::smatch w;
+            for (std::sregex_iterator it(t.begin(), t.end(), write_re()), end; it != end; ++it) {
+                const int wa = std::atoi((*it)[1].str().c_str());
+                const int wb = (*it)[2].matched ? std::atoi((*it)[2].str().c_str()) : wa;
+                if (wa <= b && wb >= a) return false;
+            }
+        }
+        std::string nl;
+        insertInFront(line, {"MOV CONST(0, " + std::to_string(b - a + 1) + ") -> MAIN_SCRATCHPAD[" + std::to_string(a) + ".." + std::to_string(b) + "]"}, out, nl);
+        line = nl;
+        out.needsCheck = true;
+        return done("MAIN_SCRATCHPAD[" + std::to_string(a) + ".." + std::to_string(b) + "] was read but never written: set to 0 first - put the value you meant there");
+    }
+    if (d.code == "W504" && !wordsOnly && std::regex_search(d.msg, m, std::regex("result of the ALU operation at line (\\d+) is overwritten here"))) {
+        const int from = std::atoi(m[1].str().c_str());
+        if (from < 1 || from >= d.loc.line || mnemonicOf(lines[(size_t)from - 1]) != "ALU") return false;
+        for (int i = from; i < d.loc.line - 1; i++) if (endsStraightLine(lines[(size_t)i])) return false;       // only where both are on one path
+        const int k = freePair(lines, cx);
+        if (k < 0) return false;
+        const std::string slot = "MAIN_SCRATCHPAD[" + std::to_string(k) + ".." + std::to_string(k + 1) + "]";
+        std::string nl;
+        insertInFront(line, {"MOV ALU_OUT[0..1] -> " + slot}, out, nl);
+        line = nl;
+        out.needsCheck = true;
+        return done("the result of line " + std::to_string(from) + " is saved in " + slot + " before the next ALU operation overwrites it - use it from there");
     }
     if (d.code == "W410") {
         for (const char* w : {"unsigned", "signed"}) {
@@ -439,6 +621,7 @@ AutoFixResult autoFix(BuildInput in, const lang::Language& language, const AutoF
             s.before = lines[(size_t)p.line - 1];
             s.words = p.edit.words;
             s.closingJump = p.edit.closingJump; s.domain = p.edit.domain; s.label = p.edit.label;
+            s.needsCheck = p.edit.needsCheck;
             if (p.edit.closingJump) {
                 if ((opt.wordsOnly || opt.wordsOnlyFiles.count(p.file)) && p.edit.label.empty()) continue;      // a block program without a label to jump to: not mended here
                 s.after = p.edit.extra;
@@ -449,6 +632,10 @@ AutoFixResult autoFix(BuildInput in, const lang::Language& language, const AutoF
                 if (!p.edit.extra.empty()) {
                     lines.insert(lines.begin() + p.line, p.edit.extra);
                     s.after += "\n" + p.edit.extra;
+                }
+                if (!p.edit.before.empty()) {
+                    lines.insert(lines.begin() + (p.line - 1), p.edit.before);
+                    s.after = p.edit.before + "\n" + s.after;
                 }
             }
             for (char& c : s.before) if (c == '\r') c = ' ';

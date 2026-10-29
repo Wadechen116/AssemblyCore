@@ -147,6 +147,14 @@
         <source>Note</source>
         <translation>備註</translation>
     </message>
+    <message>
+        <source>A good guess, not a certainty: check that this is what you meant. Ctrl+Z in the editor takes the repairs back (all of them in one step).</source>
+        <translation>這是很可能正確的猜測，但不是確定：請確認這是你要的。在編輯器按 Ctrl+Z 可以還原這些修復（全部是一個步驟）。</translation>
+    </message>
+    <message>
+        <source>Fixed (check)</source>
+        <translation>已修復（請確認）</translation>
+    </message>
 </context>
 <context>
     <name>BlockCanvas</name>

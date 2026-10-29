@@ -1173,6 +1173,53 @@ static void t_auto_fix() {
         AutoFixResult r = fixIt(".equ LIMIT = 4\n.main\nstart: MVO CONST(LIMT,1) -> MAIN_SCRATCHPAD[0..0]\n BR.COND PERI_RESULT_VALD, strat\n");
         check(r.clean() && r.steps.size() >= 4 && has(text(r), "MOV CONST(LIMIT,1)") && has(text(r), "PERI_RESULT_VALID, start") && has(text(r), "JMP start"), "a program with a typo in the instruction, the symbol, the condition and the label, and no closing jump: all mended together", text(r) + (r.remaining.empty() ? "" : r.remaining[0].msg));
     }
+    {   // the ALU operands
+        AutoFixResult r = fixIt(".main\ns: ALU ADD unsigned\n JMP s\n");
+        check(r.clean(), "an ALU operation whose operands nothing ever loads: the build is clean after the repair", r.remaining.empty() ? text(r) : r.remaining[0].msg);
+        check(has(text(r), "s: MOV CONST(0, 2) -> MAIN_SCRATCHPAD[") && has(text(r), "-> ALU_OPA") && has(text(r), "-> ALU_OPB") && has(text(r), "\n ALU ADD unsigned"), "...both operands are loaded in front of it, the label moved to the first line (a jump to it runs them all)", text(r));
+        bool check2 = false;
+        for (const FixStep& st : r.steps) check2 |= st.needsCheck && st.code == "W501";
+        check(check2, "...and the step says it is a guess to look at (the value 0 was chosen)");
+        AutoFixResult mul = fixIt(".main\ns: ALU MUL unsigned\n JMP s\n");
+        check(has(text(mul), "CONST(1, 2)"), "the neutral value is the one of the operation: 1 for MUL", text(mul));
+        AutoFixResult andr = fixIt(".main\ns: ALU AND\n JMP s\n");
+        check(has(text(andr), "CONST(0xFFFF, 2)"), "...0xFFFF for AND", text(andr));
+    }
+    {
+        AutoFixResult r = fixIt(".main\ns: MOV CONST(1,2) -> MAIN_SCRATCHPAD[0..1]\n MOV MAIN_SCRATCHPAD[0..1] -> ALU_OPA\n ALU ADD unsigned\n JMP s\n");
+        check(r.clean() && has(text(r), "CONST(0, 2) -> MAIN_SCRATCHPAD[30..31]") && has(text(r), "-> ALU_OPB\n ALU ADD"), "only the operand that nothing loads is loaded (OPA was)", text(r));
+        AutoFixResult f = fixIt(".main\ns: MOV CONST(7,2) -> MAIN_SCRATCHPAD[4..5]\n ALU ADD unsigned\n JMP s\n");
+        check(has(text(f), "MOV MAIN_SCRATCHPAD[4..5] -> ALU_OPA") && has(text(f), "CONST(0, 2)"), "an operand takes the last 2-byte value written just before (the other gets the neutral one)", text(f));
+    }
+    {   // an operand that IS loaded on some path is not touched: which value belongs on the other path is for the user
+        const std::string prog = ".main\ns: MOV CONST(1,2) -> MAIN_SCRATCHPAD[0..1]\n BR.COND ALWAYS, other\n MOV MAIN_SCRATCHPAD[0..1] -> ALU_OPA\n MOV MAIN_SCRATCHPAD[0..1] -> ALU_OPB\nother: ALU ADD unsigned\n JMP s\n";
+        AutoFixResult r = fixIt(prog);
+        check(!has(text(r), "CONST(0, 2) -> MAIN_SCRATCHPAD[30"), "an operand loaded on another path is left alone", text(r));
+    }
+    {
+        AutoFixResult r = fixIt(".main\ns: MOV CONST(1,2) -> MAIN_SCRATCHPAD[0..1]\n MOV MAIN_SCRATCHPAD[0..1] -> ALU_OPA\n MOV MAIN_SCRATCHPAD[0..1] -> ALU_OPB\n ALU ADD unsigned\n ALU SUB unsigned\n JMP s\n");
+        check(r.clean() && has(text(r), "MOV ALU_OUT[0..1] -> MAIN_SCRATCHPAD[30..31]\n ALU SUB"), "an ALU result that the next operation overwrites is saved first", text(r) + (r.remaining.empty() ? "" : r.remaining[0].msg));
+        AutoFixResult t = fixIt(".main\ns: MOV CONST(1,2) -> MAIN_SCRATCHPAD[0..1]\n MOV MAIN_SCRATCHPAD[0..1] -> ALU_OPA\n MOV MAIN_SCRATCHPAD[0..1] -> ALU_OPB\n ALU ADD unsigned\nnext: ALU SUB unsigned\n JMP s\n");
+        check(has(text(t), "next: MOV ALU_OUT[0..1] -> MAIN_SCRATCHPAD[30..31]\n ALU SUB"), "a label on the second operation moves to the saving line (whoever jumps there saves first)", text(t));
+        AutoFixResult b = fixIt(".main\ns: MOV CONST(1,2) -> MAIN_SCRATCHPAD[0..1]\n MOV MAIN_SCRATCHPAD[0..1] -> ALU_OPA\n MOV MAIN_SCRATCHPAD[0..1] -> ALU_OPB\n ALU ADD unsigned\nmid: MOV CONST(1,1) -> MAIN_SCRATCHPAD[8..8]\n ALU SUB unsigned\n JMP s\n");
+        check(!has(text(b), "MOV ALU_OUT"), "...but nothing is saved when a label stands between the two (the path to the second one is not the first one's)", text(b));
+    }
+    {
+        AutoFixResult r = fixIt(".main\ns: MOV MAIN_SCRATCHPAD[4..5] -> ALU_OPA\n JMP s\n");
+        check(has(text(r), "MOV CONST(0, 2) -> MAIN_SCRATCHPAD[4..5]"), "scratchpad bytes that are read and never written anywhere are set to 0 first", text(r));
+        AutoFixResult w = fixIt(".main\ns: MOV MAIN_SCRATCHPAD[4..5] -> ALU_OPA\n MOV CONST(1,2) -> MAIN_SCRATCHPAD[4..5]\n JMP s\n");
+        check(!has(text(w), "CONST(0, 2)"), "...but bytes that something writes (later, on the loop's next round) are left alone", text(w));
+    }
+    {
+        AutoFixResult r = fixIt(".main\ns: ALU ADDD unsigned\n JMP s\n");
+        check(has(text(r), "ALU ADD unsigned"), "an unknown ALU operation becomes the closest one", text(r));
+        AutoFixResult d = fixIt(".main\ns: JMP s\ns: JMP s\n");
+        check(r.steps.size() >= 1 && has(text(d), "s_2: JMP s") && d.clean(), "a label defined twice: the second one gets a new name", text(d));
+        AutoFixResult e = fixIt("MOV CONST(1,1) -> MAIN_SCRATCHPAD[0..0]\n.main\ns: JMP s\n");
+        check(has(text(e), ".main\nMOV CONST(1,1)") , "an instruction in front of any .main gets the directive in front of it", text(e));
+        AutoFixResult p = fixIt("EXEC_XFER READ dev=0, len=1, ptr=0, ext=[0x10]\n");
+        check(has(text(p), ".peri\nEXEC_XFER"), "...and .peri for a Peri-only instruction", text(p));
+    }
     {
         AutoFixResult r = fixIt(".main\ns: XQZWV CONST(1,1)\n JMP s\n");
         check(!r.clean() && r.remaining.size() >= 1 && r.texts.empty(), "what has no sure repair is left as it is, with its diagnostic");

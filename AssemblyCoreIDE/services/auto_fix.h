@@ -13,6 +13,13 @@
 //   E202        a constant moved straight into ALU_OPA / ALU_OPB: through a free pair of scratchpad bytes (spec v31 5.1)
 //   E204        EXEC_CSR WRITE_BUF: renamed WRITE_SP
 //   E303        code that can run off its end: closed with a jump to the first label of the domain
+//   E203        an unknown ALU operation: the closest one
+//   E104        a label defined twice: the second one gets a new name
+//   E105        an instruction before any .main / .peri: the directive is added in front of it
+//   W501        ALU_OPA / ALU_OPB never loaded in the domain: loaded in front of the operation, from the last 2-byte value written to the scratchpad in the same
+//               stretch of code, else with the neutral value of the operation (0 for ADD / SUB / OR / XOR, 0xFFFF for AND, 1 for MUL) - "check"
+//   W502        scratchpad bytes read that nothing in the domain ever writes: zeroed in front of the read - "check"
+//   W504        an ALU result overwritten before it was moved out (straight-line code): saved into a free pair of scratchpad bytes first - "check"
 //   W410        signed / unsigned on a LOGIC operation: dropped
 //   W517        a publish length that differs from the .service contract: the contract's length
 // No Qt.
@@ -37,6 +44,7 @@ struct FixStep {
     std::vector<std::pair<std::string, std::string>> words;
     bool closingJump = false;
     std::string domain, label;           // closingJump: "main" / "peri" and where it jumps to
+    bool needsCheck = false;             // a repair that is a good guess, not a certainty (a value that had to be chosen, a range that was moved): look at it
 };
 
 struct AutoFixResult {
