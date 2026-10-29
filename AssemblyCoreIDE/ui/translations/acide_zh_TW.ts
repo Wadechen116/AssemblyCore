@@ -1086,6 +1086,52 @@ Drag it to change the order; double-click the end of it to write a comment</sour
         <source>  ·  events and bus transfers move up to %1 cycles</source>
         <translation>  ·  事件與匯流排傳輸最多移動 %1 週期</translation>
     </message>
+    <message>
+        <source>live: the running simulator</source>
+        <translation>即時：執行中的模擬器</translation>
+    </message>
+    <message>
+        <source>While debugging, the time line shows the history of the running simulator (the last instructions of both sequencers). Double click on it: wind the simulator back to that cycle.</source>
+        <translation>偵錯時，時間軸顯示正在執行的模擬器的歷史（兩個序列器最近的指令）。在上面雙擊：把模擬器倒回到那個週期。</translation>
+    </message>
+    <message>
+        <source>follow</source>
+        <translation>跟隨</translation>
+    </message>
+    <message>
+        <source>Keep the newest part in view while it runs. Zooming or dragging the time line stops it; tick it again to catch up.</source>
+        <translation>執行時讓最新的部分一直在視野裡。縮放或拖曳時間軸會停止跟隨；再勾一次就追上最新。</translation>
+    </message>
+    <message>
+        <source>Live: running, at cycle %1</source>
+        <translation>即時：執行中，在週期 %1</translation>
+    </message>
+    <message>
+        <source>Live: stopped at cycle %1</source>
+        <translation>即時：停在週期 %1</translation>
+    </message>
+    <message>
+        <source>  ·  the history has %1 Main and %2 Peri instructions</source>
+        <translation>  ·  歷史裡有 %1 條 Main 與 %2 條 Peri 指令</translation>
+    </message>
+    <message>
+        <source> (it starts at cycle %1: %2 older ones were dropped)</source>
+        <translation>（從週期 %1 開始：更早的 %2 條已經丟掉）</translation>
+    </message>
+    <message>
+        <source>  ·  %1 stretch(es) where the simulator ran too fast to record everything (hatched)</source>
+        <translation>  ·  有 %1 段模擬器跑得太快、沒能全部記錄（斜線）</translation>
+    </message>
+    <message>
+        <source>
+Double click on the time line: wind the simulator back to that cycle (what is later is forgotten; the run goes on from there).</source>
+        <translation>
+在時間軸上雙擊：把模擬器倒回到那個週期（更晚的部分會被忘掉；從那裡繼續執行）。</translation>
+    </message>
+    <message>
+        <source>Winding the simulator back to cycle %1</source>
+        <translation>正在把模擬器倒回週期 %1</translation>
+    </message>
 </context>
 <context>
     <name>IsaTopView</name>
@@ -2073,6 +2119,14 @@ Drag it to change the order; double-click the end of it to write a comment</sour
     <message>
         <source>shift (cycles)</source>
         <translation>位移（週期）</translation>
+    </message>
+    <message>
+        <source>events missing</source>
+        <translation>事件缺漏</translation>
+    </message>
+    <message>
+        <source>now</source>
+        <translation>現在</translation>
     </message>
 </context>
 <context>

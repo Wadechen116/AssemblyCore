@@ -9,6 +9,7 @@ namespace acide {
 
 Debugger::Debugger(SimSession& s, Workspace& w, Settings* settings, std::function<SnapshotPtr()> latest)
     : params_(w), session_(s), ws_(w), settings_(settings), latest_(std::move(latest)) {
+    if (settings_) trace_.setCapacity((size_t)std::max(1000, std::min(2000000, settings_->getInt("trace.rows", 60000))));
     conns_.add(session_.updated, [this](const SimUpdate& u) { onUpdate(u); });
     conns_.add(params_.changed, [this] { if (active()) session_.setParams(params_.params()); });                  // a changed value reaches the simulator that is running
     conns_.add(ws_.projectChanged, [this] { params_.syncWithProject(); });             // the project's .simparams file is the values of the parameters
@@ -335,6 +336,10 @@ DebugLocation Debugger::stopLocation(const SimUpdate& u) const {
 }
 
 void Debugger::onUpdate(const SimUpdate& u) {
+    if (u.state == SimState::Empty) trace_.clear();
+    else if (u.rewound) trace_.truncateAfter(u.rewoundTo);                  // (the replay re-sends what is already kept)
+    else { if (u.eventsReset) trace_.clear(); trace_.feed(u); }
+    traceChanged.fire();
     updated.fire(u);
     if (u.stop.valid) {
         DebugLocation where = stopLocation(u);

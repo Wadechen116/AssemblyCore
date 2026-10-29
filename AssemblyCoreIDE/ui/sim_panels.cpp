@@ -437,6 +437,7 @@ public:
         setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     }
     void setData(const RunTrace* cur, const RunTrace* base, const TraceDiff* diff) {
+        live_ = false; gaps_ = nullptr; follow_ = false;
         cur_ = cur; base_ = base; diff_ = diff;
         for (int d = 0; d < 2; d++) { idx_[d].clear(); bidx_[d].clear(); }
         if (cur_) for (size_t i = 0; i < cur_->rows.size(); i++) idx_[cur_->rows[i].domain].push_back(i);
@@ -448,7 +449,41 @@ public:
     double t0() const { return t0_; }
     double t1() const { return t1_; }
     double end() const { return cur_ ? std::max<double>((double)cur_->endAt, base_ ? (double)base_->endAt : 0) : 1; }
-    void fit() { t0_ = 0; t1_ = std::max(8.0, end() * 1.02); update(); }
+    void fit() {
+        t0_ = live_ && cur_ && !cur_->rows.empty() ? (double)cur_->rows.front().at : 0;
+        t1_ = std::max(t0_ + 8.0, end() * 1.02);
+        if (live_) { follow_ = false; publish(); }
+        update();
+    }
+    // ---- live: the history of the running (or stopped) debug session. The index is kept up to date by adding the rows that came, and made again when the old end was cut.
+    void startLive() { live_ = true; liveFresh_ = true; epoch_ = (uint64_t)-1; follow_ = true; idxRows_ = 0; publish(); }
+    void endLive() { live_ = false; gaps_ = nullptr; follow_ = false; cur_ = nullptr; for (int d = 0; d < 2; d++) idx_[d].clear(); publish(); update(); }
+    void setLive(const RunTrace* cur, const std::vector<TraceRing::Gap>* gaps, uint64_t epoch) {
+        live_ = true;
+        cur_ = cur; base_ = nullptr; diff_ = nullptr; gaps_ = gaps;
+        if (epoch != epoch_ || idxRows_ > cur_->rows.size()) {
+            for (int d = 0; d < 2; d++) idx_[d].clear();
+            idxRows_ = 0;
+            epoch_ = epoch;
+        }
+        for (; idxRows_ < cur_->rows.size(); idxRows_++) idx_[cur_->rows[idxRows_].domain].push_back(idxRows_);
+        maxDrift_ = 1;
+        if (liveFresh_ || t1_ <= t0_) {
+            liveFresh_ = false;
+            t1_ = std::max(8.0, end());
+            t0_ = t1_ - 5000;                                                               // a window of 5000 cycles to begin with (the history may be shorter: the left is empty then)
+        }
+        if (follow_) followNow();
+        publish();
+        update();
+    }
+    bool live() const { return live_; }
+    bool follow() const { return follow_; }
+    void setFollow(bool f) { follow_ = f; if (f && live_) followNow(); publish(); update(); }
+    Signal<> userMoved;                                    // the user zoomed or panned the live view: it no longer follows
+    Signal<double> rewindRequested;                        // a double click on the live time line: the cycle
+    double plotLeft() const { return kLeft; }
+    double plotRight() const { return width() - kRight; }
     void zoomTo(double a, double b) {
         if (b - a < 8) { const double mid = (a + b) / 2; a = mid - 4; b = mid + 4; }
         t0_ = a; t1_ = b;
@@ -474,6 +509,8 @@ public:
         return QRectF(x0, l.top(), std::max(1.0, x1 - x0 - 1), l.height());
     }
     size_t rowsOf(int d) const { return idx_[d].size(); }
+    // The row (index into the trace) of the k-th instruction of a domain.
+    size_t rowIndex(int d, size_t k) const { return idx_[d][k]; }
     int hoverDomain() const { return hov_[0]; }
     int hoverIndex() const { return hov_[1]; }
     Signal<int, size_t> clicked;                          // domain, the n-th instruction of it
@@ -537,10 +574,27 @@ protected:
                     p.drawRect(QRectF(x0, ghost.top() + 2, std::max(1.0, x1 - x0 - 1), ghost.height() - 4));
                 }
             }
-            for (size_t k = 0; k < idx_[d].size(); k++) {                                    // the current run
+            if (live_ && gaps_) {                                                            // what the session could not deliver
+                for (const TraceRing::Gap& g : *gaps_) {
+                    const double x0 = xOf((double)g.from), x1 = xOf((double)g.to);
+                    if (x1 < kLeft || x0 > width() - kRight) continue;
+                    p.setPen(Qt::NoPen);
+                    p.setBrush(QBrush(QColor(160, 160, 160, 150), Qt::BDiagPattern));
+                    p.drawRect(QRectF(std::max(x0, (double)kLeft), lane.top(), std::max(2.0, std::min(x1, width() - kRight) - std::max(x0, (double)kLeft)), lane.height()));
+                    if (x1 - x0 > 60) { p.setPen(faint); p.drawText(QRectF(x0 + 2, lane.top(), x1 - x0 - 4, lane.height()), Qt::AlignCenter, tr("events missing")); }
+                }
+            }
+            size_t kFirst = 0;                                                               // (only what is in view: a long history is not walked every time)
+            {
+                size_t lo = 0, hi = idx_[d].size();
+                while (lo < hi) { const size_t mid = (lo + hi) / 2; if ((double)cur_->rows[idx_[d][mid]].at < t0_) lo = mid + 1; else hi = mid; }
+                kFirst = lo > 0 ? lo - 1 : 0;
+            }
+            for (size_t k = kFirst; k < idx_[d].size(); k++) {                               // the current run
                 const size_t i = idx_[d][k];
                 const QRectF r = rowRect(d, k);
-                if (r.right() < kLeft || r.left() > width() - kRight) continue;
+                if (r.left() > width() - kRight) break;
+                if (r.right() < kLeft) continue;
                 QColor c = kindColor(cur_->rows[i].what);
                 p.setPen(Qt::NoPen);
                 p.setBrush(c);
@@ -556,7 +610,10 @@ protected:
                     p.drawText(r.adjusted(3, 0, -2, 0), Qt::AlignVCenter | Qt::AlignLeft, fm.elidedText(fromStd(cur_->rows[i].what), Qt::ElideRight, (int)r.width() - 5));
                 }
             }
-            for (const TraceMarker& m : cur_->marks) {                                       // what happens between the sequencers
+            const auto firstMark = std::lower_bound(cur_->marks.begin(), cur_->marks.end(), t0_, [](const TraceMarker& m, double t) { return (double)m.at < t; });
+            for (auto mi = firstMark; mi != cur_->marks.end(); ++mi) {                       // what happens between the sequencers
+                const TraceMarker& m = *mi;
+                if ((double)m.at > t1_) break;
                 const int md = m.domain == 1 ? 1 : 0;
                 if (md != d && m.kind != 'e') continue;
                 if (m.domain >= 0 && m.domain != d) continue;
@@ -571,6 +628,15 @@ protected:
                 else { p.setBrush(QColor("#ef4444")); p.drawRect(QRectF(x - 4, y - 4, 8, 8)); }
             }
             p.restore();
+        }
+        if (live_) {                                                                         // where the simulator is now
+            const double x = xOf((double)cur_->endAt);
+            if (x >= kLeft && x <= width() - kRight) {
+                p.setPen(QPen(QColor("#e5484d"), 2, Qt::DashLine));
+                p.drawLine(QPointF(x, kAxis - 6), QPointF(x, driftRect().bottom()));
+                p.setPen(QColor("#e5484d"));
+                p.drawText(QPointF(std::max(x - 28, (double)kLeft), kAxis - 12), tr("now"));
+            }
         }
         // how far each lane has drifted from the baseline
         const QRectF dr = driftRect();
@@ -611,6 +677,8 @@ protected:
         if (b - a < 8) { a = mid - 4; b = mid + 4; }
         t0_ = std::max(-end() * 0.02, a);
         t1_ = std::min(end() * 1.5 + 8, b);
+        if (live_ && follow_) { follow_ = false; userMoved.fire(); }
+        publish();
         update();
         e->accept();
     }
@@ -623,6 +691,8 @@ protected:
             const double dt = -dx / (width() - kLeft - kRight) * (panTo_ - panFrom_);
             t0_ = panFrom_ + dt;
             t1_ = panTo_ + dt;
+            if (live_ && follow_) { follow_ = false; userMoved.fire(); }
+            publish();
             update();
             return;
         }
@@ -638,7 +708,15 @@ protected:
         hit(e->position(), d, k);
         if (d >= 0) { sel_[0] = d; sel_[1] = k; update(); clicked.fire(d, (size_t)k); }
     }
-    void mouseDoubleClickEvent(QMouseEvent*) override { fit(); }
+    void mouseDoubleClickEvent(QMouseEvent* e) override {
+        if (!live_) { fit(); return; }
+        int d = -1, k = -1;
+        hit(e->position(), d, k);
+        double t = tOf(e->position().x());
+        if (d >= 0) t = (double)cur_->rows[idx_[d][(size_t)k]].at;                          // on an instruction: the cycle it starts
+        const double first = cur_ && !cur_->rows.empty() ? (double)cur_->rows.front().at : 0;
+        rewindRequested.fire(std::max(first, std::min(t, end())));
+    }
     void leaveEvent(QEvent*) override { hov_[0] = hov_[1] = -1; update(); }
 
 private:
@@ -663,6 +741,25 @@ private:
     const RunTrace* base_ = nullptr;
     const TraceDiff* diff_ = nullptr;
     std::vector<size_t> idx_[2], bidx_[2];
+    const std::vector<TraceRing::Gap>* gaps_ = nullptr;
+    bool live_ = false, follow_ = false, liveFresh_ = false;
+    uint64_t epoch_ = 0;
+    size_t idxRows_ = 0;
+    void followNow() {                                     // keep the width of the window, put its right end at the newest
+        const double span = std::max(8.0, t1_ - t0_);
+        t1_ = end() + span * 0.04;
+        t0_ = t1_ - span;
+    }
+    void publish() {                                       // for the tests: what the live view is doing
+        setProperty("live", live_);
+        setProperty("follow", follow_);
+        setProperty("t0", t0_);
+        setProperty("t1", t1_);
+        setProperty("liveEnd", cur_ ? (double)cur_->endAt : 0.0);
+        setProperty("gaps", gaps_ ? (int)gaps_->size() : 0);
+        setProperty("plotLeft", kLeft);
+        setProperty("plotRight", (double)(width() - kRight));
+    }
     double t0_ = 0, t1_ = 100, panFrom_ = 0, panTo_ = 1, pressX_ = 0;
     long long maxDrift_ = 1;
     int hov_[2] = {-1, -1}, sel_[2] = {-1, -1};
@@ -699,9 +796,17 @@ public:
         maxCycles_->setSuffix(tr(" cycles"));
         fit_ = new QPushButton(tr("Fit"));
         fit_->setObjectName("executionFit");
+        live_ = new QCheckBox(tr("live: the running simulator"));
+        live_->setObjectName("executionLive");
+        live_->setToolTip(tr("While debugging, the time line shows the history of the running simulator (the last instructions of both sequencers). Double click on it: wind the simulator back to that cycle."));
+        live_->setChecked(ctx.settings.get("execution.live", "1") != "0");
+        follow_ = new QCheckBox(tr("follow"));
+        follow_->setObjectName("executionFollow");
+        follow_->setToolTip(tr("Keep the newest part in view while it runs. Zooming or dragging the time line stops it; tick it again to catch up."));
+        follow_->setEnabled(false);
         first_ = new QPushButton(tr("First difference"));
         first_->setObjectName("executionFirst");
-        for (QWidget* w : std::initializer_list<QWidget*>{run_, auto_, compare_, saveBase_, maxCycles_, fit_, first_}) bar->addWidget(w);
+        for (QWidget* w : std::initializer_list<QWidget*>{live_, follow_, run_, auto_, compare_, saveBase_, maxCycles_, fit_, first_}) bar->addWidget(w);
         bar->addStretch(1);
         lay->addLayout(bar);
         summary_ = new QLabel;
@@ -733,14 +838,66 @@ public:
             view_->focusRow(it->data(Qt::UserRole).toInt(), (size_t)it->data(Qt::UserRole + 1).toInt());
         });
         view_->clicked.connect([this](int d, size_t k) { goTo(d, k); });
+        view_->userMoved.connect([this] { QSignalBlocker b(follow_); follow_->setChecked(false); });
+        view_->rewindRequested.connect([this](double t) { rewindTo((Cycle)t); });
+        connect(live_, &QCheckBox::toggled, this, [this](bool on) { ctx_.settings.set("execution.live", on ? "1" : "0"); refreshMode(); });
+        connect(follow_, &QCheckBox::toggled, this, [this](bool on) { view_->setFollow(on); });
+        conns_.add(ctx.debugger.traceChanged, [this] { if (liveShown_) updateLive(); });
+        conns_.add(ctx.debugger.updated, [this](const SimUpdate&) { refreshMode(); });
         conns_.add(store_.changed, [this] { if (auto_->isChecked()) timer_.start(); });
         conns_.add(ctx.snapshotChanged, [this](SnapshotPtr) { if (auto_->isChecked()) timer_.start(); });
-        run();
+        refreshMode();
+        if (!liveShown_) run();
     }
     ~ExecutionPanel() override { timer_.stop(); }
 
 private:
+    // ---- live: while something is debugged the time line is the history of that session
+    void refreshMode() {
+        const bool active = ctx_.debugger.active();
+        live_->setEnabled(active);
+        const bool want = live_->isChecked() && active;
+        if (want && !liveShown_) enterLive();
+        else if (!want && liveShown_) leaveLive();
+    }
+    void enterLive() {
+        liveShown_ = true;
+        timer_.stop();
+        for (QWidget* w : std::initializer_list<QWidget*>{run_, auto_, compare_, saveBase_, maxCycles_, first_}) w->setEnabled(false);
+        table_->setRowCount(0);
+        view_->setMessage(QString());
+        view_->startLive();
+        { QSignalBlocker b(follow_); follow_->setChecked(true); }
+        follow_->setEnabled(true);
+        updateLive();
+    }
+    void leaveLive() {
+        liveShown_ = false;
+        view_->endLive();
+        for (QWidget* w : std::initializer_list<QWidget*>{run_, auto_, compare_, saveBase_, maxCycles_}) w->setEnabled(true);
+        follow_->setEnabled(false);
+        run();
+    }
+    void updateLive() {
+        const TraceRing& ring = ctx_.debugger.trace();
+        view_->setLive(&ring.trace(), &ring.gaps(), ring.trimEpoch());
+        const RunTrace& t = ring.trace();
+        QString s = ctx_.debugger.running() ? tr("Live: running, at cycle %1").arg((qulonglong)t.endAt) : tr("Live: stopped at cycle %1").arg((qulonglong)t.endAt);
+        s += tr("  \xC2\xB7  the history has %1 Main and %2 Peri instructions").arg((qulonglong)t.instrs[0]).arg((qulonglong)t.instrs[1]);
+        if (ring.dropped() > 0) s += tr(" (it starts at cycle %1: %2 older ones were dropped)").arg((qulonglong)ring.firstCycle()).arg((qulonglong)ring.dropped());
+        if (!ring.gaps().empty()) s += tr("  \xC2\xB7  %1 stretch(es) where the simulator ran too fast to record everything (hatched)").arg((int)ring.gaps().size());
+        s += tr("\nDouble click on the time line: wind the simulator back to that cycle (what is later is forgotten; the run goes on from there).");
+        summary_->setText(s);
+        saveBase_->setEnabled(false);
+    }
+    void rewindTo(Cycle t) {
+        if (!ctx_.debugger.active()) return;
+        if (ctx_.debugger.running()) ctx_.debugger.pause();
+        ctx_.debugger.session().rewindTo(t);
+        ctx_.status.fire(tr("Winding the simulator back to cycle %1").arg((qulonglong)t));
+    }
     void run() {
+        if (liveShown_) return;                                            // (the time line is the live session)
         SnapshotPtr prog;
         std::string env, why;
         asmcore::Profile pf;
@@ -832,9 +989,10 @@ private:
         view_->focusRow(r.domain, r.index);
     }
     void goTo(int d, size_t k) {
-        if (!cur_.ok()) return;
+        const RunTrace& source = liveShown_ ? ctx_.debugger.trace().trace() : cur_;
+        if (!source.ok()) return;
         size_t n = 0;
-        for (const TraceRow& r : cur_.rows) {
+        for (const TraceRow& r : source.rows) {
             if (r.domain != d) continue;
             if (n++ != k) continue;
             const DebugLocation l = ctx_.debugger.locationOf(d == 0 ? asmcore::Domain::Main : asmcore::Domain::Peri, r.pc);
@@ -846,7 +1004,8 @@ private:
     AppContext& ctx_;
     SimParamsStore& store_;
     QPushButton *run_, *saveBase_, *fit_, *first_;
-    QCheckBox* auto_;
+    QCheckBox *auto_, *live_, *follow_;
+    bool liveShown_ = false;
     QComboBox* compare_;
     QSpinBox* maxCycles_;
     QLabel* summary_;

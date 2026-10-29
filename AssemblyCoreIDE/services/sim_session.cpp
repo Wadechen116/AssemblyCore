@@ -38,6 +38,8 @@ struct SimSession::Worker {
     uint64_t seq = 0;
     bool failed = false;
     bool eventsReset = false;
+    bool rewound = false;
+    Cycle rewoundTo = 0;
     std::vector<std::string> messages;
     SimState state = SimState::Empty;
     int64_t speed = 0;                                          // sim.speed: cycles per second of a live run (0 = full speed)
@@ -110,6 +112,9 @@ struct SimSession::Worker {
         }
         up->eventsReset = eventsReset;
         eventsReset = false;
+        up->rewound = rewound;
+        up->rewoundTo = rewoundTo;
+        rewound = false;
         up->messages.swap(messages);
         SimSession* o = owner;
         std::weak_ptr<bool> alive = o->alive_;
@@ -387,6 +392,7 @@ void SimSession::rewindTo(Cycle t) {
         w.sink->events.clear();                                       // the replay re-emits what came before t: start the list afresh
         w.ring.clear();
         w.eventsReset = true;
+        if (ok) { w.rewound = true; w.rewoundTo = t; }
         if (!ok) w.messages.push_back("cannot rewind to cycle " + std::to_string(t) + " (no earlier snapshot)");
         w.publish(SimState::Paused);
     });

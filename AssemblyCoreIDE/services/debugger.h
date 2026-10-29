@@ -8,6 +8,7 @@
 //   * Breakpoints survive a rebuild: after a restart they are resolved again against the new program.
 #include "auto_debug.h"
 #include "sim_params_store.h"
+#include "trace_ring.h"
 #include <functional>
 #include <set>
 
@@ -51,6 +52,9 @@ public:
     bool inputs(SnapshotPtr& program, std::string& env, asmcore::Profile& profile, std::string& why);
     bool environmentAndProfile(std::string& env, asmcore::Profile& profile, std::string& why);      // the project's environment file and profile, as inputs() reads them
     SimParamsStore& simParams() { return params_; }
+    // The recent past of the session (both sequencers, events, bus transfers ...): what the time line shows, running or stopped. Holds the last `trace.rows`
+    // instructions (a setting, 60000 by default).
+    const TraceRing& trace() const { return trace_; }
     void stop();
     bool active() const { return session_.state() != SimState::Empty && session_.program() != nullptr; }
     bool running() const { return session_.state() == SimState::Running; }
@@ -108,6 +112,7 @@ public:
 
     Signal<> breakpointsChanged;
     Signal<asmcore::Domain> focusChanged;
+    Signal<> traceChanged;                                 // the history grew, was cut or wound back (before `updated` of the same update)
     Signal<const SimUpdate&> updated;                      // the session's updates, after the debugger has processed them
     Signal<const SimUpdate&, const DebugLocation&> stopped;   // a command finished: why, and where the user should look
 
@@ -128,6 +133,7 @@ private:
     struct RunTo { bool active = false; std::string file; int line = 0; asmcore::Domain domain = asmcore::Domain::Main; uint32_t pc = 0; } runTo_;
     std::vector<BreakpointSpec> specList_;                 // what was last sent to the session
     std::vector<size_t> specOwner_;                        // spec index -> index into bps_ (to attribute hits)
+    TraceRing trace_;
     ConnectionBag conns_;
 };
 

@@ -1064,6 +1064,70 @@ private slots:
         QVERIFY(r.until([&] { return !bar->isVisible() && ed->cursorMarks().empty(); }));
     }
 
+    void theTimeLineIsTheHistoryOfTheRunningSimulatorAndGoesBack() {
+        Rig r(".csr MARK = 0x50\n.main\ns: EXEC_CSR WRITE8 MARK, 1\n EXEC_CSR WRITE8 MARK, 2\n JMP s\n.peri\np: EXEC_CSR WRITE8 MARK, 3\n JMP p\n");
+        QWidget* page = r.w->openSimulator();
+        QWidget* view = page->findChild<QWidget*>("executionView");
+        auto* live = page->findChild<QCheckBox*>("executionLive");
+        auto* follow = page->findChild<QCheckBox*>("executionFollow");
+        auto* summary = page->findChild<QLabel*>("executionSummary");
+        QVERIFY(view && live && follow && summary);
+        r.w->resize(1400, 900);
+        QApplication::processEvents();
+        QVERIFY(!view->property("live").toBool() && !live->isEnabled());                       // nothing debugged: the analysis, as before
+        std::string err;
+        r.f.dbg.simParams().set("sim.speed", "0", err);                                       // full speed: a lot of history, more than the session can send
+        r.w->debugAction("start")->trigger();
+        QVERIFY(r.until([&] { return r.f.dbg.running(); }));
+        QVERIFY(r.until([&] { return view->property("live").toBool(); }));
+        QVERIFY(live->isEnabled() && follow->isChecked() && follow->isEnabled());
+        QVERIFY2(!r.sf<QPushButton>("executionRun")->isEnabled(), "the analysis run is not offered while the time line is live");
+        // it follows the newest part
+        QTest::qWait(300);
+        const double end1 = view->property("liveEnd").toDouble();
+        QTest::qWait(300);
+        const double end2 = view->property("liveEnd").toDouble();
+        QVERIFY2(end2 > end1 && end1 > 0, "the end of the history moves with the run");
+        QVERIFY2(view->property("t1").toDouble() >= end2 * 0.9 && view->property("t1").toDouble() <= end2 * 1.5 + 100, "...and the window follows it");
+        QVERIFY(!r.f.dbg.trace().gaps().empty());                                             // (the session could not send everything: it says so)
+        QVERIFY(view->property("gaps").toInt() > 0);
+        QVERIFY(summary->text().startsWith("Live: running"));
+        // pause: the history is what happened; look back
+        r.f.dbg.pause();
+        QVERIFY(r.until([&] { return !r.f.dbg.running(); }));
+        QVERIFY(r.until([&] { return summary->text().startsWith("Live: stopped"); }));
+        const RunTrace& tr = r.f.dbg.trace().trace();
+        QVERIFY(tr.rows.size() > 1000 && tr.instrs[0] > 100 && tr.instrs[1] > 100);
+        follow->setChecked(false);
+        QVERIFY(!view->property("follow").toBool());
+        QTest::qWait(200);
+        page->grab().save(QDir::tempPath() + "/acide_live_timeline.png");
+        r.sf<QPushButton>("executionFit")->click();                                           // the whole history
+        QVERIFY(view->property("t0").toDouble() < view->property("t1").toDouble());
+        const double first = (double)tr.rows.front().at, last = (double)tr.endAt;
+        const double a = view->property("t0").toDouble(), b = view->property("t1").toDouble();
+        const double left = view->property("plotLeft").toDouble(), right = view->property("plotRight").toDouble();
+        const double target = first + (last - first) / 2;
+        const int x = (int)(left + (target - a) / (b - a) * (right - left));
+        // double click: the simulator goes back to that cycle
+        QTest::mouseDClick(view, Qt::LeftButton, Qt::NoModifier, QPoint(x, 38));
+        QVERIFY(r.until([&] { return r.f.dbg.session().view() && (double)r.f.dbg.session().view()->cycle < last - 100; }));
+        const double now = (double)r.f.dbg.session().view()->cycle;
+        QVERIFY2(now > first && std::fabs(now - target) < (last - first) * 0.2, qPrintable(QString("went to %1, asked for about %2").arg(now).arg(target)));
+        QVERIFY(r.until([&] { return (double)r.f.dbg.trace().trace().endAt == now; }));        // the history ends where the simulator is
+        QVERIFY(r.f.dbg.trace().trace().rows.empty() || (double)r.f.dbg.trace().trace().rows.back().at <= now);
+        QVERIFY(!r.f.dbg.running());
+        // the run goes on from there: one step adds to the history
+        const size_t rows = r.f.dbg.trace().trace().rows.size();
+        r.f.dbg.stepInto();
+        QVERIFY(r.until([&] { return r.f.dbg.trace().trace().rows.size() > rows; }));
+        // stopping: the time line is the analysis again
+        r.f.dbg.stop();
+        QVERIFY(r.until([&] { return !view->property("live").toBool(); }));
+        QVERIFY(!live->isEnabled() && !follow->isEnabled() && r.sf<QPushButton>("executionRun")->isEnabled());
+        QVERIFY(r.f.dbg.trace().trace().rows.empty());
+    }
+
     void theIsaTopDiagramShowsWhatTheSimulatorHoldsAndWhereItIsGoing() {
         Rig r(".csr C = 0x10\n.main\ns: MOV CONST(5,2) -> MAIN_SCRATCHPAD[0..1]\n MOV MAIN_SCRATCHPAD[0..1] -> ALU_OPA\n MOV MAIN_SCRATCHPAD[0..1] -> ALU_OPB\n ALU ADD unsigned\n EXEC_CSR WRITE8 C, 1\n JMP s\n.peri\np: JMP p\n");
         QWidget* page = r.w->openSimulator();

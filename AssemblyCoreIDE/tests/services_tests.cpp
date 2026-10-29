@@ -16,6 +16,7 @@
 #include "auto_fix.h"
 #include "exec_values.h"
 #include "isa_layout.h"
+#include "trace_ring.h"
 #include "sim_compare.h"
 #include "sim_params_store.h"
 #include "build.h"
@@ -1306,6 +1307,88 @@ static void t_exec_values() {
     check(instructionResult("JMP start", 0, v).empty() && instructionResult("MOV X -> NOWHERE", 0, v).empty(), "what has nothing to show shows nothing");
 }
 
+static void t_trace_ring() {
+    std::printf("\nTrace ring (the recent past of the session)\n");
+    using namespace asmcore::sim;
+    auto issue = [](Cycle t, int domain, uint32_t pc, const char* what) { Event e; e.t = t; e.type = EventType::Issue; e.domain = domain; e.pc = pc; e.what = what; e.a = 1; return e; };
+    auto marker = [](Cycle t, EventType ty, int domain) { Event e; e.t = t; e.type = ty; e.domain = domain; return e; };
+    auto update = [](std::vector<Event> ev, Cycle now, size_t dropped = 0) { SimUpdate u; u.events = std::move(ev); u.droppedEvents = dropped; u.view = std::make_shared<SimView>(); const_cast<SimView&>(*u.view).cycle = now; return u; };
+    {
+        TraceRing r(1000);
+        r.feed(update({issue(0, 0, 0, "MOV"), issue(2, 1, 0, "EXEC_CSR"), marker(3, EventType::Publish, 1), issue(4, 0, 1, "JMP s"), marker(5, EventType::Retire, 0)}, 7));
+        const RunTrace& t = r.trace();
+        check(t.rows.size() == 3 && t.marks.size() == 1 && t.instrs[0] == 2 && t.instrs[1] == 1, "instructions become rows (per sequencer), publishes become markers, the rest is not kept");
+        check(t.endAt == 7 && t.endOf(0) == 4, "the end is where the simulator is; an instruction lasts until the next of its sequencer");
+        check(t.rows[1].what == "EXEC_CSR" && t.marks[0].kind == 'p', "...with the instruction text and the kind of the marker");
+        r.feed(update({issue(9, 0, 0, "MOV")}, 11));
+        check(r.trace().rows.size() == 4 && r.trace().endAt == 11, "a later update adds to it");
+        const uint64_t epoch = r.trimEpoch();
+        r.feed(update({}, 20));
+        check(r.trace().endAt == 20 && r.trimEpoch() == epoch, "time passes without events: the end moves");
+        r.clear();
+        check(r.trace().rows.empty() && r.trace().endAt == 0 && r.trimEpoch() != epoch, "clear starts again");
+    }
+    {   // a full ring forgets the oldest part (in chunks), with what belongs to it
+        TraceRing r(200);
+        std::vector<Event> ev;
+        for (int i = 0; i < 300; i++) { ev.push_back(issue((Cycle)i * 2, i % 2, (uint32_t)i, "MOV")); if (i % 10 == 0) ev.push_back(marker((Cycle)i * 2 + 1, EventType::Bus, 1)); }
+        const uint64_t e0 = r.trimEpoch();
+        r.feed(update(ev, 600));
+        check(r.trace().rows.size() == 200 && r.dropped() == 100 && r.trimEpoch() != e0, "over the capacity by a quarter: the oldest rows go", std::to_string(r.trace().rows.size()) + " dropped " + std::to_string(r.dropped()));
+        check(r.firstCycle() == 200 && r.trace().marks.front().at >= 200, "...the markers older than what is kept too", std::to_string(r.firstCycle()));
+        check(r.trace().truncated, "...and it says the beginning is missing");
+        // under the limit by a bit: nothing is cut
+        TraceRing q(200);
+        std::vector<Event> few;
+        for (int i = 0; i < 240; i++) few.push_back(issue((Cycle)i, 0, (uint32_t)i, "MOV"));
+        q.feed(update(few, 240));
+        check(q.trace().rows.size() == 240 && q.dropped() == 0, "a few over: not cut yet (the cost of cutting is paid in chunks)");
+    }
+    {   // what the session could not deliver
+        TraceRing r(1000);
+        r.feed(update({issue(0, 0, 0, "MOV")}, 1));
+        r.feed(update({issue(5000, 0, 1, "MOV")}, 5001, 4000));
+        check(r.gaps().size() == 1 && r.gaps()[0].from == 1 && r.gaps()[0].to == 5000, "events the session had to drop are a GAP in the history");
+        r.feed(update({issue(5002, 0, 2, "MOV")}, 5003));
+        check(r.gaps().size() == 1, "(a complete update adds no gap)");
+    }
+    {   // wound back
+        TraceRing r(1000);
+        std::vector<Event> ev;
+        for (int i = 0; i < 20; i++) { ev.push_back(issue((Cycle)i * 10, i % 2, (uint32_t)i, "MOV")); ev.push_back(marker((Cycle)i * 10 + 1, EventType::Consume, 0)); }
+        r.feed(update(ev, 200, 5));
+        r.truncateAfter(95);
+        const RunTrace& t = r.trace();
+        check(t.rows.size() == 10 && t.rows.back().at == 90 && t.marks.back().at <= 95 && t.endAt == 95, "winding back to a cycle drops what is later");
+        check(t.instrs[0] + t.instrs[1] == 10, "...and the counts follow", std::to_string(t.instrs[0] + t.instrs[1]));
+        r.feed(update({issue(100, 0, 3, "ALU")}, 101));
+        check(r.trace().rows.size() == 11 && r.trace().rows.back().what == "ALU", "the run goes on from there");
+    }
+    {   // the session: a rewind says so, and the debugger keeps the history
+        DebugRig r(kEndless);
+        std::string why;
+        check(r.begin(why), "setup", why);
+        RunSpec spec;
+        spec.maxCycles = 3000;
+        spec.stopOnIdle = false;
+        r.dbg.run(spec);
+        check(r.waitStop(1), "ran 3000 cycles");
+        const RunTrace& t = r.dbg.trace().trace();
+        check(t.rows.size() > 500 && t.endAt >= 3000 && !t.marks.empty() == false, "the debugger's history has the run", std::to_string(t.rows.size()) + " rows, end " + std::to_string(t.endAt));
+        r.ups.clear();
+        r.ses.rewindTo(1000);
+        r.disp->pumpUntil([&] { for (const SimUpdate& u : r.ups) if (u.rewound) return true; return false; }, 3000);
+        bool said = false;
+        for (const SimUpdate& u : r.ups) said |= u.rewound && u.rewoundTo == 1000;
+        check(said, "winding back says so in the update (rewound, rewoundTo)");
+        check(r.dbg.trace().trace().endAt == 1000 && (r.dbg.trace().trace().rows.empty() || r.dbg.trace().trace().rows.back().at <= 1000), "...and the history ends there", std::to_string(r.dbg.trace().trace().endAt));
+        check(r.dbg.session().view() && r.dbg.session().view()->cycle == 1000, "the simulator is at that cycle");
+        r.dbg.stop();
+        r.disp->pumpUntil([&] { return r.dbg.trace().trace().rows.empty(); }, 3000);
+        check(r.dbg.trace().trace().rows.empty(), "stopping empties the history");
+    }
+}
+
 int main() {
     t_realfs();
     t_paths();
@@ -1327,6 +1410,7 @@ int main() {
     t_auto_fix();
     t_isa_layout();
     t_exec_values();
+    t_trace_ring();
     t_debugger();
     std::printf("\n%s  %d passed, %d failed\n", g_fail ? "FAILED" : "OK    ", g_pass, g_fail);
     return g_fail ? 1 : 0;

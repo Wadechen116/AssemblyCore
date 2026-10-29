@@ -22,6 +22,7 @@ SERVICE_SOURCES = \
     $$IDE_DIR/services/exec_values.cpp \
     $$IDE_DIR/services/isa_layout.cpp \
     $$IDE_DIR/services/sim_compare.cpp \
+    $$IDE_DIR/services/trace_ring.cpp \
     $$IDE_DIR/services/blocks/block_theme.cpp \
     $$IDE_DIR/services/blocks/block_shapes.cpp \
     $$IDE_DIR/services/blocks/block_layout.cpp \

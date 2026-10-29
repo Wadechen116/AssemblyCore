@@ -134,11 +134,12 @@ protected:
             p.setPen(Qt::NoPen);
             p.setBrush(fill.darker(135));
             p.drawPath(bar.simplified());
+            const bool stepTag = v_.live_ && b.kind == "decoder" && b.domain >= 0 && v_.ctx_.debugger.focus() == (b.domain == 1 ? asmcore::Domain::Peri : asmcore::Domain::Main);
             p.setPen(Qt::white);
             QFont tf = ui_;
             tf.setBold(true);
             p.setFont(tf);
-            p.drawText(QRectF(b.x + 8, b.y, b.w - 16, 24), Qt::AlignLeft | Qt::AlignVCenter, QFontMetrics(tf).elidedText(QString::fromUtf8(b.title.c_str()), Qt::ElideRight, (int)b.w - 16));
+            p.drawText(QRectF(b.x + 8, b.y, b.w - 16, 24), Qt::AlignLeft | Qt::AlignVCenter, QFontMetrics(tf).elidedText(QString::fromUtf8(b.title.c_str()), Qt::ElideRight, (int)b.w - 16 - (stepTag ? 64 : 0)));
             // rows
             for (size_t ri = 0; ri < b.rows.size(); ri++) {
                 const double y = b.y + 28 + 20 * (double)ri;
@@ -160,7 +161,7 @@ protected:
                 p.setPen(Qt::white);
                 p.drawText(QRectF(b.x + 8 + lw, y, b.w - 16 - lw, 19), Qt::AlignRight | Qt::AlignVCenter, QFontMetrics(mono_).elidedText(value, Qt::ElideLeft, (int)(b.w - 16 - lw)));
             }
-            if (v_.live_ && b.kind == "decoder" && b.domain >= 0 && v_.ctx_.debugger.focus() == (b.domain == 1 ? asmcore::Domain::Peri : asmcore::Domain::Main)) {      // the one Step acts on
+            if (stepTag) {                                                                  // the one Step acts on
                 QFont sf = ui_;
                 sf.setPixelSize(10);
                 sf.setBold(true);

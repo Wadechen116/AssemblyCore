@@ -79,6 +79,8 @@ struct SimUpdate {
     std::vector<asmcore::sim::Event> events;                   // new since the previous update (the newest ones if there were very many)
     size_t droppedEvents = 0;
     bool eventsReset = false;                                  // the history was rewound or reset: forget the earlier events
+    bool rewound = false;                                      // the simulator was wound back to an earlier cycle (rewoundTo): what is later than that is no longer true
+    asmcore::sim::Cycle rewoundTo = 0;
     std::vector<std::string> messages;                         // problems with a request (a bad watch...)
 };
 
