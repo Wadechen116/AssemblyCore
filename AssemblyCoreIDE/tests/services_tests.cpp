@@ -666,6 +666,8 @@ static void t_debugger() {
         check(lb.size() == 1 && lb[0].hits == 2 && lb[0].resolved, "the hits of both addresses are added up for the line", lb.empty() ? "" : std::to_string(lb[0].hits));
         check(r.dbg.location(Domain::Main).valid && r.dbg.location(Domain::Main).line == 4, "location() maps the current pc to a line");
         check(!r.dbg.stale(), "the program is not stale right after a build");
+        r.ws.setText("/p/other.simparams", "[params]\nsim.speed = 5\n");
+        check(!r.dbg.stale(), "a change of some other text (a parameter file) does not make it stale: the program is the same");
         r.ws.setText("/p/a.asm", prog + "; edit\n");
         check(r.dbg.stale(), "an edit makes the program being debugged stale");
         r.dbg.stepOut();

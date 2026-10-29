@@ -2247,6 +2247,45 @@ private slots:
         QVERIFY(!sc.execShowsAnything() && sc.execution().empty());                             // stopped: still again
     }
 
+    void changingTheSpeedKeepsTheRunOnTheBlocksGoing() {         // (a parameter file is open in the workspace: its text changes, the program does not)
+        Rig r(".main\nstart: MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]\n ALU ADD unsigned\n JMP start\n.peri\np: JMP p\n", false);
+        r.f.fs->write("/w/p.acproj", "name = p\nsource = prog.generated.asm\nblocks = prog.acblk\nsimparams = p.simparams\n");
+        r.f.fs->write("/w/p.simparams", "[params]\n");
+        r.f.fs->write("/w/prog.generated.asm", ".main\nh: JMP h\n");
+        QVERIFY(r.w->openProject("/w/p.acproj"));
+        r.w->openFile("/w/prog.acblk");
+        r.ed = qobject_cast<BlockEditor*>(r.w->tabs()->currentWidget());
+        QVERIFY(r.ed);
+        auto& s = r.ed->session();
+        auto sc = [&]() -> BlockScene& { return r.ed->scene(); };
+        sc().setAnimationsEnabled(false);
+        {
+            std::string any;
+            for (const auto& b : s.document().sections[0].blocks) if (b.type.find("jmp") != std::string::npos) any = b.id;
+            QVERIFY(s.apply([&](asmcore::blocks::Editor& e) { return e.setField(any, "target", "p"); }).ok);
+            QVERIFY(s.apply([&](asmcore::blocks::Editor& e) { return e.setField(any, "target", "start"); }).ok);
+        }
+        QVERIFY(r.f.buildAndWait());
+        std::string why, err;
+        r.f.dbg.simParams().set("sim.speed", "200", err);
+        QVERIFY(r.f.dbg.start(why));
+        r.f.dbg.runLive();
+        for (int i = 0; i < 400 && sc().execution().empty(); i++) QTest::qWait(10);
+        QVERIFY(!sc().execution().empty());
+        auto hitsTotal = [&] { uint64_t n = 0; for (const auto& b : s.document().sections[0].blocks) n += sc().execHits(b.id); return n; };
+        QTest::qWait(300);
+        const uint64_t before = hitsTotal();
+        // the speed changes (the parameter file is written to the workspace) ...
+        r.w->findChild<QAction*>("speedFasterAction")->trigger();
+        QVERIFY(r.f.ws.find("/w/p.simparams") && r.f.ws.find("/w/p.simparams")->dirty);
+        // ... and the run on the blocks goes on: the sequencers' blocks stay coloured, the counts keep growing
+        QTest::qWait(600);
+        QVERIFY2(!sc().execution().empty(), "the blocks of the lines being executed are still coloured after the speed changed");
+        QVERIFY2(hitsTotal() > before, "the counts go on growing");
+        QVERIFY(!r.w->debugStatusText().contains("source changed"));
+        r.f.dbg.stop();
+    }
+
     void findAndFixMendsTheBlocksOfAProgram() {
         Rig r(".main\nstart: MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]\n JMP strat\n", false);
         r.f.fs->write("/w/p.acproj", "name = p\nsource = prog.generated.asm\nblocks = prog.acblk\n");

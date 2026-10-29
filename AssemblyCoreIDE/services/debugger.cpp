@@ -65,9 +65,17 @@ void Debugger::stop() {
     breakpointsChanged.fire();
 }
 
+// The program being debugged is out of date when one of the SOURCES it was built from has other text now. (Not any change of the workspace: the parameter file,
+// the environment file, a note ... change the workspace too, and the program is the same.)
 bool Debugger::stale() const {
     SnapshotPtr p = session_.program();
-    return p && p->revision != ws_.revision();
+    if (!p) return false;
+    if (p->revision == ws_.revision()) return false;
+    for (const asmcore::Source& s : p->sources) {
+        const Document* d = ws_.find(s.name);
+        if (d && d->text != s.text) return true;
+    }
+    return false;
 }
 
 void Debugger::run(const RunSpec& spec) { session_.run(spec); }
