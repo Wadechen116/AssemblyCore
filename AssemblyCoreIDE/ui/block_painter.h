@@ -23,6 +23,22 @@ struct BlockPaintState {
     bool hatched = false;                 // cannot be nested here (the diagonal lines)
     bool error = false, warning = false;  // a badge
     QColor tint;                          // valid: the block is part of the line a sequencer is executing: drawn in this colour instead of its category's
+    // the simulator on the block
+    double heat = -1;                     // 0..1: how often it was executed compared with the busiest block; < 0: not run (or no run to show)
+    uint64_t hits = 0;
+    bool dim = false;                     // an instruction that has not run, while others have
+    double flash = 0;                     // 1 just executed ... 0 long ago
+    bool flashPeri = false;
+};
+
+// What the simulator tells the blocks, for painting (block_scene keeps it up to date).
+struct ExecPaint {
+    std::map<std::string, uint64_t> hits;
+    std::set<std::string> executable;                                  // the blocks that make instructions
+    uint64_t maxHits = 0;
+    std::map<std::string, std::pair<qint64, bool>> flash;              // block -> (when, Peri's?)
+    qint64 now = 0;
+    bool showFlash = true, showHeat = true;
 };
 
 // What the blocks of one stack are drawn with.
@@ -32,6 +48,7 @@ struct StackPaintInfo {
     const std::set<std::string>* hatched = nullptr;
     const std::set<std::string>* errors = nullptr;
     const std::set<std::string>* warnings = nullptr;
+    const ExecPaint* exec = nullptr;
     const std::map<std::string, QColor>* tint = nullptr;               // the blocks of the line each sequencer is executing (simulator running or stopped)
     bool floating = false;
     // A soft effect on a block (and everything inside it): scale around an anchor. Returns false if the block has none. anchor: 0 = its centre, 1 = the left edge.

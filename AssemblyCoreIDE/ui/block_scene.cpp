@@ -61,6 +61,8 @@ void StackItem::paint(QPainter* p, const QStyleOptionGraphicsItem*, QWidget*) {
     info.errors = &scene_.errorIds_;
     info.warnings = &scene_.warningIds_;
     info.tint = &scene_.tint_;
+    scene_.exec_.now = scene_.execClock_.elapsed();
+    info.exec = scene_.exec_.hits.empty() && scene_.exec_.flash.empty() ? nullptr : &scene_.exec_;
     info.floating = s.domain == "floating";
     info.fx = [this](const std::string& id, double& sx, double& sy, int& anchor) {
         auto it = scene_.fx_.find(id);
@@ -104,6 +106,9 @@ void StackItem::hoverLeaveEvent(QGraphicsSceneHoverEvent*) { scene_.setHovered(s
 // ---- BlockScene
 BlockScene::BlockScene(BlockSession& session, const BlockTheme& theme, const QFont& ui, const QFont& mono, QObject* parent)
     : QGraphicsScene(parent), session_(session), metrics_(ui, mono), painter_(theme, ui, mono) {
+    execClock_.start();
+    execTimer_.setInterval(40);
+    connect(&execTimer_, &QTimer::timeout, this, [this] { execTick(); });
     fxTimer_.setInterval(16);
     connect(&fxTimer_, &QTimer::timeout, this, [this] {
         const qint64 now = QDateTime::currentMSecsSinceEpoch();
@@ -816,6 +821,141 @@ void BlockScene::mouseReleaseEvent(QGraphicsSceneMouseEvent* e) {
     if (band_) { removeItem(band_); delete band_; band_ = nullptr; }
     mode_ = Mode::Idle;
     e->accept();
+}
+
+QRectF BlockScene::headRect(const std::string& id) const {
+    const BlockBox* box = nullptr;
+    const StackLayout* s = layout_.stackOf(id, &box);
+    if (!s || !box) return QRectF();
+    return QRectF(s->origin.x + box->head.x, s->origin.y + box->head.y, box->head.w, box->head.h);
+}
+
+void BlockScene::execSetOptions(bool values, bool flash, bool heat) {
+    showValues_ = values;
+    exec_.showFlash = flash;
+    exec_.showHeat = heat;
+    update();
+}
+
+void BlockScene::execIssued(const std::string& id, int domain, const QString& value) {
+    if (domain < 0 || domain > 1 || id.empty()) return;
+    if (!execClock_.isValid()) execClock_.start();
+    const qint64 now = execClock_.elapsed();
+    exec_.flash[id] = {now, domain == 1};
+    if (!value.isEmpty()) badges_[id] = Badge{value, now, domain == 1};
+    if (!lastIssued_[domain].empty() && lastIssued_[domain] != id) {                 // the line from the block that ran before
+        flows_.push_back(Flow{lastIssued_[domain], id, now, domain == 1});
+        if (flows_.size() > 60) flows_.erase(flows_.begin(), flows_.begin() + (long)(flows_.size() - 60));
+    }
+    lastIssued_[domain] = id;
+    if (!execTimer_.isActive()) execTimer_.start();
+    update();
+}
+
+void BlockScene::execSetHits(const std::map<std::string, uint64_t>& hits, const std::set<std::string>& executable) {
+    uint64_t mx = 0;
+    for (const auto& kv : hits) mx = std::max(mx, kv.second);
+    if (hits == exec_.hits && executable == exec_.executable) return;
+    exec_.hits = hits;
+    exec_.executable = executable;
+    exec_.maxHits = mx;
+    update();
+}
+
+void BlockScene::execClear() {
+    const bool had = execShowsAnything() || !flows_.empty() || !exec_.flash.empty();
+    exec_.hits.clear();
+    exec_.executable.clear();
+    exec_.flash.clear();
+    exec_.maxHits = 0;
+    badges_.clear();
+    flows_.clear();
+    lastIssued_[0].clear();
+    lastIssued_[1].clear();
+    if (had) update();
+}
+
+bool BlockScene::execAnimating() const {
+    const qint64 now = execClock_.isValid() ? execClock_.elapsed() : 0;
+    for (const auto& kv : exec_.flash) if (now - kv.second.first < 500) return true;
+    for (const Flow& f : flows_) if (now - f.at < 700) return true;
+    return false;
+}
+
+void BlockScene::execTick() {
+    update();
+    if (!execAnimating()) execTimer_.stop();
+}
+
+std::vector<std::string> BlockScene::execFlashing() const {
+    std::vector<std::string> v;
+    const qint64 now = execClock_.isValid() ? execClock_.elapsed() : 0;
+    for (const auto& kv : exec_.flash) if (now - kv.second.first < 500) v.push_back(kv.first);
+    return v;
+}
+
+size_t BlockScene::execFlows() const {
+    size_t n = 0;
+    const qint64 now = execClock_.isValid() ? execClock_.elapsed() : 0;
+    for (const Flow& f : flows_) if (now - f.at < 700) n++;
+    return n;
+}
+
+// Over everything: the line from the block that ran before, and the small label with what a block just did.
+void BlockScene::drawForeground(QPainter* p, const QRectF& rect) {
+    QGraphicsScene::drawForeground(p, rect);
+    if (!execClock_.isValid()) return;
+    const qint64 now = execClock_.elapsed();
+    p->save();
+    p->setRenderHint(QPainter::Antialiasing);
+    if (exec_.showFlash) {
+        for (const Flow& f : flows_) {
+            const qint64 age = now - f.at;
+            if (age >= 700) continue;
+            const QRectF a = headRect(f.from), b = headRect(f.to);
+            if (a.isEmpty() || b.isEmpty() || !(rect.intersects(a.united(b).adjusted(-30, -30, 30, 30)))) continue;
+            QColor c = f.peri ? QColor("#19c8e0") : QColor("#ffb300");
+            c.setAlphaF(1.0 - (double)age / 700.0);
+            const QPointF from(a.left() - 10, a.center().y()), to(b.left() - 10, b.center().y());
+            const double bulge = 18 + std::min(60.0, std::abs(to.y() - from.y()) / 6);
+            QPainterPath path(from);
+            path.cubicTo(QPointF(from.x() - bulge, from.y()), QPointF(to.x() - bulge, to.y()), to);
+            QPen pen(c, 3);
+            pen.setStyle(Qt::CustomDashLine);
+            pen.setDashPattern({3, 2});
+            pen.setDashOffset(-(double)age / 40.0);
+            p->setPen(pen);
+            p->setBrush(Qt::NoBrush);
+            p->drawPath(path);
+            p->setPen(Qt::NoPen);
+            p->setBrush(c);
+            QPolygonF arrow;
+            arrow << to << QPointF(to.x() - 9, to.y() - 5) << QPointF(to.x() - 9, to.y() + 5);
+            p->drawPolygon(arrow);
+        }
+    }
+    if (showValues_) {
+        QFont f = font();
+        f.setPixelSize(11);
+        f.setFamily("monospace");
+        p->setFont(f);
+        const QFontMetricsF fm(f);
+        for (const auto& kv : badges_) {
+            const QRectF head = headRect(kv.first);
+            if (head.isEmpty() || !rect.intersects(head.adjusted(0, -10, 420, 10))) continue;
+            const double w = fm.horizontalAdvance(kv.second.text) + 14;
+            const QRectF pill(head.right() + 10, head.top() + (head.height() - 18) / 2, w, 18);
+            const qint64 age = now - kv.second.at;
+            QColor edge = kv.second.peri ? QColor("#19c8e0") : QColor("#ffb300");
+            QColor bg(24, 30, 42, age < 1500 ? 240 : 205);
+            p->setPen(QPen(edge, age < 1500 ? 2 : 1));
+            p->setBrush(bg);
+            p->drawRoundedRect(pill, 9, 9);
+            p->setPen(Qt::white);
+            p->drawText(pill, Qt::AlignCenter, kv.second.text);
+        }
+    }
+    p->restore();
 }
 
 QRectF BlockScene::blockRect(const std::string& id) const {

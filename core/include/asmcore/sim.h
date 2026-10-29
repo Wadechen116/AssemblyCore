@@ -211,6 +211,10 @@ public:
 
     // ---- state
     uint32_t pc(Domain d) const;
+    // How many times the instruction at each pc was executed since the start (indexed by pc; shorter than the code if the end was never reached).
+    const std::vector<uint32_t>& pcHits(Domain d) const;
+    // Every branch condition of that sequencer (ConditionMap name, e.g. "PERI_RESULT_VALID") with whether it is true now.
+    std::vector<std::pair<std::string, bool>> conditions(Domain d) const;
     bool halted(Domain d) const;                            // spinning on an unconditional branch to itself
     bool faulted(Domain d) const;
     const Fault* fault(Domain d) const;

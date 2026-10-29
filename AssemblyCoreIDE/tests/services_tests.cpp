@@ -14,6 +14,7 @@
 #include <sstream>
 #include "auto_debug.h"
 #include "auto_fix.h"
+#include "exec_values.h"
 #include "isa_layout.h"
 #include "sim_compare.h"
 #include "sim_params_store.h"
@@ -1279,6 +1280,30 @@ static void t_isa_layout() {
     check(isaValue(L.boxes[0].rows[0].src, nullptr, at) == "-" && isaValue(L.box("main_code")->rows[1].src, nullptr, at) == "tables + pool", "without a view every value is -, static text stays");
 }
 
+static void t_exec_values() {
+    std::printf("\nWhat an instruction just did\n");
+    SimView v;
+    v.regions["scratch"] = {1, 2, 0xAB, 4, 5};
+    v.regions["opa"] = {5, 0};
+    v.regions["out"] = {0x0A, 0};
+    v.regions["slot"] = {9, 8, 7};
+    v.regions["rx"] = {0x55, 0x66};
+    v.signalValues = {{"alu.cmp_true", 1}, {"alu.zero", 0}, {"alu.negative", 0}, {"slot.service_id", 3}};
+    v.csrs = {{"MARK", (uint8_t)0x7F}};
+    v.conditions[0] = {{"PERI_RESULT_VALID", false}, {"ALWAYS", true}};
+    v.conditions[1] = {{"IF_READY", true}};
+    check(instructionResult("MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]", 0, v) == "scratch[0..1] = 01 02", "a MOV shows the bytes it wrote", instructionResult("MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]", 0, v));
+    check(instructionResult("MOV MAIN_SCRATCHPAD[0..1] -> ALU_OPA", 0, v) == "OPA = 05 00", "...a register by its name");
+    check(instructionResult("MOV X -> MAIN_SCRATCHPAD[4..4]", 0, v) == "scratch[4] = 05", "...one byte");
+    check(instructionResult("ALU ADD unsigned", 0, v) == "OUT 0A 00 cmp", "an ALU operation shows OUT and the flags that are set");
+    check(instructionResult("EXEC_CSR WRITE8 MARK, 1", 0, v) == "MARK=0x7F", "an EXEC_CSR shows the CSR");
+    check(instructionResult("EXEC_PUB service=S, src=0, len=3", 1, v) == "slot svc 3 : 09 08 07", "an EXEC_PUB shows the slot");
+    check(instructionResult("EXEC_XFER READ dev=0, len=2, ptr=0, ext=[0x10]", 1, v) == "rx 55 66", "an EXEC_XFER shows what came in");
+    check(instructionResult("BR.COND PERI_RESULT_VALID, take, safe", 0, v) == "PERI_RESULT_VALID \xE2\x97\x8B false", "BR.COND shows whether the condition holds", instructionResult("BR.COND PERI_RESULT_VALID, take, safe", 0, v));
+    check(instructionResult("BR.IF_READY read_data", 1, v) == "IF_READY \xE2\x97\x8F true", "a Peri BR names its condition by itself");
+    check(instructionResult("JMP start", 0, v).empty() && instructionResult("MOV X -> NOWHERE", 0, v).empty(), "what has nothing to show shows nothing");
+}
+
 int main() {
     t_realfs();
     t_paths();
@@ -1299,6 +1324,7 @@ int main() {
     t_auto_debug();
     t_auto_fix();
     t_isa_layout();
+    t_exec_values();
     t_debugger();
     std::printf("\n%s  %d passed, %d failed\n", g_fail ? "FAILED" : "OK    ", g_pass, g_fail);
     return g_fail ? 1 : 0;

@@ -95,6 +95,7 @@ struct State {
     std::vector<CallFrame> shadow[2];
     bool hasFault[2] = {false, false};
     Fault fault[2];
+    std::vector<uint32_t> hits[2];                     // [domain][pc]: how many times the instruction at that pc was executed
 };
 
 // ---- environment model ---------------------------------------------------------------------------------------------------------

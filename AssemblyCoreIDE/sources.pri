@@ -19,6 +19,7 @@ SERVICE_SOURCES = \
     $$IDE_DIR/services/sim_params_store.cpp \
     $$IDE_DIR/services/auto_debug.cpp \
     $$IDE_DIR/services/auto_fix.cpp \
+    $$IDE_DIR/services/exec_values.cpp \
     $$IDE_DIR/services/isa_layout.cpp \
     $$IDE_DIR/services/sim_compare.cpp \
     $$IDE_DIR/services/blocks/block_theme.cpp \

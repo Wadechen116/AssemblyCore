@@ -142,19 +142,28 @@ private:
     void beginTextEdit(const BlockScene::EditTarget& t);
     void applyFieldValue(const BlockScene::EditTarget& t, const QString& text);
     QMenu* choiceMenu_ = nullptr;
-    void refreshExecution();                                 // the blocks of the lines Main and Peri are executing get one colour each
+    void refreshExecution(const SimUpdate* update = nullptr);     // the blocks of the lines Main and Peri are executing get one colour each; heat, flash and values on top
+    void rebuildPcMap();                                     // which block made the instruction at each pc (while the debugged program is what the blocks generate)
 public:
     // Scrolls to the block that produced `line` of the generated file (a debugger stop): true if there is one and the page shows blocks.
     bool revealGeneratedLine(int line);
     // The repairs an auto fix made in the text this program generates, made in the BLOCKS instead (as one undo step): every word that was exchanged is a field of
     // the block that produced the line (or of a component plugged into it); the closing jump becomes a jump block at the end of the domain's code. Steps that
     // cannot be put into the blocks are returned in `notApplied`. The number of steps applied.
+    // the options of "Run view" (the simulator on the blocks); for tests
+    QToolButton* runViewButton() const { return runViewBtn_; }
     int applyFixSteps(const std::vector<FixStep>& steps, std::vector<FixStep>& notApplied);
 private:
     void applyBuildProblems();                               // the assembler's messages about the generated file become badges on the blocks that produced the lines
     SnapshotPtr snap_;
     void syncToWorkspace();
     void doSync();
+    QToolButton* runViewBtn_ = nullptr;
+    std::map<uint32_t, std::string> pcBlock_[2];             // pc -> the block that made the instruction
+    std::map<uint32_t, std::string> pcText_[2];
+    std::set<std::string> executable_;
+    const void* pcMapFor_ = nullptr;
+    std::string pcMapText_;
     QTimer* syncTimer_ = nullptr;                                  // after an edit: the program and the generated file go into the workspace buffers (unsaved)
     bool syncing_ = false, loading_ = true, attached_ = false, codeStale_ = true;
     std::string lastText_, syncedText_, symbolsFrom_;

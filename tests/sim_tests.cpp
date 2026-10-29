@@ -1025,6 +1025,26 @@ static void t_params() {
         const Cycle t0 = resumed(SimParams());
         check(resumed(P({{"event.dispatch_extra", "5"}, {"event.eret_extra", "7"}})) == t0 + 12, "event.dispatch_extra 5 and event.eret_extra 7: the interrupted flow carries on 12 cycles later");
     }
+    {   // how often each instruction ran, and the branch conditions as they are now
+        const std::string prog = ".main\ns: MOV CONST(1, 1) -> MAIN_SCRATCHPAD[0..0]\n MOV CONST(2, 1) -> MAIN_SCRATCHPAD[1..1]\n JMP s\n";
+        Fx f(prog, "", CallModel::Inline, nullptr);
+        RunLimits l; l.maxCycles = 400; l.stopOnIdle = false;
+        f.sim->run(l);
+        const std::vector<uint32_t>& h = f.sim->pcHits(Domain::Main);
+        uint64_t sum = 0;
+        for (uint32_t x : h) sum += x;
+        check(sum == f.sim->instructions(Domain::Main) && sum > 30, "the hit counts add up to the instructions executed", std::to_string(sum) + " vs " + std::to_string(f.sim->instructions(Domain::Main)));
+        check(h.size() >= 3 && h[0] > 0 && std::llabs((long long)h[0] - (long long)h[1]) <= 1 && std::llabs((long long)h[1] - (long long)h[2]) <= 1, "the three instructions of the loop ran equally often (give or take the one that was cut)", h.size() >= 3 ? std::to_string(h[0]) + "," + std::to_string(h[1]) + "," + std::to_string(h[2]) : "short");
+        const uint64_t before = sum;
+        f.sim->reset();
+        check(f.sim->pcHits(Domain::Main).empty() || f.sim->pcHits(Domain::Main)[0] == 0, "a reset starts counting again", std::to_string(before));
+        bool found = false, valid = true;
+        for (const auto& c : f.sim->conditions(Domain::Main)) if (c.first == "PERI_RESULT_VALID") { found = true; valid = c.second; }
+        check(found && !valid, "the branch conditions are listed with their values (the result slot is empty)");
+        bool peri = false;
+        for (const auto& c : f.sim->conditions(Domain::Peri)) peri |= c.first == "IF_TIMER_DONE";
+        check(peri, "...for each sequencer");
+    }
     {   // new parameters for a simulator that is running: the state stays, what is still to be timed follows them
         const std::string movs = ".main\na: MOV CONST(1, 1) -> MAIN_SCRATCHPAD[0..0]\n MOV CONST(2, 1) -> MAIN_SCRATCHPAD[1..1]\n MOV CONST(3, 1) -> MAIN_SCRATCHPAD[2..2]\n MOV CONST(4, 1) -> MAIN_SCRATCHPAD[3..3]\nh: JMP h\n";
         Fx f(movs, "", CallModel::Inline, nullptr);

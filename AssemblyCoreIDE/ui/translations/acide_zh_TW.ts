@@ -1860,6 +1860,26 @@ Drag it to change the order; double-click the end of it to write a comment</sour
         <source>Other value...</source>
         <translation>其他值...</translation>
     </message>
+    <message>
+        <source>Run view</source>
+        <translation>執行顯示</translation>
+    </message>
+    <message>
+        <source>What the blocks show while the simulator runs or is stopped</source>
+        <translation>模擬器執行或停住時，積木上顯示什麼（只在偵錯期間；按停止就回到靜止）</translation>
+    </message>
+    <message>
+        <source>Values: what each block just did</source>
+        <translation>數值：每個積木剛做了什麼</translation>
+    </message>
+    <message>
+        <source>Flash and flow: where the run goes</source>
+        <translation>閃動與流線：執行走到哪裡</translation>
+    </message>
+    <message>
+        <source>Heat: how often each block ran</source>
+        <translation>熱度：每個積木執行了幾次</translation>
+    </message>
 </context>
 <context>
     <name>acide::BlockToolbox</name>

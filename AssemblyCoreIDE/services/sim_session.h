@@ -52,6 +52,8 @@ struct SimView {
     asmcore::sim::Fault fault[2];
     std::map<std::string, std::vector<uint8_t>> regions;       // scratch csrbuf rx slot meta opa opb out status const
     std::vector<std::pair<std::string, int64_t>> signalValues;
+    std::vector<uint32_t> hits[2];                             // [0] Main, [1] Peri: how many times the instruction at each pc was executed
+    std::vector<std::pair<std::string, bool>> conditions[2];   // the branch conditions of each sequencer and whether they are true now
     std::vector<std::pair<std::string, uint8_t>> csrs;          // the CSRs the program names (.csr)
     std::vector<asmcore::sim::CallFrame> stack[2];              // innermost first
     std::vector<asmcore::sim::Breakpoint> breakpoints;

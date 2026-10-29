@@ -1,4 +1,5 @@
 #include "block_editor.h"
+#include "exec_values.h"
 
 #include <functional>
 #include <set>
@@ -99,6 +100,30 @@ BlockEditor::BlockEditor(AppContext& ctx, const std::string& path, QWidget* pare
     toolboxBtn->setChecked(ctx.settings.get("blocks.toolbox", "1") != "0");
     toolboxBtn->setAutoRaise(true);
     bl->insertWidget(2, toolboxBtn);
+    runViewBtn_ = new QToolButton(bar);
+    runViewBtn_->setText(tr("Run view"));
+    runViewBtn_->setObjectName("runViewMenu");
+    runViewBtn_->setToolTip(tr("What the blocks show while the simulator runs or is stopped"));
+    runViewBtn_->setAutoRaise(true);
+    runViewBtn_->setPopupMode(QToolButton::InstantPopup);
+    {
+        auto* menu = new QMenu(runViewBtn_);
+        struct Opt { const char* key; const char* name; QString text; };
+        const Opt opts[] = {{"blocks.exec.values", "execValues", tr("Values: what each block just did")}, {"blocks.exec.flash", "execFlash", tr("Flash and flow: where the run goes")}, {"blocks.exec.heat", "execHeat", tr("Heat: how often each block ran")}};
+        for (const Opt& o : opts) {
+            QAction* a = menu->addAction(o.text);
+            a->setCheckable(true);
+            a->setObjectName(o.name);
+            a->setChecked(ctx.settings.get(o.key, "1") != "0");
+            const std::string key = o.key;
+            connect(a, &QAction::toggled, this, [this, key, &ctx](bool on) {
+                ctx.settings.set(key, on ? "1" : "0");
+                scene_->execSetOptions(ctx.settings.get("blocks.exec.values", "1") != "0", ctx.settings.get("blocks.exec.flash", "1") != "0", ctx.settings.get("blocks.exec.heat", "1") != "0");
+            });
+        }
+        runViewBtn_->setMenu(menu);
+    }
+    bl->insertWidget(3, runViewBtn_);
     QToolButton* ztidy = button(tr("Tidy"), tr("Tidy up: give every stack a place so that nothing overlaps (the program does not change)"), "tidy");
     bl->addWidget(zoomBar_);
     root->addWidget(bar);
@@ -119,6 +144,7 @@ BlockEditor::BlockEditor(AppContext& ctx, const std::string& path, QWidget* pare
         style.showEmptyOptional = true;                      // an editor shows the optional parts that are still empty (a shift amount, a flag): they are there to be filled in
         scene_->setLayoutStyle(style);
     }
+    scene_->execSetOptions(ctx.settings.get("blocks.exec.values", "1") != "0", ctx.settings.get("blocks.exec.flash", "1") != "0", ctx.settings.get("blocks.exec.heat", "1") != "0");
     scene_->setAnimationsEnabled(ctx.settings.get("blocks.animate", "1") != "0");      // the soft, bouncy effects (blocks.animate = 0 switches them off)
     view_->setTheme(scene_->theme());
     fieldEditor_ = new FieldEditor(this);                  // (like the comment editor: a child of the editor, so the view's shortcuts do not take its keys)
@@ -260,7 +286,7 @@ BlockEditor::BlockEditor(AppContext& ctx, const std::string& path, QWidget* pare
     conns_->add(session_.changed, [this] { refreshCode(); refreshInfo(); syncToWorkspace(); applyBuildProblems(); refreshExecution(); });
     snap_ = ctx.snapshot;
     conns_->add(ctx.snapshotChanged, [this](SnapshotPtr s) { snap_ = s; applyBuildProblems(); refreshExecution(); });
-    conns_->add(ctx.debugger.updated, [this](const SimUpdate&) { refreshExecution(); });                  // while the simulator runs: the line of each sequencer, ~30 times a second
+    conns_->add(ctx.debugger.updated, [this](const SimUpdate& u) { refreshExecution(&u); });                  // while the simulator runs: the line of each sequencer, ~30 times a second
     conns_->add(session_.selectionChanged, [this] {
         if (!syncing_) code_->setMarkedLines(session_.selectedLines(), page() == Page::Code);
         refreshInfo();
@@ -311,31 +337,74 @@ void BlockEditor::applyBuildProblems() {
 // What the simulator executes, shown on the blocks: every line of the generated file comes from one block, and that block together with the components
 // plugged into it (numbers, regions, options ...) is "the line". While a sequencer is on a line all of them are drawn in one colour (Main's or Peri's); when it
 // moves on they get their own colours back. Only while the debugged program is the one these blocks generate now (after an edit the lines may have moved).
-void BlockEditor::refreshExecution() {
+void BlockEditor::rebuildPcMap() {
+    const std::string gen = generatedPath();
+    const std::string& text = session_.generated().text;
+    if (pcMapFor_ == snap_.get() && pcMapText_ == text) return;
+    pcMapFor_ = snap_.get();
+    pcMapText_ = text;
+    pcBlock_[0].clear(); pcBlock_[1].clear(); pcText_[0].clear(); pcText_[1].clear();
+    executable_.clear();
+    if (!snap_) return;
+    for (const asmcore::InstrInfo& i : snap_->result.instrs) {
+        if (i.loc.file != gen) continue;
+        const std::string id = session_.blockAtLine(i.loc.line);
+        if (id.empty()) continue;
+        const int d = i.domain == asmcore::Domain::Main ? 0 : 1;
+        pcBlock_[d][i.pc] = id;
+        pcText_[d][i.pc] = i.text;
+        executable_.insert(id);
+    }
+}
+
+void BlockEditor::refreshExecution(const SimUpdate* update) {
     std::map<std::string, QColor> tint;
+    bool match = false;
     if (ctx_.debugger.active() && !ctx_.debugger.stale() && snap_) {
         const std::string gen = generatedPath();
         const std::string* built = nullptr;
         for (const asmcore::Source& s : snap_->sources) if (s.name == gen) built = &s.text;
-        if (built && *built == session_.generated().text) {
-            const Theme theme = Theme::fromSettings(ctx_.settings);
-            const bool dark = theme.background.lightness() < 128;
-            const QColor colour[2] = {dark ? QColor("#b8860b") : QColor("#ffcf3f"), dark ? QColor("#00838f") : QColor("#4dd0e1")};          // Main: amber, Peri: cyan
-            std::function<void(const asmcore::blocks::Block&, const QColor&)> add = [&](const asmcore::blocks::Block& b, const QColor& c) {
-                tint[b.id] = c;
-                for (const auto& v : b.values) for (const asmcore::blocks::Block& child : v.second) add(child, c);      // the components, not the statements inside a container
-            };
-            for (int i = 1; i >= 0; i--) {                                                     // Peri first: where both are on one block, Main's colour wins
-                const asmcore::Domain d = i == 0 ? asmcore::Domain::Main : asmcore::Domain::Peri;
-                const DebugLocation loc = ctx_.debugger.location(d);
-                if (!loc.valid || loc.file != gen) continue;
-                const std::string id = session_.blockAtLine(loc.line);
-                if (id.empty()) continue;
-                if (const asmcore::blocks::Block* b = session_.document().find(id)) add(*b, colour[i]);
-            }
+        match = built && *built == session_.generated().text;
+    }
+    if (match) {
+        const Theme theme = Theme::fromSettings(ctx_.settings);
+        const bool dark = theme.background.lightness() < 128;
+        const QColor colour[2] = {dark ? QColor("#b8860b") : QColor("#ffcf3f"), dark ? QColor("#00838f") : QColor("#4dd0e1")};          // Main: amber, Peri: cyan
+        std::function<void(const asmcore::blocks::Block&, const QColor&)> add = [&](const asmcore::blocks::Block& b, const QColor& c) {
+            tint[b.id] = c;
+            for (const auto& v : b.values) for (const asmcore::blocks::Block& child : v.second) add(child, c);      // the components, not the statements inside a container
+        };
+        for (int i = 1; i >= 0; i--) {                                                     // Peri first: where both are on one block, Main's colour wins
+            const asmcore::Domain d = i == 0 ? asmcore::Domain::Main : asmcore::Domain::Peri;
+            const DebugLocation loc = ctx_.debugger.location(d);
+            if (!loc.valid || loc.file != generatedPath()) continue;
+            const std::string id = session_.blockAtLine(loc.line);
+            if (id.empty()) continue;
+            if (const asmcore::blocks::Block* b = session_.document().find(id)) add(*b, colour[i]);
         }
     }
     scene_->setExecution(tint);
+    // heat, flash and values
+    if (!match) { scene_->execClear(); return; }
+    rebuildPcMap();
+    ViewPtr view = ctx_.debugger.session().view();
+    if (!view) { scene_->execClear(); return; }
+    if (update && update->eventsReset) scene_->execClear();
+    if (update) {
+        const size_t from = update->events.size() > 200 ? update->events.size() - 200 : 0;
+        for (size_t i = from; i < update->events.size(); i++) {
+            const asmcore::sim::Event& e = update->events[i];
+            if (e.type != asmcore::sim::EventType::Issue || (e.domain != 0 && e.domain != 1)) continue;
+            const auto it = pcBlock_[e.domain].find(e.pc);
+            if (it == pcBlock_[e.domain].end()) continue;
+            scene_->execIssued(it->second, e.domain, QString::fromStdString(instructionResult(e.what, e.domain, *view)));
+        }
+    }
+    std::map<std::string, uint64_t> hits;
+    for (int d = 0; d < 2; d++)
+        for (const auto& kv : pcBlock_[d])
+            if (kv.first < view->hits[d].size() && view->hits[d][kv.first]) hits[kv.second] += view->hits[d][kv.first];
+    scene_->execSetHits(hits, executable_);
 }
 
 int BlockEditor::applyFixSteps(const std::vector<FixStep>& steps, std::vector<FixStep>& notApplied) {

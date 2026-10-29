@@ -1,3 +1,4 @@
+#include <cmath>
 #include "block_painter.h"
 
 #include <QCoreApplication>
@@ -19,6 +20,19 @@ BlockPaintState StackPaintInfo::stateOf(const std::string& id) const {
     s.error = errors && errors->count(id);
     s.warning = warnings && warnings->count(id);
     if (tint) { auto it = tint->find(id); if (it != tint->end()) s.tint = it->second; }
+    if (exec) {
+        const auto h = exec->hits.find(id);
+        const uint64_t n = h == exec->hits.end() ? 0 : h->second;
+        if (exec->showHeat && exec->maxHits > 0) {
+            s.hits = n;
+            if (n > 0) s.heat = std::log(1.0 + (double)n) / std::log(1.0 + (double)exec->maxHits);
+            else if (exec->executable.count(id)) s.dim = true;
+        }
+        if (exec->showFlash) {
+            const auto f = exec->flash.find(id);
+            if (f != exec->flash.end() && exec->now - f->second.first < 500) { s.flash = 1.0 - (double)(exec->now - f->second.first) / 500.0; s.flashPeri = f->second.second; }
+        }
+    }
     return s;
 }
 
@@ -197,6 +211,37 @@ void finishBlock(PaintContext& c, const BlockBox& b, const QPainterPath& path, c
     if (st.selected) {
         c.p.setBrush(Qt::NoBrush);
         c.p.setPen(QPen(toQColor(c.theme.selection), 2.5, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+        c.p.drawPath(path);
+    }
+    if (st.dim) {                                                // never executed, while others were: grayed out
+        c.p.setPen(Qt::NoPen);
+        c.p.setBrush(QColor(128, 128, 128, 120));
+        c.p.drawPath(path);
+    }
+    if (st.heat >= 0) {                                          // how often: a bar on the left edge (cool = rarely, hot = often) and the count
+        const QRectF head = qr(b.head);
+        const QColor hot = QColor::fromHsvF((float)std::max(0.0, 0.6 * (1.0 - st.heat)), 0.85f, 0.95f);
+        c.p.setPen(Qt::NoPen);
+        c.p.setBrush(hot);
+        c.p.drawRoundedRect(QRectF(head.left() - 6, head.top() + 1, 4, head.height() - 2), 2, 2);
+        const QString n = st.hits >= 10000 ? QString::number(st.hits / 1000) + "k" : st.hits >= 1000 ? QString::number(st.hits / 1000.0, 'f', 1) + "k" : QString::number(st.hits);
+        QFont f = c.ui;
+        f.setPixelSize(9);
+        f.setBold(true);
+        const QString text = QString::fromUtf8("\xC3\x97") + n;
+        const double w = QFontMetricsF(f).horizontalAdvance(text) + 6;
+        const QRectF pill(head.right() - w - 3, head.top() + 2, w, 12);
+        c.p.setBrush(QColor(20, 24, 32, 175));
+        c.p.drawRoundedRect(pill, 6, 6);
+        c.p.setFont(f);
+        c.p.setPen(Qt::white);
+        c.p.drawText(pill, Qt::AlignCenter, text);
+    }
+    if (st.flash > 0) {                                          // just executed
+        QColor ring = st.flashPeri ? QColor("#19c8e0") : QColor("#ffb300");
+        ring.setAlphaF(st.flash);
+        c.p.setBrush(Qt::NoBrush);
+        c.p.setPen(QPen(ring, 4, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
         c.p.drawPath(path);
     }
     if (st.error || st.warning) {                                // the badge at the top right corner of the first row

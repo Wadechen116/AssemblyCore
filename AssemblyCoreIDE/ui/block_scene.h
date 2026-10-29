@@ -14,6 +14,7 @@
 #include <QGraphicsScene>
 #include <QGraphicsSceneContextMenuEvent>
 #include <QKeyEvent>
+#include <QElapsedTimer>
 #include <QTimer>
 #include <vector>
 
@@ -90,6 +91,19 @@ public:
     // The blocks of the line each sequencer is executing (id -> colour): they are drawn in that colour until the sequencer moves on. Empty: nothing runs.
     void setExecution(const std::map<std::string, QColor>& tint);
     const std::map<std::string, QColor>& execution() const { return tint_; }
+    // ---- the simulator on the blocks (what the block editor feeds from the debugger)
+    //   heat: how often each instruction block ran (a bar on its left edge, "x12", the ones that never ran grayed out); flash: a ring round the block at the moment it
+    //   executes, and a flowing line from the block that ran before it; values: a small label next to the block with what it just did ("scratch[0..1] = 05 00").
+    void execSetOptions(bool values, bool flash, bool heat);
+    void execIssued(const std::string& blockId, int domain, const QString& value);
+    void execSetHits(const std::map<std::string, uint64_t>& hits, const std::set<std::string>& executable);
+    void execClear();
+    bool execShowsAnything() const { return !exec_.hits.empty() || !badges_.empty(); }
+    std::vector<std::string> execFlashing() const;                       // blocks whose ring is on now
+    size_t execFlows() const;                                            // lines that are still visible
+    QString execValue(const std::string& id) const { auto it = badges_.find(id); return it == badges_.end() ? QString() : it->second.text; }
+    uint64_t execHits(const std::string& id) const { auto it = exec_.hits.find(id); return it == exec_.hits.end() ? 0 : it->second; }
+    bool execDimmed(const std::string& id) const { return exec_.showHeat && exec_.maxHits > 0 && exec_.executable.count(id) && !execHits(id); }
     std::string hovered() const { return hovered_; }
     void setHovered(const std::string& id);
 
@@ -174,6 +188,7 @@ public:
     const std::set<std::string>& warningIds() const { return warningIds_; }
 
 protected:
+    void drawForeground(QPainter* p, const QRectF& rect) override;
     void keyPressEvent(QKeyEvent* e) override;
     void mouseDoubleClickEvent(QGraphicsSceneMouseEvent* e) override;
     void contextMenuEvent(QGraphicsSceneContextMenuEvent* e) override;
@@ -234,6 +249,18 @@ private:
     blocks::DocumentLayout layout_;
     std::map<std::string, std::string> problems_;
     std::set<std::string> errorIds_, warningIds_, hatched_;
+    struct Badge { QString text; qint64 at = 0; bool peri = false; };
+    struct Flow { std::string from, to; qint64 at = 0; bool peri = false; };
+    ExecPaint exec_;
+    std::map<std::string, Badge> badges_;
+    std::vector<Flow> flows_;
+    std::string lastIssued_[2];
+    bool showValues_ = true;
+    QElapsedTimer execClock_;
+    QTimer execTimer_;
+    void execTick();
+    bool execAnimating() const;
+    QRectF headRect(const std::string& id) const;
     std::map<std::string, QColor> tint_;
     std::string hovered_;
     ConnectionBag conns_;

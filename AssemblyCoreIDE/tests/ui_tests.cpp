@@ -2092,6 +2092,70 @@ private slots:
         QVERIFY(sc().execution().empty());
     }
 
+    void theBlocksShowTheRunOnlyWhileDebuggingAndGoQuietWhenItStops() {
+        Rig r(".main\nstart: MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]\n ALU ADD unsigned\n JMP start\n.peri\np: JMP p\n", false);
+        r.f.fs->write("/w/p.acproj", "name = p\nsource = prog.generated.asm\nblocks = prog.acblk\n");
+        r.f.fs->write("/w/prog.generated.asm", ".main\nh: JMP h\n");
+        QVERIFY(r.w->openProject("/w/p.acproj"));
+        r.w->openFile("/w/prog.acblk");
+        r.ed = qobject_cast<BlockEditor*>(r.w->tabs()->currentWidget());
+        QVERIFY(r.ed);
+        auto& s = r.ed->session();
+        auto sc = [&]() -> BlockScene& { return r.ed->scene(); };
+        sc().setAnimationsEnabled(false);
+        {   // (an edit and its undo: the generated text goes into the workspace)
+            std::string any;
+            for (const auto& b : s.document().sections[0].blocks) if (b.type.find("jmp") != std::string::npos) any = b.id;
+            QVERIFY(s.apply([&](asmcore::blocks::Editor& e) { return e.setField(any, "target", "p"); }).ok);
+            QVERIFY(s.apply([&](asmcore::blocks::Editor& e) { return e.setField(any, "target", "start"); }).ok);
+        }
+        QVERIFY(r.f.buildAndWait());
+        std::string mov, alu;
+        for (const auto& sec : s.document().sections) for (const auto& b : sec.blocks) {
+            if (b.type.find("mov") != std::string::npos && mov.empty() && sec.domain == "main") mov = b.id;
+            if (b.type.find("alu") != std::string::npos && alu.empty()) alu = b.id;
+        }
+        QVERIFY(!mov.empty() && !alu.empty());
+        // not debugging: the blocks are still
+        auto still = [&] { return !sc().execShowsAnything() && sc().execFlashing().empty() && sc().execFlows() == 0 && sc().execution().empty() && !sc().execDimmed(alu) && sc().execHits(mov) == 0 && sc().execValue(mov).isEmpty(); };
+        QVERIFY(still());
+        std::string why;
+        r.f.dbg.simParams().set("sim.speed", "1", *new std::string);                         // (so slow that nothing runs while the test looks)
+        QVERIFY(r.f.dbg.start(why));
+        for (int i = 0; i < 300 && sc().execution().empty(); i++) QTest::qWait(10);
+        QVERIFY(!sc().execution().empty());
+        // two steps: the MOV, then the ALU
+        r.f.dbg.stepInto();
+        for (int i = 0; i < 300 && sc().execHits(mov) == 0; i++) QTest::qWait(10);
+        QCOMPARE((int)sc().execHits(mov), 1);
+        QCOMPARE(sc().execValue(mov), QString("scratch[0..1] = 05 00"));                     // what the MOV did
+        QVERIFY(std::find(sc().execFlashing().begin(), sc().execFlashing().end(), mov) != sc().execFlashing().end());
+        QVERIFY2(sc().execDimmed(alu), "an instruction that has not run, while another has, is grayed out");
+        r.f.dbg.stepInto();
+        for (int i = 0; i < 300 && sc().execHits(alu) == 0; i++) QTest::qWait(10);
+        QCOMPARE((int)sc().execHits(alu), 1);
+        QVERIFY(!sc().execDimmed(alu) && sc().execValue(alu).startsWith("OUT "));
+        QVERIFY2(sc().execFlows() >= 1, "a line runs from the block that ran before to the one that runs now");
+        // the options of "Run view"
+        QAction* heat = r.ed->runViewButton()->menu()->findChild<QAction*>("execHeat");
+        QVERIFY(heat && heat->isChecked());
+        heat->setChecked(false);
+        r.f.dbg.stepInto();                                                                  // (an update that paints with the option off)
+        QTest::qWait(100);
+        heat->setChecked(true);
+        // the picture
+        r.ed->view().showContent();
+        QApplication::processEvents();
+        QImage img(r.ed->view().viewport()->size(), QImage::Format_ARGB32);
+        r.ed->view().viewport()->render(&img);
+        img.save(QDir::tempPath() + "/acide_block_run.png");
+        // Stop: the run is gone from the blocks, they are as they were before
+        r.f.dbg.stop();
+        for (int i = 0; i < 300 && !still(); i++) QTest::qWait(10);
+        QVERIFY(still());
+        QVERIFY(sc().execution().empty());
+    }
+
     void findAndFixMendsTheBlocksOfAProgram() {
         Rig r(".main\nstart: MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]\n JMP strat\n", false);
         r.f.fs->write("/w/p.acproj", "name = p\nsource = prog.generated.asm\nblocks = prog.acblk\n");

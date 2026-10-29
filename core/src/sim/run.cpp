@@ -1,4 +1,5 @@
 // Scheduler, timed events, injection, run control, and the Simulator facade methods that are not about debugging.
+#include <cctype>
 #include "../codec.h"
 #include <chrono>
 #include <algorithm>
@@ -197,6 +198,11 @@ RunResult Simulator::Impl::runLoop(const RunLimits& lim, int stepDomain, bool, u
             if (who == 0) stepMain(); else stepPeri();
             afterInstruction(d, pcBefore);
             executed++;
+            {
+                std::vector<uint32_t>& h = st.hits[who];
+                if (h.size() <= pcBefore) h.resize((size_t)pcBefore + 64, 0);
+                h[pcBefore]++;
+            }
         }
         takeSnapshotIfDue();
         if (stopRequested) { stopRequested = false; rr.reason = stopWhy; rr.detail = stopDetail; break; }
@@ -384,6 +390,18 @@ bool Simulator::Impl::doEret(int domain, OpCtx& oc) {
     e.resumeValid = false;
     e.cause = -1;
     return true;
+}
+
+const std::vector<uint32_t>& Simulator::pcHits(Domain d) const { return p_->st.hits[d == Domain::Main ? 0 : 1]; }
+
+std::vector<std::pair<std::string, bool>> Simulator::conditions(Domain d) const {
+    std::vector<std::pair<std::string, bool>> v;
+    const int di = d == Domain::Main ? 0 : 1;
+    for (int i = 0; i < 16; i++) {
+        const Cond& c = p_->cond[di][i];
+        if (c.defined && !c.name.empty()) v.push_back({c.name, p_->evalBool(c.e)});
+    }
+    return v;
 }
 
 uint64_t Simulator::instructions(Domain d) const { return d == Domain::Main ? p_->st.m.instrs : p_->st.p.instrs; }

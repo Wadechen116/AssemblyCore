@@ -78,6 +78,11 @@ struct SimSession::Worker {
             if (n > 0) v->regions[r] = sim->readRegion(r, 0, n);
         }
         for (const std::string& n : sim->signalNames()) v->signalValues.push_back({n, sim->signal(n)});
+        for (int i = 0; i < 2; i++) {
+            const Domain d = i == 0 ? Domain::Main : Domain::Peri;
+            v->hits[i] = sim->pcHits(d);
+            v->conditions[i] = sim->conditions(d);
+        }
         for (auto& c : csrNames) v->csrs.push_back({c.first, sim->csr(c.second)});
         v->breakpoints = sim->breakpoints();
         for (const std::string& e : watchExprs) {
