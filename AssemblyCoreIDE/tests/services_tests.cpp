@@ -14,6 +14,7 @@
 #include <sstream>
 #include "auto_debug.h"
 #include "auto_fix.h"
+#include "isa_layout.h"
 #include "sim_compare.h"
 #include "sim_params_store.h"
 #include "build.h"
@@ -1226,6 +1227,58 @@ static void t_auto_fix() {
     }
 }
 
+static void t_isa_layout() {
+    std::printf("\nISA Top layout\n");
+    IsaLayout L = parseIsaLayout(defaultIsaLayoutText());
+    check(L.errors.empty(), "the built-in layout has no errors", L.errors.empty() ? "" : L.errors[0]);
+    check(L.boxes.size() >= 20 && L.wires.size() >= 15, "it has the boxes and wires of the drawing", std::to_string(L.boxes.size()) + " boxes " + std::to_string(L.wires.size()) + " wires");
+    for (const char* id : {"main_dec", "peri_dec", "alu", "scratch", "slot", "csr", "arb", "xfer", "i2ch", "i2cm", "dev", "frame", "main_timer", "peri_timer", "flags", "poll", "rx", "csrbuf"})
+        check(L.box(id) != nullptr, std::string("the box ") + id + " exists");
+    bool inside = true;
+    for (const IsaBox& b : L.boxes) inside &= b.x >= 0 && b.y >= 0 && b.x + b.w <= L.width && b.y + b.h <= L.height;
+    for (const IsaWire& w : L.wires) for (const auto& p : w.points) inside &= p.first >= 0 && p.first <= L.width && p.second >= 0 && p.second <= L.height;
+    check(inside, "every box and wire lies on the canvas");
+    // no two boxes overlap
+    bool overlap = false;
+    for (size_t i = 0; i < L.boxes.size(); i++)
+        for (size_t j = i + 1; j < L.boxes.size(); j++) {
+            const IsaBox &a = L.boxes[i], &b = L.boxes[j];
+            if (a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h) { overlap = true; std::printf("        overlap: %s / %s\n", a.id.c_str(), b.id.c_str()); }
+        }
+    check(!overlap, "no two boxes overlap");
+    // each row fits its box (a title bar of 24 and 20 per row)
+    bool fits = true;
+    for (const IsaBox& b : L.boxes) if (24 + 20 * (double)b.rows.size() + 6 > b.h) { fits = false; std::printf("        too many rows: %s\n", b.id.c_str()); }
+    check(fits, "the rows of every box fit in it");
+    check(L.wiresFor(0, "MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]").size() == 3, "a MOV lights its path");
+    check(L.wiresFor(1, "EXEC_XFER READ dev=0, len=1, ptr=0, ext=[0x10]").size() >= 6, "an EXEC_XFER lights the way to the device");
+    check(L.wiresFor(0, "BR.COND PERI_RESULT_VALID, take, safe") == L.wiresFor(0, "BR.IF_X"), "BR.COND and BR.* share the BR path (the longest mnemonic that starts the text)");
+    check(L.wiresFor(0, "MAIN_NOTHING").empty() && L.wiresFor(1, "ALU ADD").empty(), "an instruction of no path (or of the other side) lights nothing");
+    // the parser reports what is wrong and keeps the rest
+    IsaLayout bad = parseIsaLayout("canvas 500 400\nbox a 0 0 100 50 data \"A\"\nbox b 0 0 100 50 blob \"B\"\nrow a \"x\" pc nowhere\nrow z \"y\" cycle\nrow a \"ok\" cycle\nwire w \"\" 1,1\npath main MOV = ghost\nfoo\n");
+    check(bad.boxes.size() == 1 && bad.boxes[0].rows.size() == 1, "a bad box / row is left out, the rest stays");
+    check(bad.errors.size() >= 6, "...and each problem is reported with its line", std::to_string(bad.errors.size()));
+    check(!bad.errors.empty() && bad.errors[0].find("line 3") == 0, "...", bad.errors.empty() ? "" : bad.errors[0]);
+    // values
+    SimView v;
+    v.cycle = 1234;
+    v.pc[0] = 0x12; v.pc[1] = 0x3;
+    v.instrs[0] = 77;
+    v.regions["scratch"] = {1, 2, 0xAB, 4};
+    v.signalValues = {{"slot.valid", 1}, {"timer_period", 600}, {"main_timer.done", 0}};
+    v.csrs = {{"MARK", (uint8_t)0x7F}};
+    auto at = [](int d, uint32_t pc) { return d == 0 && pc == 0x12 ? std::string("ALU ADD unsigned") : std::string(); };
+    auto val = [&](const char* row, const char* box) { for (const IsaBox& b : L.boxes) if (b.id == box) for (const IsaRow& r : b.rows) if (r.label == row) return isaValue(r.src, &v, at); return std::string("<none>"); };
+    check(val("PC", "main_dec") == "0x0012" && val("next", "main_dec") == "ALU ADD unsigned" && val("executed", "main_dec") == "77", "pc, the instruction at it and the count");
+    check(val("next", "peri_dec") == "-", "an instruction that is not known shows -");
+    check(val("[0..7]", "scratch") == "01 02 AB 04", "a region shows its bytes as hex (as many as there are)");
+    check(val("valid", "slot") == "\xE2\x97\x8F on" && val("done", "main_timer") == "\xE2\x97\x8B off", "a flag is a lamp");
+    check(val("period", "peri_timer") == "600" && val("restarts", "peri_timer") == "-", "a signal is a number, an unknown one is -");
+    check(val("", "csr") == "MARK=0x7F", "the CSRs the program names", val("", "csr"));
+    check(val("cycle", "dev") == "1234", "the cycle");
+    check(isaValue(L.boxes[0].rows[0].src, nullptr, at) == "-" && isaValue(L.box("main_code")->rows[1].src, nullptr, at) == "tables + pool", "without a view every value is -, static text stays");
+}
+
 int main() {
     t_realfs();
     t_paths();
@@ -1245,6 +1298,7 @@ int main() {
     t_live_run();
     t_auto_debug();
     t_auto_fix();
+    t_isa_layout();
     t_debugger();
     std::printf("\n%s  %d passed, %d failed\n", g_fail ? "FAILED" : "OK    ", g_pass, g_fail);
     return g_fail ? 1 : 0;

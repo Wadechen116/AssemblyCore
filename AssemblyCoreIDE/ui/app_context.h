@@ -36,6 +36,7 @@ struct AppContext {
 
     Signal<SnapshotPtr> snapshotChanged;               // a build finished
     Signal<const Location&> goTo;                      // show this place in an editor
+    Signal<const QString&> showPanel;                  // open this panel (memory csrs signals state watch events ...)
     Signal<const Location&> showExecution;             // show the place the simulator is at / a finding is about: on the blocks of a block program, else in the text
     Signal<const std::string&, int> cursorMoved;       // an editor's caret: file, line (for views that follow the caret)
     Signal<const QString&, const std::vector<Location>&> showReferences;    // title, places

@@ -1061,6 +1061,37 @@ Drag it to change the order; double-click the end of it to write a comment</sour
     </message>
 </context>
 <context>
+    <name>IsaTopView</name>
+    <message>
+        <source>Start debugging (F5) to see the diagram live: the values below are what the simulator holds.</source>
+        <translation>開始偵錯 (F5) 才能即時看到這張圖：下面的數值是模擬器目前持有的內容。</translation>
+    </message>
+    <message>
+        <source>Start debugging to see where the %1 decoder is</source>
+        <translation>請先開始偵錯，才看得到 %1 decoder 在哪一行</translation>
+    </message>
+    <message>
+        <source>ISA Top</source>
+        <translation>ISA Top 架構圖</translation>
+    </message>
+    <message>
+        <source>Fit</source>
+        <translation>整張</translation>
+    </message>
+    <message>
+        <source>The whole diagram in the view (double click on the empty canvas does the same; Ctrl+wheel zooms)</source>
+        <translation>整張圖都放進視窗（在空白處雙擊也一樣；Ctrl+滾輪縮放）</translation>
+    </message>
+    <message>
+        <source>Fit width</source>
+        <translation>符合寬度</translation>
+    </message>
+    <message>
+        <source>The whole width of the diagram in the view, readable; the rest scrolls</source>
+        <translation>圖的整個寬度放進視窗，字比較看得清楚；其餘部分用捲動</translation>
+    </message>
+</context>
+<context>
     <name>ListingPanel</name>
     <message>
         <source>Dom</source>
@@ -3094,6 +3125,10 @@ An IDE for the Sensor Micro-Sequencer ISA, built on the AssemblyCore assembler.<
     <message>
         <source>Find what is wrong and mend what has one sure repair, then run the program at full speed and list what is still wrong</source>
         <translation>找出哪裡有問題並修復有把握的部分，再全速執行程式，列出仍然有問題的地方</translation>
+    </message>
+    <message>
+        <source>No panel named %1</source>
+        <translation>沒有名為 %1 的面板</translation>
     </message>
 </context>
 <context>

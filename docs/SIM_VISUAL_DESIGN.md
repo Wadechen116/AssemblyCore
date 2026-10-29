@@ -1,6 +1,6 @@
 # 視覺化模擬器與 FPGA 校正 — 設計（草案，待確認）
 
-> 狀態：**S1、S2 已完成**（S1 參數資料庫：目錄、`[params]`、命令列；S2 目標檔 `.simparams`、IDE 參數面板、執行狀態面板〔雙軌時間軸、基準疊圖、位移折線、差異表〕；清單與用法見 `docs/SIM_PARAMS.md`），S3、S4…尚未實作（S3 的軌跡記錄已有簡版：`sim_compare`）。依據使用者提供的 ISA Top 架構圖（`ISA_Top.png`）。
+> 狀態：**S1、S2、S4 已完成**（持續運行、模擬器分頁、積木上色、自動除錯也已完成）（S1 參數資料庫：目錄、`[params]`、命令列；S2 目標檔 `.simparams`、IDE 參數面板、執行狀態面板〔雙軌時間軸、基準疊圖、位移折線、差異表〕；清單與用法見 `docs/SIM_PARAMS.md`），S3、S5…尚未實作（S3 的軌跡記錄已有簡版：`sim_compare`）。依據使用者提供的 ISA Top 架構圖（`ISA_Top.png`）。
 > 目標：①把 Main／Peri 兩個 sequencer 以「ISA Top 架構圖」即時視覺化；②所有影響時間與行為的硬體條件都是**可調參數**；
 > ③上 FPGA 後，用實測值回饋校正這些參數，讓模擬器與 FPGA 的行為相近、可互相比對。
 
@@ -115,3 +115,14 @@ Timer 是**硬體計時 ＋ BR polling**，由 EXEC_CSR 啟動（`timer_start[:�
 3. 搶資源（§4）硬體上是否真的存在？Arbiter 的裁決規則是什麼？
 4. FPGA 上你打算用什麼量測（ILA、邏輯分析儀、CSR 內的週期計數器）？匯出格式（CSV／VCD）為何？這決定 S8 的匯入格式。
 5. 工作順序是否照 §7？（我建議先做 S1、S2，因為它們不依賴畫面，之後所有視覺化都建立在參數資料庫上。）
+
+## S4 實作：ISA Top 即時圖（已完成）
+
+位置：**模擬器分頁**（`Ctrl+Shift+M`）右半的上方，時間軸在它下面。
+
+- **畫的是**：Main（ISA Main Code → Main-instruction Decoder，ALU、MAIN_SCRATCHPAD、MAIN_CSR_DATA_BUF、Main Status Flag，放行它的 Frame Timing WCET 與 Main Timer）、Peri（ISA Peri Code → Peri-instruction Decoder，Peri Timer、輪詢、PERI_RX_BUF、result_slot → Main）、共用的 CSR Arbiter／CSR／Data Xfer／i2ch／i2cm_top／I2C 裝置。每個方塊的列是**模擬器目前的值**（PC、下一條指令、暫存區位元組、ALU 的 OPA／OPB／OUT 與旗標、slot、Timer、Frame Timing、輪詢旗標、CSR）。
+- **動態**：每執行一條指令，那條指令走過的**連線會亮起**（Main 琥珀色、Peri 青色，帶流動的虛線，約 0.7 秒淡出），對應的 decoder 方塊閃一圈；值**改變的那一列會黃色閃一下**。配合 `sim.speed` 調慢就能一條一條看；全速時就是連續發亮。停在斷點時，圖停在那一刻。
+- **點選**：點方塊開對應的面板（scratchpad／csr_buf／rx_buf／slot → Memory；CSR → CSRs；ALU／Timer／旗標 → State／Signals）；點 **decoder** 跳到它正在執行的那一行（積木程式就是那個積木）。滑鼠停在方塊上有說明。
+- **縮放**：「整張」把整張圖放進視窗，「符合寬度」讓字比較大（其餘用捲動），「100%」，`Ctrl+滾輪`縮放，空白處雙擊 = 整張。
+- **圖是資料**：方塊、列、連線、位置、「某指令點亮哪些連線」都在一份文字檔（`services/isa_layout.cpp` 內建的預設，格式見 `services/isa_layout.h`）。ISA Top 的設計改了，改這個檔就好。要用自己的檔：設定 `isatop.layout` = 檔案路徑（格式同預設；讀不到或有錯就維持內建的圖，錯誤寫進輸出面板）。預設布局是依我手上對你的架構圖的描述排的，**方塊位置與連線若和你的圖不一樣，直接改檔**。
+- **還沒建模的**：CSR Arbiter 與 Data Xfer 的搶資源（圖上標「not modelled yet」），等你確認硬體真的有這種競爭與規則（見 §8 的問題）。

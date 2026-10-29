@@ -84,6 +84,10 @@ MainWindow::MainWindow(AppContext& ctx, PanelRegistry& panels, QWidget* parent) 
     createPanels(panels);
 
     ctx.autoFix = [this](bool apply) { return runAutoFix(apply); };
+    conns_.add(ctx.showPanel, [this](const QString& id) {
+        if (QDockWidget* d = dock(id)) { d->show(); d->raise(); }
+        else statusBar()->showMessage(tr("No panel named %1").arg(id), 4000);
+    });
     conns_.add(ctx.showExecution, [this](const Location& l) {
         for (int i = 0; i < tabs_->count(); i++)                    // a program made of blocks: stay on the blocks (they are coloured), do not open the generated text
             if (auto* be = qobject_cast<BlockEditor*>(tabs_->widget(i)))

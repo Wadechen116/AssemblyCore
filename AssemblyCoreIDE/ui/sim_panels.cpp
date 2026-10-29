@@ -42,6 +42,7 @@
 
 #include "app_context.h"
 #include "document_tab.h"
+#include "isa_top_view.h"
 #include "sim_compare.h"
 #include "sim_panels.h"
 #include "sim_params_store.h"
@@ -1015,7 +1016,11 @@ public:
         params_ = new ParamsPanel(ctx);
         right_ = new QSplitter(Qt::Vertical);
         right_->setObjectName("simulatorRight");
-        right_->addWidget(new ExecutionPanel(ctx));                        // (the ISA Top diagram goes above it)
+        right_->addWidget(createIsaTopPanel(ctx));                         // the ISA Top diagram, live ...
+        right_->addWidget(new ExecutionPanel(ctx));                        // ... above the time line of the same run
+        right_->setStretchFactor(0, 3);
+        right_->setStretchFactor(1, 2);
+        right_->setSizes({420, 300});
         split->addWidget(params_);
         split->addWidget(right_);
         split->setStretchFactor(0, 2);

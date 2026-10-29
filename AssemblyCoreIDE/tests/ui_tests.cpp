@@ -42,6 +42,7 @@
 #include "editing.h"
 #include "hardware_designer.h"
 #include "hardware_link.h"
+#include "isa_top_view.h"
 #include "main_window.h"
 #include "qt_dispatcher.h"
 #include "templates.h"
@@ -920,6 +921,97 @@ private slots:
         const long long frozen = cycle();
         QTest::qWait(150);
         QCOMPARE(cycle(), frozen);
+    }
+
+    void theIsaTopDiagramShowsWhatTheSimulatorHoldsAndWhereItIsGoing() {
+        Rig r(".csr C = 0x10\n.main\ns: MOV CONST(5,2) -> MAIN_SCRATCHPAD[0..1]\n MOV MAIN_SCRATCHPAD[0..1] -> ALU_OPA\n MOV MAIN_SCRATCHPAD[0..1] -> ALU_OPB\n ALU ADD unsigned\n EXEC_CSR WRITE8 C, 1\n JMP s\n.peri\np: JMP p\n");
+        QWidget* page = r.w->openSimulator();
+        auto* view = static_cast<IsaTopView*>(page->findChild<QWidget*>("isaTopView"));
+        QVERIFY(view);
+        r.w->resize(1400, 900);
+        QApplication::processEvents();
+        QVERIFY(view->layout().errors.empty() && view->layout().boxes.size() >= 20);
+        // nothing is debugged: the boxes are there, every value is "-"
+        QCOMPARE(QString::fromStdString(view->valueOf("main_dec", "PC")), QString("-"));
+        QCOMPARE(QString::fromStdString(view->valueOf("main_code", "image")), QString("tables + pool"));
+        QVERIFY(view->litWires().empty());
+        std::string err;
+        r.f.dbg.simParams().set("sim.speed", "1", err);                                       // (so slow that nothing runs while the test looks)
+        r.w->debugAction("start")->trigger();
+        QVERIFY(r.until([&] { return r.f.dbg.running(); }));                                  // F5 runs on its own ...
+        r.f.dbg.pause();                                                                      // ... until it is paused
+        QVERIFY(r.until([&] { return !r.f.dbg.running(); }));
+        r.f.dbg.restart();
+        QVERIFY(r.until([&] { return r.f.dbg.session().view() && r.f.dbg.session().view()->cycle == 0 && !r.f.dbg.running(); }));
+        QTest::qWait(900);                                                                    // (what was lit by the run before is gone)
+        QCOMPARE(QString::fromStdString(view->valueOf("main_dec", "PC")), QString("0x0000"));
+        QVERIFY2(QString::fromStdString(view->valueOf("main_dec", "next")).startsWith("MOV CONST"), qPrintable(QString::fromStdString(view->valueOf("main_dec", "next"))));
+        QCOMPARE(QString::fromStdString(view->valueOf("scratch", "[0..7]")), QString("00 00 00 00 00 00 00 00"));
+        // one step: the MOV's path lights up, Main's decoder pulses, and the scratchpad row that changed flashes
+        r.f.dbg.stepInto();
+        QVERIFY(r.until([&] { return !view->litWires().empty(); }));
+        const auto lit = view->litWires();
+        QVERIFY(std::find(lit.begin(), lit.end(), "w_main_scr") != lit.end() && std::find(lit.begin(), lit.end(), "w_scr_alu") != lit.end());
+        QVERIFY(std::find(lit.begin(), lit.end(), "w_bus_xfer") == lit.end());                // (a Peri path is not lit by a Main instruction)
+        const auto pul = view->pulsingBoxes();
+        QVERIFY(std::find(pul.begin(), pul.end(), "main_dec") != pul.end());                             // (the Peri JMP that falls due before the step may pulse its decoder too)
+        QCOMPARE(QString::fromStdString(view->valueOf("scratch", "[0..7]")), QString("05 00 00 00 00 00 00 00"));
+        const auto flash = view->flashingRows();
+        QVERIFY(std::find(flash.begin(), flash.end(), "scratch/[0..7]") != flash.end());
+        QCOMPARE(QString::fromStdString(view->valueOf("main_dec", "executed")), QString("1"));
+        // it fades
+        QTest::qWait(1000);
+        {   // (the cycle counter of the device box changes with every cycle the slow run still makes: it is allowed to flash)
+            auto flashing = view->flashingRows();
+            flashing.erase(std::remove(flashing.begin(), flashing.end(), std::string("dev/cycle")), flashing.end());
+            QVERIFY(view->litWires().empty() && view->pulsingBoxes().empty() && flashing.empty());
+        }
+        // the ALU: step to the ADD
+        for (int i = 0; i < 3; i++) { r.f.dbg.stepInto(); QTest::qWait(150); }
+        QTest::qWait(500);
+        qInfo() << "DBG2 running" << r.f.dbg.running() << "pc" << QString::fromStdString(view->valueOf("main_dec", "PC")) << "next" << QString::fromStdString(view->valueOf("main_dec", "next")) << "exec" << QString::fromStdString(view->valueOf("main_dec", "executed")) << "OPA" << QString::fromStdString(view->valueOf("alu", "OPA")) << "OUT" << QString::fromStdString(view->valueOf("alu", "OUT"));
+        QVERIFY(r.until([&] { return QString::fromStdString(view->valueOf("alu", "OUT")) == "0A 00"; }));
+        QCOMPARE(QString::fromStdString(view->valueOf("alu", "OPA")), QString("05 00"));
+        QCOMPARE(QString::fromStdString(view->valueOf("alu", "OPB")), QString("05 00"));
+        // the picture, for a look
+        page->grab().save(QDir::tempPath() + "/acide_isa_top.png");
+        view->setZoom(1.0);
+        view->canvas()->grab().save(QDir::tempPath() + "/acide_isa_top_full.png");
+        view->fit();
+        // a click on a box opens the panel it stands for; on a decoder it shows the line it is at
+        QString panel;
+        Location where;
+        ConnectionBag bag;
+        bag.add(r.f.ctx.showPanel, [&](const QString& id) { panel = id; });
+        bag.add(r.f.ctx.showExecution, [&](const Location& l) { where = l; });
+        QTest::mouseClick(view->canvas(), Qt::LeftButton, Qt::NoModifier, view->boxRect("scratch").center());
+        QCOMPARE(panel, QString("memory"));
+        QVERIFY(!r.w->dock("memory")->isHidden());
+        QTest::mouseClick(view->canvas(), Qt::LeftButton, Qt::NoModifier, view->boxRect("main_dec").center());
+        QVERIFY2(where.line >= 3 && where.file == "/w/main.asm", qPrintable(QString::number(where.line)));
+        panel.clear();
+        QTest::mouseClick(view->canvas(), Qt::LeftButton, Qt::NoModifier, view->boxRect("xfer").center());          // a box without a target does nothing
+        QVERIFY(panel.isEmpty());
+        // zoom
+        view->setZoom(1.0);
+        QCOMPARE(view->canvas()->width(), (int)view->layout().width);
+        view->fit();
+        QVERIFY(view->canvas()->width() <= view->viewport()->width());
+    }
+
+    void anotherDrawingCanBeGivenInAFile() {
+        Rig r(".main\nh: JMP h\n");
+        QTemporaryFile f;
+        QVERIFY(f.open());
+        f.write("canvas 400 200\nbox only 10 10 180 80 data \"The one box\"\nrow only \"cycle\" cycle\n");
+        f.close();
+        r.f.settings.set("isatop.layout", f.fileName().toStdString());
+        IsaTopView v(r.f.ctx);
+        QCOMPARE((int)v.layout().boxes.size(), 1);
+        QCOMPARE(QString::fromStdString(v.layout().boxes[0].title), QString("The one box"));
+        r.f.settings.set("isatop.layout", "/no/such/file");
+        IsaTopView w(r.f.ctx);
+        QVERIFY2(w.layout().boxes.size() >= 20, "a file that cannot be read leaves the built-in drawing");
     }
 
     void autoDebugFindsWhatIsWrongAndShowsWhere() {

@@ -14,6 +14,7 @@ set(ACIDE_SERVICE_SOURCES
   ${CMAKE_CURRENT_LIST_DIR}/services/sim_params_store.cpp
   ${CMAKE_CURRENT_LIST_DIR}/services/auto_debug.cpp
   ${CMAKE_CURRENT_LIST_DIR}/services/auto_fix.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/services/isa_layout.cpp
   ${CMAKE_CURRENT_LIST_DIR}/services/sim_compare.cpp
   ${CMAKE_CURRENT_LIST_DIR}/services/blocks/block_theme.cpp
   ${CMAKE_CURRENT_LIST_DIR}/services/blocks/block_shapes.cpp
@@ -46,6 +47,7 @@ set(ACIDE_UI_SOURCES
   ${CMAKE_CURRENT_LIST_DIR}/ui/comment_edit.cpp
   ${CMAKE_CURRENT_LIST_DIR}/ui/field_editor.cpp
   ${CMAKE_CURRENT_LIST_DIR}/ui/block_toolbox.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/ui/isa_top_view.cpp
   ${CMAKE_CURRENT_LIST_DIR}/ui/sim_panels.cpp
   ${CMAKE_CURRENT_LIST_DIR}/ui/custom_block_dialog.cpp
   ${CMAKE_CURRENT_LIST_DIR}/ui/block_texts.cpp

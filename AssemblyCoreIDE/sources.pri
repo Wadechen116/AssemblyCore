@@ -19,6 +19,7 @@ SERVICE_SOURCES = \
     $$IDE_DIR/services/sim_params_store.cpp \
     $$IDE_DIR/services/auto_debug.cpp \
     $$IDE_DIR/services/auto_fix.cpp \
+    $$IDE_DIR/services/isa_layout.cpp \
     $$IDE_DIR/services/sim_compare.cpp \
     $$IDE_DIR/services/blocks/block_theme.cpp \
     $$IDE_DIR/services/blocks/block_shapes.cpp \
@@ -50,6 +51,7 @@ UI_SOURCES = \
     $$IDE_DIR/ui/comment_edit.cpp \
     $$IDE_DIR/ui/field_editor.cpp \
     $$IDE_DIR/ui/block_toolbox.cpp \
+    $$IDE_DIR/ui/isa_top_view.cpp \
     $$IDE_DIR/ui/sim_panels.cpp \
     $$IDE_DIR/ui/custom_block_dialog.cpp \
     $$IDE_DIR/ui/block_texts.cpp \
