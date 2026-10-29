@@ -496,6 +496,25 @@ void BlockEditor::flushSync() {
     }
 }
 
+void BlockEditor::syncGeneratedNow() {
+    if (loading_ || !ctx_.workspace.hasProject()) return;
+    flushSync();
+    const std::string gen = generatedPath();
+    bool inProject = false;
+    for (const std::string& s : ctx_.workspace.project().sources) inProject |= ctx_.workspace.project().absolute(s) == gen;
+    if (!inProject) return;                                                              // (a program that is not built: nothing is written for it)
+    std::string have;
+    if (const Document* d = ctx_.workspace.find(gen)) have = d->text;
+    else ctx_.workspace.fileSystem()->read(gen, have);
+    if (have == session_.generated().text) return;
+    ctx_.workspace.setText(gen, session_.generated().text);
+    if (!attached_) {
+        attached_ = true;
+        std::string err;
+        if (!attachBlocks(ctx_.workspace, path_, gen, err)) ctx_.log.fire(tr("Cannot add the block program to the project: %1").arg(QString::fromStdString(err)));
+    }
+}
+
 void BlockEditor::doSync() {
     if (loading_) return;
     if (!attached_ && ctx_.workspace.hasProject() && session_.document().output.empty()) {

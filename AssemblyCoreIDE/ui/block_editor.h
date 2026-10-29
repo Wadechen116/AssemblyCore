@@ -51,6 +51,9 @@ public:
     // A big program (more than 300 blocks) is written to the workspace a moment after the last edit (serializing it on every edit would be felt); this does it now.
     // Everything that reads or writes files calls it first (saving, building, closing).
     void flushSync();
+    // What is built must be what the blocks generate: if the file they generate is a source of the project and the workspace holds other text under that name
+    // (a program that was just turned into blocks: the workspace still has the original text), the generated text goes into the workspace now. Called before every build.
+    void syncGeneratedNow();
     std::vector<std::string> workspacePaths() const override { return {path_, generatedPath()}; }
     // the assembler file generated from these blocks (the program's `output`, else NAME.generated.asm)
     std::string generatedPath() const;

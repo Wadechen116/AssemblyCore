@@ -577,6 +577,8 @@ void MainWindow::refreshGeneratedMarks() {
 void MainWindow::flushTabs() {
     for (int i = 0; i < tabs_->count(); i++)
         if (auto* tab = dynamic_cast<DocumentTab*>(tabs_->widget(i))) tab->prepareToClose();
+    for (int i = 0; i < tabs_->count(); i++)                                       // what is built is what the blocks generate, also for a program that was not edited yet
+        if (auto* be = qobject_cast<BlockEditor*>(tabs_->widget(i))) be->syncGeneratedNow();
 }
 
 bool MainWindow::closeDocTab(int index) {

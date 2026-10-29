@@ -2156,6 +2156,35 @@ private slots:
         QVERIFY(sc().execution().empty());
     }
 
+    void aTextProjectShownAsBlocksIsDebuggedAsBlocks() {         // the shipped example 14, turned into blocks: Start Debugging shows the run on the blocks
+        Rig r(".main\nh: JMP h\n", false);
+        auto slurp = [](const QString& path) { QFile f(path); f.open(QIODevice::ReadOnly); return f.readAll().toStdString(); };
+        const QString dir = QString::fromUtf8(ACIDE_SAMPLE_DIR) + "/";
+        if (!QFileInfo::exists(dir + "14_main_peri_sim/main_peri.asm")) QSKIP("the example is not next to the tests");
+        for (const char* n : {"14_main_peri_sim.acproj", "main_peri.asm", "main_peri_env.cfg", "main_peri.scn", "main_peri.simparams"}) r.f.fs->write(std::string("/w/s14/") + n, slurp(dir + "14_main_peri_sim/" + n));
+        r.f.fs->write("/w/common/defs.inc", slurp(dir + "common/defs.inc"));
+        QVERIFY(r.w->openProject("/w/s14/14_main_peri_sim.acproj"));
+        r.w->openFile("/w/s14/main_peri.asm");
+        BlockEditor* be = r.w->openAsBlocks();
+        QVERIFY(be);
+        r.f.dbg.simParams().set("sim.speed", "0", *new std::string);
+        r.w->debugAction("start")->trigger();
+        auto& sc = be->scene();
+        for (int i = 0; i < 600 && sc.execution().empty(); i++) QTest::qWait(10);
+        // what was built is what the blocks generate (the original text was replaced by it, the original is kept as .bak)
+        const std::string gen = be->generatedPath();
+        QVERIFY(r.f.ws.find(gen) && r.f.ws.find(gen)->text == be->session().generated().text);
+        QVERIFY(r.f.fs->exists(gen + ".bak"));
+        QVERIFY2(!sc.execution().empty(), "the blocks of the line each sequencer is at are coloured");
+        for (int i = 0; i < 300 && sc.execHits(be->session().blockAtLine(1)) == 0 && !sc.execShowsAnything(); i++) QTest::qWait(10);
+        QVERIFY2(sc.execShowsAnything(), "heat and values are there too");
+        r.f.dbg.pause();
+        for (int i = 0; i < 300 && r.f.dbg.running(); i++) QTest::qWait(10);
+        r.f.dbg.stop();
+        for (int i = 0; i < 300 && (sc.execShowsAnything() || !sc.execution().empty()); i++) QTest::qWait(10);
+        QVERIFY(!sc.execShowsAnything() && sc.execution().empty());                             // stopped: still again
+    }
+
     void findAndFixMendsTheBlocksOfAProgram() {
         Rig r(".main\nstart: MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]\n JMP strat\n", false);
         r.f.fs->write("/w/p.acproj", "name = p\nsource = prog.generated.asm\nblocks = prog.acblk\n");
