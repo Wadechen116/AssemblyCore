@@ -172,3 +172,44 @@ Windows 建置在 `/mnt/d/WSL/acbuild_msvc`（`build.bat`、`uitest.bat`），�
 | `AssemblyCoreIDE/docs/IDE_PLAN.md` | IDE 各階段計畫與狀態 |
 | `AssemblyCoreIDE/docs/DEBUGGING.md`、`ARCHITECTURE.md` | 除錯與架構 |
 | `sample/README.md` | 範例專案（01–14） |
+
+---
+
+## 7. 待使用者回答的問題（三處）
+
+回答之前，對應的工作只做到「機制可選、預設關閉」，不會把任何猜測當成預設。回答後請直接填在「答覆」欄，我再據此實作或調整預設。
+
+### 7.1 S8：FPGA 量測資料的格式（阻塞 S8）
+
+| # | 問題 | 選項／說明 | 答覆 |
+|---|---|---|---|
+| A1 | 量測來源是什麼？ | ILA、邏輯分析儀、CSR 週期計數器（可多選） | |
+| A2 | 匯出格式？欄位長什麼樣？ | CSV（欄位：時間、信號名、值？）或 VCD；請給一小段範例檔 | |
+| A3 | 量測時脈和 ISA 週期怎麼對應？ | 例：1 ISA 週期＝N 個取樣點；有沒有固定偏移 | |
+| A4 | 要比對哪些信號？ | 例：兩個 decoder 的 pc、CSR 寫入、`PERI_RESULT_VALID`、計時器 done | |
+
+影響：S8 的匯入器、時間軸疊圖、以及「差在哪一類就建議打開哪個 S7 參數」的判斷。
+
+### 7.2 S7：硬體規則（決定預設值與模型形狀）
+
+| # | 問題 | 目前模型的假設 | 答覆 |
+|---|---|---|---|
+| B1 | CSR Arbiter 在硬體上是否真的存在 Main／Peri 競爭？ | 是（可選，預設關） | |
+| B2 | 裁決規則：先到先得、固定優先（誰優先）、還是輪流？ | 先到先得；同週期撞上才用 `csr.arbiter_policy` | |
+| B3 | 一次 `EXEC_CSR` 占用仲裁器多久？ | `max(1, 延遲 − 1)` 週期（只含存取段） | |
+| B4 | 交接有沒有額外延遲？幾週期？ | 0（`csr.arbiter_penalty`） | |
+| B5 | `EXEC_XFER` 的 I2C 路徑是否也要經過 Arbiter？ | 否 | |
+| B6 | Data Xfer 的使用者還有哪些？ | 只有 Peri `EXEC_PUB` 和 Main 從結果槽的 `MOV` | |
+| B7 | 結果槽的 `valid` 在複製完成前 Main 能否看到？複製要幾週期？ | 發佈當下立即可見（`slot.copy_extra`、`slot.valid_delay` 為 0） | |
+| B8 | 條件旗標到 BR 之間有幾個週期延遲？ALU 旗標也有嗎？ | 0；不含 ALU 旗標（`flag.sample_delay_*`） | |
+| B9 | Main 的觸發語意：Frame Timing WCET＋一個 Timer？ | 尚未定 | |
+
+### 7.3 `timer.shared` 實驗的硬體問題（實驗排在最後）
+
+| # | 問題 | 說明 | 答覆 |
+|---|---|---|---|
+| C1 | 誰可以啟動這個共用計時器？ | 只有 Main？只有 Peri？兩邊都可以？ | |
+| C2 | 完成時是否同時通知兩邊？ | 即 `MAIN_TIMER_DONE` 與 `IF_TIMER_DONE` 是否同一個 done 旗標 | |
+| C3 | 兩邊同時啟動怎麼辦？ | 後者覆蓋、前者優先、或視為錯誤？ | |
+
+實驗內容（待問題回答後才做）：新參數 `timer.shared`（預設關）、`main_timer.*` 對應到 `timer.*`、自動除錯新增「計時器被另一邊搶走」、ISA Top 共用計時器版本、用執行面板基準線比較「共用」與「各自一個」。
