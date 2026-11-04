@@ -38,12 +38,17 @@ void TraceRing::feed(const SimUpdate& u) {
 }
 
 // Over the capacity by a quarter: the oldest rows go (cutting in chunks keeps the cost low), with the markers and gaps older than what is left.
+// The markers have the same capacity of their own: a run with few instructions but a lot going on around them (the frame timing of a program that has
+// stopped, a long wait) would otherwise keep every marker for ever -- and the time line works through all of them on every update.
 void TraceRing::trim() {
-    if (t_.rows.size() <= maxRows_ + maxRows_ / 4) return;
-    const size_t cut = t_.rows.size() - maxRows_;
-    const Cycle from = t_.rows[cut].at;
-    t_.rows.erase(t_.rows.begin(), t_.rows.begin() + (long)cut);
-    dropped_ += cut;
+    Cycle from = 0;
+    bool cut = false;
+    if (t_.rows.size() > maxRows_ + maxRows_ / 4) { from = t_.rows[t_.rows.size() - maxRows_].at; cut = true; }
+    if (t_.marks.size() > maxRows_ + maxRows_ / 4) { from = std::max(from, t_.marks[t_.marks.size() - maxRows_].at); cut = true; }
+    if (!cut) return;
+    const auto rowEnd = std::lower_bound(t_.rows.begin(), t_.rows.end(), from, [](const TraceRow& r, Cycle c) { return r.at < c; });
+    dropped_ += (uint64_t)(rowEnd - t_.rows.begin());
+    t_.rows.erase(t_.rows.begin(), rowEnd);
     t_.truncated = true;
     t_.marks.erase(t_.marks.begin(), std::lower_bound(t_.marks.begin(), t_.marks.end(), from, [](const TraceMarker& m, Cycle c) { return m.at < c; }));
     gaps_.erase(std::remove_if(gaps_.begin(), gaps_.end(), [from](const Gap& g) { return g.to < from; }), gaps_.end());

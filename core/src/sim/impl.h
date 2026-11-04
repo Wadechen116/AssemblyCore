@@ -27,6 +27,9 @@ namespace sim {
 
 inline int di(Domain d) { return d == Domain::Main ? 0 : 1; }
 const Cycle kNever = ~(Cycle)0;
+bool readsStatusFlags(const std::string& conditionText);      // impl.cpp
+// The cycle a timer started at `now` with `period` sets its done latch (builtin.cpp; the parameters as in sim_params.cpp "Timers").
+Cycle timerDoneAt(Cycle now, int64_t period, int64_t cpuHz, int64_t timerHz, int64_t div, bool freeRunning, bool plusOne, int64_t phase, int64_t startLat, int64_t doneLat);
 
 // ---- execution state: ONE copyable value (Snapshot = a copy of this) -------------------------------------------------------
 struct MainState {
@@ -87,7 +90,14 @@ struct State {
     PeriState p;
     SlotState slot;
     EventState ev[2];
-    std::vector<EventRecord> evlog;
+    // The event log. A snapshot is a copy of State, so the log must not be copied whole each time (the IDE keeps 500 snapshots of a run that may see
+    // millions of events): full chunks are frozen and shared between all the copies; only the open tail is copied. evOpen: the record of each domain's
+    // handler that has not returned yet (index over the whole log), -1 none.
+    static constexpr size_t kEvChunk = 256;
+    std::vector<std::shared_ptr<const std::vector<EventRecord>>> evFrozen;
+    std::vector<EventRecord> evTail;
+    int64_t evOpen[2] = {-1, -1};
+    size_t injNext = 0;                                // the next [inject] line of the environment (Impl::injSorted) still to come
     std::vector<int64_t> sig;                          // stored signals
     std::map<uint32_t, uint8_t> csr;                   // stored CSR bytes
     std::vector<std::vector<int64_t>> dev;             // per-device state
@@ -100,7 +110,7 @@ struct State {
     // shared resources (parameters csr.arbiter_*, datapath.*). freeAt: when the one that has it lets go. next: the decoder that was granted it next (it waited), and
     // grantAt: when its turn comes (freeAt plus the hand-over penalty); the other decoder queues behind it. last: who used it last (round robin).
     struct SharedRes { Cycle freeAt = 0, grantAt = 0; int next = -1, last = -1; };
-    SharedRes arb, xfer;
+    SharedRes arb, xfer, flag;                                              // CSR arbiter, Data Xfer, Status Flag unit
     uint64_t stalls[2] = {0, 0}, stallCycles[2] = {0, 0};                  // how often and how long each decoder was held back
     // the value of each stored signal before its last change, and when it changed (flag.sample_delay_*)
     std::vector<int64_t> sigPrev;
@@ -128,6 +138,7 @@ struct CsrDef {
 
 struct Cond {
     bool defined = false;
+    bool flags = false;           // the expression reads a stored flag (not only constants and alu.*): a BR on it goes through the Status Flag unit
     std::string name;
     Expr e;
 };
@@ -199,6 +210,13 @@ struct Simulator::Impl : public ExprBinder, public ExprEnv, public ActionContext
     std::map<int, int> devIndexByAddr;
     int devMapCount = 8;
     std::vector<std::pair<Cycle, std::string>> envInjects;
+    // the [inject] lines in time order (fixed after the environment is read): the State keeps only how far it has got, so a snapshot does not copy them all.
+    // They take part in the timed queue as if they had all been scheduled at reset with sequence numbers from injSeqBase (that is where they were before).
+    std::vector<std::pair<Cycle, std::string>> injSorted;
+    uint64_t injSeqBase = 0;
+    bool injectIsNext() const;                         // the next timed thing is an [inject] line (not st.q.front())
+    bool timedPending() const { return !st.q.empty() || st.injNext < injSorted.size(); }
+    TimedEvent popTimed();
     bool tieMainFirst = true;
     bool faultStopsAll = false;
     // ---- hardware parameters (sim_params.h): read once from `params` by applyParams()
@@ -213,21 +231,22 @@ struct Simulator::Impl : public ExprBinder, public ExprEnv, public ActionContext
     int csrAccessOf[2] = {-1, -1};                     // one CSR access as each decoder sees it (-1: lat.csrAccess)
     int bootCycles = 0;
     int eventDispatchExtra = 0, eretExtra = 0;
-    int timerDiv[2] = {1, 1}, timerStart[2] = {0, 0}, timerDone[2] = {0, 0};     // [0] Main timer, [1] Peri timer
     int i2chOverhead = 0, i2cAck = 0, i2cStretch = 0, i2cTurnaround = 0;
     // shared resources and what a BR sees (S7): 0 = not modelled
     int arbPolicy = 0, arbPenalty = 0;                 // csr.arbiter_policy (0 none, 1 main_first, 2 peri_first, 3 round_robin), csr.arbiter_penalty
     bool xferContention = false;
     int xferPenalty = 0, slotCopyExtra = 0, slotValidDelay = 0;
     int sampleDelay[2] = {0, 0};                       // flag.sample_delay_main / _peri
+    int flagPolicy = 0, flagAccess = 1, flagPenalty = 0;   // flag.arbiter_policy (0 none, 1 main_first, 2 peri_first, 3 round_robin), flag.access_cycles, flag.arbiter_penalty
     mutable Cycle viewDelay_ = 0;                      // while a BR evaluates its condition: how far back in time it sees the flags
     Cycle viewNow() const { return viewDelay_ > st.now ? 0 : st.now - viewDelay_; }
     bool slotVisible() const { return st.slot.valid && st.now >= st.slot.validAt + viewDelay_; }
     bool evalCondition(int domain, const Expr& e) { viewDelay_ = (Cycle)sampleDelay[domain]; const bool r = evalBool(e); viewDelay_ = 0; return r; }
     bool nextIsCsr(int domain) const;                  // the instruction a decoder is about to issue is an EXEC_CSR
+    bool nextReadsFlag(int domain) const;              // ... is a BR whose condition reads the Status Flag unit
     Cycle claim(State::SharedRes& r, int domain, int penalty);      // 0: the resource is the decoder's now; else the cycle it has to wait for
-    bool gate(int domain, uint32_t pc, bool csr, bool xfer);       // true: a shared resource is taken, the instruction waits (and tries again)
-    void occupy(int domain, bool csr, bool xfer, int latency);
+    bool gate(int domain, uint32_t pc, bool csr, bool xfer, bool flag);       // true: a shared resource is taken, the instruction waits (and tries again)
+    void occupy(int domain, bool csr, bool xfer, bool flag, int latency);
     bool mainMoveFromSlot(int arg) const;
     void applyParams();
     Latency latFor(int domain) const { Latency l = lat; if (csrAccessOf[domain] >= 0) l.csrAccess = csrAccessOf[domain]; return l; }
@@ -235,7 +254,10 @@ struct Simulator::Impl : public ExprBinder, public ExprEnv, public ActionContext
         const int phases = Latency::xferPhases(read, addrLen, dataLen);
         return (int64_t)i2chOverhead + (int64_t)phases * (i2cAck + i2cStretch) + ((read && addrLen > 0) ? i2cTurnaround : 0);
     }
-    int64_t param(const std::string& key) const override { return params.get(key); }
+    int64_t param(const std::string& key) const override {          // a Latency field as the simulator runs with it (the environment's [bus] cpu_hz included), else the parameter
+        const ParamDef* d = findParam(key);
+        return d && d->latency ? (int64_t)(lat.*(d->latency)) : params.get(key);
+    }
     uint32_t constSize = 0;
 
     // ---- mutable

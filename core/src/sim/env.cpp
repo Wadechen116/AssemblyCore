@@ -143,6 +143,7 @@ void Simulator::Impl::loadEnv(const std::string& text) {
             Cond c;
             if (!compile(*ex, c.e, err)) { line(err); continue; }
             c.defined = true;
+            c.flags = readsStatusFlags(*ex);
             c.name = s.get("name") ? *s.get("name") : "";
             cond[d][v] = c;
         } else if (s.kind == "inject") {

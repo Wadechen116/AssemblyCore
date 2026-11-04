@@ -85,6 +85,7 @@ add_test(NAME asmcore_tests COMMAND asmcore_tests)
 
 add_executable(asmcore_sim_tests tests/sim_tests.cpp)
 target_link_libraries(asmcore_sim_tests PRIVATE asmcore)
+target_include_directories(asmcore_sim_tests PRIVATE core/src)     # the timer tick model (sim/impl.h: timerDoneAt) is tested directly
 target_compile_definitions(asmcore_sim_tests PRIVATE ASMCORE_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
 add_test(NAME asmcore_sim_tests COMMAND asmcore_sim_tests)
 

@@ -1344,6 +1344,16 @@ static void t_trace_ring() {
         q.feed(update(few, 240));
         check(q.trace().rows.size() == 240 && q.dropped() == 0, "a few over: not cut yet (the cost of cutting is paid in chunks)");
     }
+    {   // a run with markers but (almost) no instructions: the program has stopped, the frame timing goes on. The markers are bounded on their own
+        TraceRing r(200);
+        for (int k = 0; k < 50; k++) {
+            std::vector<Event> ev;
+            for (int i = 0; i < 100; i++) ev.push_back(marker((Cycle)(k * 100 + i) * 10, EventType::Consume, 0));
+            r.feed(update(ev, (Cycle)(k + 1) * 1000));
+        }
+        check(r.trace().rows.empty() && r.trace().marks.size() <= 250 && r.trace().marks.size() >= 200, "5000 markers, no rows: only the newest (capacity) are kept", std::to_string(r.trace().marks.size()));
+        check(r.trace().marks.back().at == 49990 && r.firstCycle() == r.trace().marks.front().at && r.firstCycle() > 0, "the newest are kept, and the history says where it starts now");
+    }
     {   // what the session could not deliver
         TraceRing r(1000);
         r.feed(update({issue(0, 0, 0, "MOV")}, 1));

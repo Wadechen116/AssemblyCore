@@ -1,6 +1,7 @@
 // Simulator construction, signals, expression binding, data regions, CSR bus, faults.
 #include <algorithm>
 #include <cstring>
+#include <cctype>
 
 #include "impl.h"
 
@@ -63,9 +64,7 @@ void Simulator::Impl::applyParams() {
     bootCycles = (int)get("reset.boot_cycles");
     eventDispatchExtra = (int)get("event.dispatch_extra");
     eretExtra = (int)get("event.eret_extra");
-    timerDiv[0] = (int)get("timer.main.clock_div");       timerDiv[1] = (int)get("timer.peri.clock_div");
-    timerStart[0] = (int)get("timer.main.start_latency"); timerStart[1] = (int)get("timer.peri.start_latency");
-    timerDone[0] = (int)get("timer.main.done_latency");   timerDone[1] = (int)get("timer.peri.done_latency");
+    // the timers read their parameters when they start (builtin.cpp, timerDoneAt)
     i2chOverhead = (int)get("i2ch.overhead");
     i2cAck = (int)get("i2c.ack_delay");
     i2cStretch = (int)get("i2c.stretch");
@@ -78,6 +77,9 @@ void Simulator::Impl::applyParams() {
     slotValidDelay = (int)get("slot.valid_delay");
     sampleDelay[0] = (int)get("flag.sample_delay_main");
     sampleDelay[1] = (int)get("flag.sample_delay_peri");
+    flagPolicy = (int)get("flag.arbiter_policy");
+    flagAccess = (int)get("flag.access_cycles");
+    flagPenalty = (int)get("flag.arbiter_penalty");
 }
 
 // New values for a simulator that is running: the state (registers, time, pending events) stays, what is still to be timed follows the new numbers.
@@ -183,6 +185,24 @@ void Simulator::Impl::buildSignals() {
     });
 }
 
+// A condition reads the Status Flag unit when its expression names anything but the ALU flags (alu.*): "1" (ALWAYS) and "alu.cmp_true" do not.
+bool readsStatusFlags(const std::string& text) {
+    for (size_t i = 0; i < text.size();) {
+        const unsigned char ch = (unsigned char)text[i];
+        if (std::isalpha(ch) || ch == '_') {
+            size_t j = i;
+            while (j < text.size() && (std::isalnum((unsigned char)text[j]) || text[j] == '_' || text[j] == '.')) j++;
+            if (text.compare(i, 4, "alu.") != 0) return true;
+            i = j;
+        } else if (std::isdigit(ch)) {
+            while (i < text.size() && (std::isalnum((unsigned char)text[i]) || text[i] == '_')) i++;       // 0x1F, 12
+        } else {
+            i++;
+        }
+    }
+    return false;
+}
+
 void Simulator::Impl::buildDefaultConditions() {
     // Main ConditionMap (spec 7.3). Each entry is an expression over signals; [condition main N] in the environment file replaces it.
     static const struct { int code; const char* name; const char* expr; } kMain[] = {
@@ -200,8 +220,8 @@ void Simulator::Impl::buildDefaultConditions() {
         {0x4, "IF_ERROR", "peri.error"}, {0x5, "IF_NO_ERROR", "!peri.error"}, {0x6, "IF_TIMER_DONE", "timer.done"}, {0x7, "IF_TIMER_NOT_DONE", "!timer.done"},
     };
     std::string e;
-    for (auto& c : kMain) { cond[0][c.code].defined = compile(c.expr, cond[0][c.code].e, e); cond[0][c.code].name = c.name; }
-    for (auto& c : kPeri) { cond[1][c.code].defined = compile(c.expr, cond[1][c.code].e, e); cond[1][c.code].name = c.name; }
+    for (auto& c : kMain) { cond[0][c.code].defined = compile(c.expr, cond[0][c.code].e, e); cond[0][c.code].name = c.name; cond[0][c.code].flags = readsStatusFlags(c.expr); }
+    for (auto& c : kPeri) { cond[1][c.code].defined = compile(c.expr, cond[1][c.code].e, e); cond[1][c.code].name = c.name; cond[1][c.code].flags = readsStatusFlags(c.expr); }
 }
 
 void Simulator::Impl::resetState() {
@@ -218,7 +238,10 @@ void Simulator::Impl::resetState() {
     if (timing.frameCycles > 0) schedule((Cycle)timing.frameCycles, TimedEvent::FrameEnd);
     if (timing.frameCycles > 0 && timing.vLen > 0) { schedule((Cycle)timing.vStart, TimedEvent::WindowEdge, 0, 1); }
     if (timing.lineCycles > 0 && timing.hLen > 0) { schedule((Cycle)timing.hStart, TimedEvent::WindowEdge, 1, 1); }
-    for (auto& ij : envInjects) schedule(ij.first, TimedEvent::Command, 0, 0, ij.second);
+    injSorted = envInjects;
+    std::stable_sort(injSorted.begin(), injSorted.end(), [](const std::pair<Cycle, std::string>& a, const std::pair<Cycle, std::string>& b) { return a.first < b.first; });
+    injSeqBase = st.seq;
+    st.seq += injSorted.size();
     st.m.readyAt = (Cycle)bootCycles;                  // from the end of reset to the first instruction of each sequencer
     st.p.readyAt = (Cycle)bootCycles;
     if (!img[0].present) { st.m.halted = true; st.m.readyAt = kNever; }

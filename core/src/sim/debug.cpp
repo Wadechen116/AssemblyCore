@@ -185,7 +185,7 @@ std::string Simulator::Impl::dump() const {
     std::sort(names.begin(), names.end());
     for (auto& n : names) o << "signal " << n << ": " << signal(n) << "\n";
     for (auto& kv : st.csr) o << "csr[0x" << (std::snprintf(t, sizeof t, "%X", kv.first), t) << "]: " << (int)kv.second << "\n";
-    o << "pending events: " << st.q.size() << "\n";
+    o << "pending events: " << (st.q.size() + (injSorted.size() - st.injNext)) << "\n";
     for (int i = 0; i < 2; i++) {
         auto stk = stack(i == 0 ? Domain::Main : Domain::Peri);
         for (size_t k = 0; k < stk.size(); k++) o << (i == 0 ? "main" : "peri") << ".call[" << k << "]: " << stk[k].proc << " from " << stk[k].callSite.file << ":" << stk[k].callSite.line << (stk[k].inlined ? " (inlined)" : "") << "\n";
@@ -297,8 +297,10 @@ void Simulator::addSink(std::shared_ptr<EventSink> sink) { p_->sinks.push_back(s
 namespace {
 
 const char* typeName(EventType t) {
-    static const char* n[] = {"issue", "retire", "write", "csr", "signal", "bus", "publish", "consume", "overrun", "fault", "inject", "note"};
-    return n[(int)t];
+    static const char* n[] = {"issue", "retire", "write", "csr", "signal", "bus", "publish", "consume", "overrun", "fault", "inject", "note", "event", "stall"};
+    static_assert(sizeof n / sizeof n[0] == (size_t)EventType::Stall + 1, "a name for every EventType");
+    const size_t i = (size_t)t;
+    return i < sizeof n / sizeof n[0] ? n[i] : "?";
 }
 
 class TextTrace : public EventSink {

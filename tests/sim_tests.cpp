@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "asmcore/sim.h"
+#include "sim/impl.h"
 
 using namespace asmcore;
 using namespace asmcore::sim;
@@ -303,7 +304,7 @@ static void t_peri_units() {
     {
         Fx f(".peri\ns: EXEC_CSR WRITE8 TPER, 100\n EXEC_CSR SET8 PERI_CTRL, 1\nw: BR.IF_TIMER_DONE d\n JMP w\nd: EXEC_CSR SET8 PERI_CTRL, 2\nh: JMP h\n", kEnvCsr);
         RunResult rr = f.runUntil("peri.done", 5000);
-        check(rr.reason == StopReason::Condition && rr.now >= 100 && rr.now < 140, "a 100-cycle timer expires after ~100 cycles", "cycle " + std::to_string(rr.now));
+        check(rr.reason == StopReason::Condition && rr.now >= 200 && rr.now < 240, "a 100-tick timer expires after ~200 cycles (13.5 MHz ticks: 2 ISA cycles each)", "cycle " + std::to_string(rr.now));
     }
     {   // clearing a timer cancels its pending expiry; restarting it re-arms from the restart
         Fx f(".peri\ns: EXEC_CSR WRITE8 TPER, 100\n EXEC_CSR SET8 PERI_CTRL, 1\n EXEC_CSR SET8 PERI_CTRL, 8\nh: JMP h\n",
@@ -674,6 +675,36 @@ static void t_events() {
         "nxt: MOV CONST(2, 1) -> MAIN_SCRATCHPAD[1..1]\n BR.COND PERI_RESULT_VALID, loop, safe\n jl: JMP loop\n"
         "h: MOV CONST(7, 1) -> MAIN_SCRATCHPAD[5..5]\n BR.ERET\n"
         "h1: MOV CONST(9, 1) -> MAIN_SCRATCHPAD[6..6]\n BR.ERET\n";
+    {   // many events (more than one chunk of the log: State::kEvChunk) with history on: winding back and restoring a snapshot give the same log as one straight run
+        std::string env = "[inject]\n";
+        for (int i = 0; i < 700; i++) env += "at " + std::to_string(100 + i * 60) + " = event main id=" + std::to_string(i % 2) + "\n";
+        auto same = [](const std::vector<EventRecord>& a, const std::vector<EventRecord>& b) {
+            if (a.size() != b.size()) return false;
+            for (size_t i = 0; i < a.size(); i++)
+                if (a[i].id != b[i].id || a[i].raisedAt != b[i].raisedAt || a[i].dispatchedAt != b[i].dispatchedAt || a[i].returned != b[i].returned || a[i].returnedAt != b[i].returnedAt || a[i].resumePc != b[i].resumePc) return false;
+            return true;
+        };
+        RunLimits l; l.stopOnIdle = false;
+        Fx straight(prog, env);
+        l.maxCycles = 30000; straight.sim->run(l);
+        const auto all = straight.sim->eventLog();
+        check(all.size() > 300 && all.back().returned, "(700 events are injected: more than one chunk is dispatched and returned)", std::to_string(all.size()));
+        Fx f(prog, env);
+        f.sim->enableHistory(1000, 100);
+        l.maxCycles = 30000; f.sim->run(l);
+        const Snapshot end = f.sim->snapshot();
+        check(same(f.sim->eventLog(), all), "with history on, the log is the same as without");
+        check(f.sim->rewindTo(12345), "wind back into the middle");
+        const auto mid = f.sim->eventLog();
+        size_t expect = 0;
+        for (const EventRecord& r : all) if (r.dispatchedAt <= 12345) expect++;
+        check(mid.size() == expect && (mid.empty() || !mid.back().returned || mid.back().returnedAt <= 12345), "...the log holds what had happened by then (a handler that returns later is open again)", std::to_string(mid.size()) + " vs " + std::to_string(expect));
+        l.maxCycles = 30000 - f.sim->now(); f.sim->run(l);
+        check(same(f.sim->eventLog(), all), "running on from there gives the same log again");
+        f.sim->rewindTo(5000);
+        f.sim->restore(end);
+        check(same(f.sim->eventLog(), all), "a snapshot taken later restores the later log (snapshots share the log, they do not lose it)");
+    }
     {   // a taken checkpoint: the resume PC is the resolved TARGET
         Fx f(prog);
         if (!f.good()) { check(false, "setup"); return; }
@@ -1000,9 +1031,28 @@ static void t_params() {
         auto doneOf = [&](const SimParams& p) { Fx f(prog, kEnvCsr, CallModel::Inline, &p); return f.good() ? f.runUntil("peri.done", 100000).now : 0; };
         const Cycle t0 = doneOf(SimParams());
         auto near = [&](Cycle got, Cycle want) { return got + 4 >= want && got <= want + 4; };      // the poll loop looks every two cycles
-        check(near(doneOf(P({{"timer.peri.clock_div", "4"}})), t0 + 300), "timer.peri.clock_div = 4: a 100-tick timer takes 400 cycles (+300)", std::to_string(t0));
+        check(near(doneOf(P({{"clock.timer_hz", "27000000"}})), t0 - 100), "the default 13.5 MHz timer clock is 2 ISA cycles per tick: at 27 MHz the 100-tick wait is 100 cycles shorter", std::to_string(t0));
+        check(near(doneOf(P({{"clock.timer_hz", "6750000"}})), t0 + 200), "clock.timer_hz = 6.75 MHz: 4 cycles per tick (+200)");
+        check(near(doneOf(P({{"timer.peri.clock_div", "4"}})), t0 + 200), "timer.peri.clock_div = 4 (an override of this timer alone): 4 cycles per tick (+200)");
         check(near(doneOf(P({{"timer.peri.start_latency", "50"}, {"timer.peri.done_latency", "20"}})), t0 + 70), "timer.peri.start_latency 50 and done_latency 20: +70");
+        check(near(doneOf(P({{"timer.count", "n_plus_1"}})), t0 + 2), "timer.count = n_plus_1: one tick more (+2)");
         check(near(doneOf(P({{"timer.main.clock_div", "9"}, {"timer.main.start_latency", "99"}})), t0), "...the Main timer's values do not touch the Peri timer");
+        Fx f(prog, "[bus i2c]\ncpu_hz = 54000000\n" + std::string(kEnvCsr), CallModel::Inline, nullptr);
+        check(f.good() && near(f.runUntil("peri.done", 100000).now, t0 + 200), "the environment's cpu_hz = 54 MHz: 4 ISA cycles per 13.5 MHz tick (+200)");
+    }
+    {   // the tick model itself (timerDoneAt): 27 MHz / 13.5 MHz, a start at cycle `now`, no latencies
+        using sim::timerDoneAt;
+        auto fr = [](Cycle now, int64_t n, int64_t phase = 0, bool plus = false) { return timerDoneAt(now, n, 27000000, 13500000, 0, true, plus, phase, 0, 0); };
+        auto rs = [](Cycle now, int64_t n) { return timerDoneAt(now, n, 27000000, 13500000, 0, false, false, 0, 0, 0); };
+        check(fr(3, 2) == 6 && fr(4, 2) == 8, "free_running: ticks on the even cycles; a start at 3 is done at 6 (3 cycles), at 4 at 8 (4 cycles)");
+        check(fr(3, 2, 1) == 7 && fr(4, 2, 1) == 7, "timer.phase = 1: the ticks move to the odd cycles (3 -> 7, 4 -> 7)");
+        check(rs(3, 2) == 7 && rs(4, 2) == 8, "restart: always period x 2 (3 -> 7, 4 -> 8)");
+        check(fr(4, 3, 0, true) == 12, "n_plus_1: period 3 is 4 ticks (4 -> 12)");
+        check(timerDoneAt(10, 5, 27000000, 13500000, 0, true, false, 0, 3, 4) == 26, "start_latency 3 and done_latency 4: the first tick after 13 is 14, the fifth 22, done 26");
+        check(timerDoneAt(0, 3, 27000000, 10000000, 0, true, false, 0, 0, 0) == 9, "a ratio that is not whole (2.7 cycles per tick): ticks at 3, 6, 9 (ceil of 2.7, 5.4, 8.1)");
+        const Cycle big = (Cycle)1 << 40;
+        check(fr(big + 1, 1) == big + 2 && rs(big + 1, 1) == big + 3, "no overflow far into a run (2^40 cycles)");
+        check(timerDoneAt(0, 1, 27000000, 13500000, 0, true, false, 5, 0, 0) == 1 && fr(0, 1, 1) == 1, "the grid repeats every tick: phase 5 is the same as phase 1 (a start at 0 is done at 1)");
     }
     {   // the path to the I2C device: a read of one byte after one register address byte is 4 byte phases
         const std::string env = std::string(kEnvCsr) + "[device d]\naddr = 0x68\nreg 0x10 = 0x55\n";
@@ -1136,6 +1186,30 @@ static void t_params() {
         // Peri's EXEC_PUB is longer by the copy extra
         auto periCount = [&](const SimParams& p) { Fx g(".main\nh: JMP h\n.peri\np: EXEC_PUB service=1, src=0, len=2\n JMP p\n", "", CallModel::Inline, &p); RunLimits ll; ll.maxCycles = 1000; ll.stopOnIdle = false; g.sim->run(ll); return (long long)g.sim->instructions(Domain::Peri); };
         check(periCount(P({{"slot.copy_extra", "20"}})) < periCount(SimParams()), "slot.copy_extra makes the EXEC_PUB itself longer too");
+    }
+    {   // S7: the Status Flag unit, shared by the Main and the Peri BRs. Both poll a flag in a BR + JMP loop, started together
+        struct Stalls : EventSink { int main = 0, peri = 0; int64_t cycles = 0; void onEvent(const Event& e) override { if (e.type == EventType::Stall && e.what == "flag") { (e.domain == 0 ? main : peri)++; cycles += e.a; } } };
+        auto run = [&](const std::string& mainCond, const SimParams& p) {
+            const std::string prog = ".main\nm: BR.COND " + mainCond + ", x\n JMP m\nx: JMP x\n.peri\np: BR.IF_TIMER_DONE y\n JMP p\ny: JMP y\n";
+            Fx f(prog, "", CallModel::Inline, &p);
+            auto st = std::make_shared<Stalls>();
+            f.sim->addSink(st);
+            RunLimits l; l.maxCycles = 400; l.stopOnIdle = false;
+            f.sim->run(l);
+            return *st;
+        };
+        Stalls a = run("MAIN_TIMER_DONE", P({{"flag.arbiter_policy", "none"}}));
+        check(a.main == 0 && a.peri == 0, "flag.arbiter_policy none: the two BRs never wait for each other");
+        a = run("MAIN_TIMER_DONE", SimParams());
+        check(a.main == 0 && a.peri == 1 && a.cycles == 1, "main_first (the default, as the hardware does it): both BRs want the unit in cycle 0, Peri waits 1 cycle; after that the loops interleave (JMP does not read a flag)", std::to_string(a.main) + "/" + std::to_string(a.peri));
+        a = run("MAIN_TIMER_DONE", P({{"flag.arbiter_policy", "peri_first"}}));
+        check(a.main == 1 && a.peri == 0, "peri_first: Main waits");
+        a = run("MAIN_TIMER_DONE", P({{"flag.arbiter_policy", "main_first"}, {"flag.access_cycles", "3"}}));
+        check(a.peri > 50 && a.main > 50, "flag.access_cycles = 3: a BR holds the unit longer than the loop, so they keep meeting there and take turns", std::to_string(a.main) + "/" + std::to_string(a.peri));
+        Stalls pen = run("MAIN_TIMER_DONE", P({{"flag.arbiter_policy", "main_first"}, {"flag.arbiter_penalty", "4"}}));
+        check(pen.peri >= 1 && pen.cycles >= 5, "flag.arbiter_penalty = 4: the first wait is 1 + 4 cycles", std::to_string(pen.cycles));
+        a = run("ALU_CMP_TRUE", P({{"flag.arbiter_policy", "main_first"}}));
+        check(a.main == 0 && a.peri == 0, "a BR on an ALU flag (ALU_CMP_TRUE) does not use the Status Flag unit");
     }
     {   // S7: what a BR sees: the flags as they were some cycles ago
         const std::string mainProg = ".csr A = 0x50\n.main\ns: BR.COND MAIN_TIMER_DONE, go\n JMP s\ngo: EXEC_CSR WRITE8 A, 1\nh: JMP h\n";

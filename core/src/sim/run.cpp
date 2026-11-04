@@ -122,6 +122,22 @@ bool Simulator::Impl::nextIsCsr(int domain) const {
     return ((uint8_t)img[domain].u8(pc) >> 6) == 0;                          // opcode 0 is EXEC_CSR in both decoders
 }
 
+bool Simulator::Impl::nextReadsFlag(int domain) const {
+    const uint32_t pc = domain == 0 ? st.m.pc : st.p.pc;
+    if (!img[domain].present || pc >= img[domain].codeLimit) return false;
+    const uint8_t b = (uint8_t)img[domain].u8(pc);
+    if ((b >> 6) != 1) return false;                                         // opcode 1 is BR in both decoders
+    uint32_t d = 0;
+    if (domain == 0) {
+        if (!img[0].entry(MT_BRANCH, (uint32_t)(b & 63), 2, d)) return false;
+        const codec::MainBranch mb = codec::unpackMainBranch(d);
+        return mb.type == 0 && mb.arg >= 0 && mb.arg < 16 && cond[0][mb.arg].defined && cond[0][mb.arg].flags;      // BR.COND (CASCADE / ERET do not read a flag)
+    }
+    if (!img[1].entry(PT_BRANCH, (uint32_t)(b & 63), 2, d)) return false;
+    const codec::PeriBranch pb = codec::unpackPeriBranch(d);
+    return pb.type >= 0 && pb.type < 8 && cond[1][pb.type].defined && cond[1][pb.type].flags;
+}
+
 bool Simulator::Impl::mainMoveFromSlot(int arg) const {
     uint32_t d = 0;
     if (!img[0].entry(MT_MOVE, (uint32_t)arg, 4, d)) return false;
@@ -141,11 +157,12 @@ Cycle Simulator::Impl::claim(State::SharedRes& r, int d, int penalty) {
 }
 
 // An instruction that needs a resource both decoders share and does not get it now does not start: it tries again when its turn has come.
-bool Simulator::Impl::gate(int d, uint32_t pc, bool csr, bool xfer) {
+bool Simulator::Impl::gate(int d, uint32_t pc, bool csr, bool xfer, bool flag) {
     Cycle until = 0;
     const char* what = nullptr;
     if (csr && arbPolicy != 0) { const Cycle u = claim(st.arb, d, arbPenalty); if (u) { until = u; what = "csr"; } }
     if (xfer && xferContention) { const Cycle u = claim(st.xfer, d, xferPenalty); if (u && u > until) { until = u; what = "xfer"; } }
+    if (flag && flagPolicy != 0) { const Cycle u = claim(st.flag, d, flagPenalty); if (u && u > until) { until = u; what = "flag"; } }
     if (!what) return false;
     (d == 0 ? st.m.readyAt : st.p.readyAt) = until;
     st.stalls[d]++;
@@ -154,13 +171,37 @@ bool Simulator::Impl::gate(int d, uint32_t pc, bool csr, bool xfer) {
     return true;
 }
 
-void Simulator::Impl::occupy(int d, bool csr, bool xfer, int latency) {
+void Simulator::Impl::occupy(int d, bool csr, bool xfer, bool flag, int latency) {
     if (csr && arbPolicy != 0) { st.arb.freeAt = st.now + (Cycle)std::max(1, latency - 1); st.arb.last = d; }        // the access part of the instruction
     if (xfer && xferContention) { st.xfer.freeAt = st.now + (Cycle)std::max(1, latency); st.xfer.last = d; }
+    if (flag && flagPolicy != 0) { st.flag.freeAt = st.now + (Cycle)std::max(1, flagAccess); st.flag.last = d; }
+}
+
+bool Simulator::Impl::injectIsNext() const {
+    if (st.injNext >= injSorted.size()) return false;
+    if (st.q.empty()) return true;
+    const Cycle ti = injSorted[st.injNext].first;
+    const TimedEvent& f = st.q.front();
+    return ti != f.t ? ti < f.t : injSeqBase < f.seq;
+}
+
+TimedEvent Simulator::Impl::popTimed() {
+    if (injectIsNext()) {
+        TimedEvent e;
+        e.t = injSorted[st.injNext].first;
+        e.seq = injSeqBase;
+        e.kind = TimedEvent::Command;
+        e.s = injSorted[st.injNext].second;
+        st.injNext++;
+        return e;
+    }
+    TimedEvent e = std::move(st.q.front());
+    st.q.erase(st.q.begin());
+    return e;
 }
 
 Cycle Simulator::Impl::nextTime(int& who) const {
-    Cycle tq = st.q.empty() ? kNever : st.q.front().t;
+    Cycle tq = injectIsNext() ? injSorted[st.injNext].first : st.q.empty() ? kNever : st.q.front().t;
     Cycle tm = (st.m.halted || st.m.faulted) ? kNever : st.m.readyAt;
     Cycle tp = (st.p.halted || st.p.faulted) ? kNever : st.p.readyAt;
     Cycle best = tq;
@@ -169,6 +210,8 @@ Cycle Simulator::Impl::nextTime(int& who) const {
     bool mainFirst = tieMainFirst;
     if (arbPolicy != 0 && tm == tp && tm != kNever && nextIsCsr(0) && nextIsCsr(1))                  // both want the CSR bus in the same cycle: the arbiter chooses
         mainFirst = arbPolicy == 1 ? true : arbPolicy == 2 ? false : st.arb.last != 0;                // round robin: the one that did not have it last
+    else if (flagPolicy != 0 && tm == tp && tm != kNever && nextReadsFlag(0) && nextReadsFlag(1))   // both BRs want the Status Flag unit in the same cycle
+        mainFirst = flagPolicy == 1 ? true : flagPolicy == 2 ? false : st.flag.last != 0;
     if (mainFirst) { consider(tm, 0); consider(tp, 1); }
     else { consider(tp, 1); consider(tm, 0); }
     if (best == kNever) who = -1;
@@ -216,7 +259,7 @@ RunResult Simulator::Impl::runLoop(const RunLimits& lim, int stepDomain, bool, u
         }
         if (polls == 1 && ((lim.cancel && lim.cancel()) || (cancelHook && cancelHook()))) { rr.reason = StopReason::Cancelled; rr.detail = "cancelled"; break; }
         if (bothStopped(st)) {
-            if (lim.stopOnIdle || st.q.empty()) { rr.reason = StopReason::Idle; rr.detail = "both domains halted or faulted"; break; }
+            if (lim.stopOnIdle || !timedPending()) { rr.reason = StopReason::Idle; rr.detail = "both domains halted or faulted"; break; }
         }
         int who;
         Cycle t = nextTime(who);
@@ -224,8 +267,7 @@ RunResult Simulator::Impl::runLoop(const RunLimits& lim, int stepDomain, bool, u
         if (lim.maxCycles && t - start > lim.maxCycles) { st.now = start + lim.maxCycles; rr.reason = StopReason::CycleLimit; break; }
         st.now = t;
         if (who == 2) {
-            TimedEvent e = st.q.front();
-            st.q.erase(st.q.begin());
+            const TimedEvent e = popTimed();
             handleTimed(e);
         } else {
             Domain d = who == 0 ? Domain::Main : Domain::Peri;
@@ -379,7 +421,12 @@ bool Simulator::faulted(Domain d) const { return d == Domain::Main ? p_->st.m.fa
 const Fault* Simulator::fault(Domain d) const { return p_->st.hasFault[di(d)] ? &p_->st.fault[di(d)] : nullptr; }
 bool Simulator::inHandler(Domain d) const { return p_->st.ev[di(d)].active; }
 uint64_t Simulator::pendingEvents(Domain d) const { return p_->st.ev[di(d)].pending; }
-std::vector<EventRecord> Simulator::eventLog() const { return p_->st.evlog; }
+std::vector<EventRecord> Simulator::eventLog() const {
+    std::vector<EventRecord> v;
+    for (const auto& c : p_->st.evFrozen) v.insert(v.end(), c->begin(), c->end());
+    v.insert(v.end(), p_->st.evTail.begin(), p_->st.evTail.end());
+    return v;
+}
 
 // ---- hardware events (spec v31 16) --------------------------------------------------------------------------------------------------
 void Simulator::Impl::raiseEvent(int domain, int id) {
@@ -409,7 +456,9 @@ void Simulator::Impl::eventCheckpoint(int domain) {
     r.resumePc = pc;
     r.vectorPc = (uint32_t)vecPc[domain][id];
     r.dispatched = true;
-    st.evlog.push_back(r);
+    st.evOpen[domain] = (int64_t)(st.evFrozen.size() * State::kEvChunk + st.evTail.size());
+    st.evTail.push_back(r);
+    if (st.evTail.size() >= State::kEvChunk) { st.evFrozen.push_back(std::make_shared<const std::vector<EventRecord>>(std::move(st.evTail))); st.evTail.clear(); }
     e.pending &= ~((uint64_t)1 << id);
     e.active = true;
     e.resumeValid = true;
@@ -427,12 +476,22 @@ bool Simulator::Impl::doEret(int domain, OpCtx& oc) {
     if (e.resumePc >= img[domain].codeLimit) { raise(dm, oc.pc, "fault_branch_target", "the saved resume PC " + std::to_string(e.resumePc) + " is outside the code"); return false; }
     oc.next = e.resumePc;                                       // full-width resume PC; no stack, and ERET itself never dispatches another event
     oc.latency = lat.eret + eretExtra;
-    for (size_t i = st.evlog.size(); i-- > 0;)
-        if (st.evlog[i].domain == dm && st.evlog[i].dispatched && !st.evlog[i].returned) {
-            st.evlog[i].returned = true;
-            st.evlog[i].returnedAt = st.now;
-            break;
+    if (st.evOpen[domain] >= 0) {                              // the record of this handler: in the tail, or in a frozen chunk (copied before it changes)
+        const size_t at = (size_t)st.evOpen[domain], chunk = at / State::kEvChunk, k = at % State::kEvChunk;
+        EventRecord* rec = nullptr;
+        if (chunk < st.evFrozen.size()) {
+            auto copy = std::make_shared<std::vector<EventRecord>>(*st.evFrozen[chunk]);
+            rec = &(*copy)[k];
+            rec->returned = true;
+            rec->returnedAt = st.now;
+            st.evFrozen[chunk] = copy;
+        } else if (k < st.evTail.size()) {
+            rec = &st.evTail[k];
+            rec->returned = true;
+            rec->returnedAt = st.now;
         }
+        st.evOpen[domain] = -1;
+    }
     emit([&](Event& ev) { ev.type = EventType::HwEvent; ev.domain = domain; ev.what = "eret"; ev.pc = oc.pc; ev.a = e.cause; ev.b = e.resumePc; });
     e.active = false;
     e.resumeValid = false;

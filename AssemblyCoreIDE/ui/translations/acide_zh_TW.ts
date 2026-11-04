@@ -2312,6 +2312,10 @@ Double click on the time line: wind the simulator back to that cycle (what is la
         <source>the CSR arbiter, which the other one is using</source>
         <translation>另一個正在使用的 CSR 仲裁器</translation>
     </message>
+    <message>
+        <source>the Status Flag unit, which the other one is using</source>
+        <translation>另一個正在使用的 Status Flag 單元</translation>
+    </message>
 </context>
 <context>
     <name>acide::FindBar</name>

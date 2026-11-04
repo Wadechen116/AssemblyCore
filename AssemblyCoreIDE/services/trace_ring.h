@@ -26,7 +26,10 @@ public:
 
     const RunTrace& trace() const { return t_; }            // rows and markers in time order; endAt = where the simulator is
     const std::vector<Gap>& gaps() const { return gaps_; }
-    asmcore::sim::Cycle firstCycle() const { return t_.rows.empty() ? 0 : t_.rows.front().at; }      // where the kept history starts
+    asmcore::sim::Cycle firstCycle() const {                // where the kept history starts
+        if (t_.rows.empty()) return t_.marks.empty() ? 0 : t_.marks.front().at;
+        return t_.marks.empty() ? t_.rows.front().at : std::min(t_.rows.front().at, t_.marks.front().at);
+    }
     uint64_t dropped() const { return dropped_; }           // instructions that fell off the old end
     // The row indexes shift when the old end is cut off: a view that keeps indexes starts again when this number changes.
     uint64_t trimEpoch() const { return epoch_; }

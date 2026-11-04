@@ -1130,6 +1130,59 @@ private slots:
         QVERIFY(r.f.dbg.trace().trace().rows.empty());
     }
 
+    // A long debug run at full speed, with the time line live (ACIDE_SOAK_SECONDS=<n> turns it on; it is skipped otherwise). Every second it writes the
+    // memory of the process, what the history holds and how long the UI takes to answer, so that growth or a UI that cannot keep up shows.
+    //   ACIDE_SOAK_PROGRAM=halt: a program that stops at once while the frame timing goes on (markers but no instructions)
+    void aLongDebugRunStaysBoundedAndResponsive() {
+        const int seconds = qEnvironmentVariableIntValue("ACIDE_SOAK_SECONDS");
+        if (seconds <= 0) QSKIP("set ACIDE_SOAK_SECONDS to run the soak test");
+        const bool halt = qgetenv("ACIDE_SOAK_PROGRAM") == "halt";
+        Rig r(".main\nh: JMP h\n");
+        auto slurp = [](const QString& path) { QFile f(path); f.open(QIODevice::ReadOnly); return f.readAll().toStdString(); };
+        const QString dir = QString::fromUtf8(ACIDE_SAMPLE_DIR) + "/";
+        if (!QFileInfo::exists(dir + "14_main_peri_sim/main_peri.asm")) QSKIP("the example is not next to the tests");
+        for (const char* n : {"14_main_peri_sim.acproj", "main_peri.asm", "main_peri_env.cfg", "main_peri.scn", "main_peri.simparams"}) r.f.fs->write(std::string("/w/s14/") + n, slurp(dir + "14_main_peri_sim/" + n));
+        r.f.fs->write("/w/common/defs.inc", slurp(dir + "common/defs.inc"));
+        if (halt) r.f.fs->write("/w/s14/main_peri.asm", ".include \"defs.inc\"\n.csr MAIN_TPER = 0x320\n.csr MAIN_TPER_H = 0x321\n.csr MAIN_CTRL = 0x322\n.main\nh: JMP h\n.peri\nq: JMP q\n");
+        QVERIFY(r.w->openProject("/w/s14/14_main_peri_sim.acproj"));
+        r.w->openFile("/w/s14/main_peri.asm");
+        QWidget* page = r.w->openSimulator();
+        QWidget* view = page->findChild<QWidget*>("executionView");
+        QVERIFY(view);
+        r.w->resize(1500, 950);
+        QApplication::processEvents();
+        QVERIFY(r.waitBuild());
+        std::string err;
+        r.f.dbg.simParams().set("sim.speed", "0", err);
+        r.w->debugAction("start")->trigger();
+        QVERIFY(r.until([&] { return r.f.dbg.running(); }));
+        auto rssMb = [] { QFile f("/proc/self/statm"); if (!f.open(QIODevice::ReadOnly)) return 0.0; const QList<QByteArray> v = f.readAll().split(' '); return v.size() > 1 ? v[1].toDouble() * 4096 / 1048576 : 0.0; };
+        auto uiLatencyMs = [] {                                                 // how long a queued call waits for the UI thread
+            QElapsedTimer t; t.start();
+            bool fired = false;
+            QTimer::singleShot(0, [&] { fired = true; });
+            while (!fired && t.elapsed() < 20000) QCoreApplication::processEvents(QEventLoop::AllEvents, 5);
+            return (double)t.nsecsElapsed() / 1e6;
+        };
+        double rss0 = 0, worstLatency = 0;
+        for (int s = 0; s < seconds; s++) {
+            QTest::qWait(1000);
+            const double lat = uiLatencyMs(), rss = rssMb();
+            if (s == 2) rss0 = rss;
+            if (s >= 2) worstLatency = std::max(worstLatency, lat);
+            const RunTrace& t = r.f.dbg.trace().trace();
+            std::printf("soak %3ds  rss %7.1f MB  cycle %12llu  rows %7zu  marks %8zu  ui %7.1f ms\n", s + 1, rss, (unsigned long long)t.endAt, t.rows.size(), t.marks.size(), lat);
+            std::fflush(stdout);
+        }
+        r.f.dbg.pause();
+        QVERIFY(r.until([&] { return !r.f.dbg.running(); }, 20000));
+        const double rss1 = rssMb();
+        std::printf("soak end: rss %.1f -> %.1f MB, worst UI wait %.1f ms\n", rss0, rss1, worstLatency);
+        QVERIFY2(r.f.dbg.trace().trace().marks.size() <= 300000, "the markers of the history are bounded");
+        QVERIFY2(worstLatency < 500, "the UI answers while the simulator runs");
+        r.f.dbg.stop();
+    }
+
     void theTimeLineConnectsWhatBelongsTogetherAndAnswersWhenAskedAboutIt() {
         Rig r(".main\nh: JMP h\n");
         auto slurp = [](const QString& path) { QFile f(path); f.open(QIODevice::ReadOnly); return f.readAll().toStdString(); };
@@ -1147,7 +1200,7 @@ private slots:
         QApplication::processEvents();
         QVERIFY(r.waitBuild());
         QVERIFY(r.until([&] { return view->property("links").toInt() > 0; }, 8000));
-        QVERIFY2(stats->text().contains("Results: ") && stats->text().contains(" published, ") && stats->text().contains("waited avg 21 / max 21 cycles") && stats->text().contains("Timers: Main ") && stats->text().contains("Peri ") && stats->text().contains("Bus: "), qPrintable(stats->text()));
+        QVERIFY2(stats->text().contains("Results: ") && stats->text().contains(" published, ") && stats->text().contains("waited avg 21 / max 22 cycles") && stats->text().contains("Timers: Main ") && stats->text().contains("Peri ") && stats->text().contains("Bus: "), qPrintable(stats->text()));
         // the same run, to know where things are
         std::string env = slurp(dir + "14_main_peri_sim/main_peri_env.cfg");
         asmcore::sim::SimConfig cfg;
@@ -2192,6 +2245,35 @@ private slots:
         if (leave) { QDragLeaveEvent lv; QApplication::sendEvent(r.v().viewport(), &lv); }
         else if (drop) { QDropEvent dr(QPointF(p), Qt::CopyAction, mime, Qt::LeftButton, Qt::NoModifier); QApplication::sendEvent(r.v().viewport(), &dr); }
         delete mime;
+    }
+
+    void theToolboxShowsItsSamplesAsBlocks() {
+        DragRig r(".main\nstart: JMP start\n");
+        auto* tree = r.ed->toolbox().tree();
+        int samples = 0, pictures = 0;
+        QStringList missing;
+        for (int i = 0; i < tree->topLevelItemCount(); i++) {
+            QTreeWidgetItem* top = tree->topLevelItem(i);
+            top->setExpanded(true);
+            for (int k = 0; k < top->childCount(); k++) {
+                samples++;
+                const QImage img = r.ed->toolbox().picture(top->child(k)->data(0, Qt::UserRole).toString());
+                if (!img.isNull() && img.width() > 10 && img.height() > 10) pictures++;
+                else missing << top->child(k)->text(0);
+            }
+        }
+        QVERIFY2(samples > 20 && pictures == samples, qPrintable(QString("%1 of %2 drawn as blocks; not: %3").arg(pictures).arg(samples).arg(missing.join(", "))));
+        // a sample row is as tall as its picture (not one line of text), and the picture is the block in its category's colour, not blank
+        QTreeWidgetItem* first = tree->topLevelItem(1)->child(0);
+        const QImage img = r.ed->toolbox().picture(first->data(0, Qt::UserRole).toString());
+        QApplication::processEvents();
+        QVERIFY(tree->visualItemRect(first).height() >= (int)(img.height() / img.devicePixelRatio() * 0.5));      // drawn at 0.55 .. 0.8 of the canvas size
+        int opaque = 0;
+        for (int y = 0; y < img.height(); y += 2) for (int x = 0; x < img.width(); x += 2) opaque += qAlpha(img.pixel(x, y)) > 200;
+        QVERIFY2(opaque > 50, "the picture has the block drawn in it");
+        r.ed->resize(1100, 900);
+        QApplication::processEvents();
+        r.ed->toolbox().grab().save(outDir() + "/blocks_toolbox_as_blocks.png");
     }
 
     void theBlocksSpeakTheChosenLanguage() {

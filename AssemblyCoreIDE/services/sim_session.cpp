@@ -29,6 +29,7 @@ struct SimSession::Worker {
     std::unique_ptr<Simulator> sim;
     std::shared_ptr<Collect> sink;
     std::deque<Event> ring;
+    size_t heldDropped = 0;                                   // events that fell out while updates were held back (publish)
     std::vector<std::pair<std::string, uint32_t>> csrNames;
     std::vector<BreakpointSpec> desiredBps;
     std::map<size_t, int> bpIds;                                // index into desiredBps -> simulator id
@@ -99,6 +100,18 @@ struct SimSession::Worker {
     // Sends the current state (and the events since the last time) to the owner thread.
     void publish(SimState st, const StopInfo* stop = nullptr) {
         state = st;
+        // The UI has not taken the previous update yet: a running update waits for the next one (its events go with that), so that a UI that is slower
+        // than the simulator never has a queue of updates piling up. Only the newest kUpdateCap events are held; the older ones go to the export ring.
+        if (st == SimState::Running && !stop && owner->uiBusy_.load()) {
+            if (sink && sink->events.size() > kUpdateCap) {
+                std::vector<Event>& ev = sink->events;
+                const size_t drop = ev.size() - kUpdateCap;
+                for (size_t i = 0; i < drop; i++) { ring.push_back(ev[i]); if (ring.size() > kRingCap) ring.pop_front(); }
+                ev.erase(ev.begin(), ev.begin() + (long)drop);
+                heldDropped += drop;
+            }
+            return;
+        }
         auto up = std::make_shared<SimUpdate>();
         up->view = makeView();
         up->state = st;
@@ -108,6 +121,8 @@ struct SimSession::Worker {
             for (const Event& e : ev) { ring.push_back(e); if (ring.size() > kRingCap) ring.pop_front(); }
             if (ev.size() > kUpdateCap) { up->droppedEvents = ev.size() - kUpdateCap; up->events.assign(ev.end() - (long)kUpdateCap, ev.end()); }
             else up->events = std::move(ev);
+            up->droppedEvents += heldDropped;
+            heldDropped = 0;
             ev.clear();
         }
         up->eventsReset = eventsReset;
@@ -118,12 +133,14 @@ struct SimSession::Worker {
         up->messages.swap(messages);
         SimSession* o = owner;
         std::weak_ptr<bool> alive = o->alive_;
+        o->uiBusy_ = true;
         o->disp_->post([o, alive, up] {
             auto a = alive.lock();
             if (!a || !*a) return;
             o->state_ = up->state;
             o->view_ = up->view;
             o->updated.fire(*up);
+            o->uiBusy_ = false;
         });
     }
 
@@ -177,6 +194,7 @@ struct SimSession::Worker {
         sim.reset();
         sink.reset();
         ring.clear();
+        heldDropped = 0;
         bpIds.clear();
         watchIds.clear();
         csrNames.clear();
@@ -361,6 +379,7 @@ void SimSession::unload() {
         w.sim.reset();
         w.sink.reset();
         w.ring.clear();
+        w.heldDropped = 0;
         w.bpIds.clear();
         w.watchIds.clear();
         w.publish(SimState::Empty);
@@ -380,6 +399,7 @@ void SimSession::reset() {
         w.sim->reset();
         w.sink->events.clear();
         w.ring.clear();
+        w.heldDropped = 0;
         w.eventsReset = true;
         w.publish(SimState::Paused);
     });
@@ -391,6 +411,7 @@ void SimSession::rewindTo(Cycle t) {
         bool ok = w.sim->rewindTo(t);
         w.sink->events.clear();                                       // the replay re-emits what came before t: start the list afresh
         w.ring.clear();
+        w.heldDropped = 0;
         w.eventsReset = true;
         if (ok) { w.rewound = true; w.rewoundTo = t; }
         if (!ok) w.messages.push_back("cannot rewind to cycle " + std::to_string(t) + " (no earlier snapshot)");

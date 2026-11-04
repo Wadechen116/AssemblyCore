@@ -275,10 +275,11 @@ void Simulator::Impl::stepMain() {
     const auto& h = mainOps[b >> 6];
     if (!h) { raise(Domain::Main, pc, "fault_opcode", "opcode " + std::to_string(b >> 6) + " has no handler"); return; }
     const bool usesCsr = (b >> 6) == 0, usesXfer = (b >> 6) == 2 && xferContention && mainMoveFromSlot(b & 63);
-    if (gate(0, pc, usesCsr, usesXfer)) return;                                   // a shared resource is taken: not now
+    const bool usesFlag = flagPolicy != 0 && nextReadsFlag(0);
+    if (gate(0, pc, usesCsr, usesXfer, usesFlag)) return;                                   // a shared resource is taken: not now
     h(oc);
     if (m.faulted || oc.skipAdvance) return;
-    occupy(0, usesCsr, usesXfer, oc.latency);
+    occupy(0, usesCsr, usesXfer, usesFlag, oc.latency);
     m.pc = oc.next;
     m.readyAt = st.now + (Cycle)(oc.latency + fetchExtra[0]);
     m.instrs++;

@@ -12,6 +12,7 @@
 #include <QGraphicsItem>
 #include <QGraphicsRectItem>
 #include <QGraphicsScene>
+#include <QImage>
 #include <QGraphicsSceneContextMenuEvent>
 #include <QKeyEvent>
 #include <QElapsedTimer>
@@ -82,6 +83,8 @@ public:
     const blocks::BlockTheme& theme() const { return painter_.theme(); }
     void setTheme(const blocks::BlockTheme& t);
     void setLayoutStyle(const blocks::LayoutStyle& s);
+    // A picture of blocks as the canvas draws them (same layout, theme and fonts), without the stack's header: the samples of the toolbox. Null if there is nothing to draw.
+    QImage preview(const std::vector<asmcore::blocks::Block>& blocks, qreal dpr);
 
     // The blocks drawn with a badge: id -> the message shown as tooltip.
     const std::map<std::string, std::string>& problems() const { return problems_; }

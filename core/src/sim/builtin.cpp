@@ -16,18 +16,50 @@ int64_t numberOrZero(const std::string& s, bool* ok = nullptr) {
     return good ? v : 0;
 }
 
+int64_t floorDiv(int64_t a, int64_t b) { int64_t q = a / b; if ((a % b != 0) && ((a < 0) != (b < 0))) q--; return q; }
+int64_t gcd64(int64_t a, int64_t b) { while (b) { const int64_t t = a % b; a = b; b = t; } return a; }
+
+}  // namespace
+
+// When a timer started now is done: the tick model shared by the Main and the Peri timer.
+//   One tick is p / q ISA cycles (clock.cpu_hz / clock.timer_hz, 27 MHz / 13.5 MHz = 2 / 1; or timer.<who>.clock_div / 1 when that override is set).
+//   free_running: tick k is at phase + ceil(k p / q) for every k (a grid fixed since reset); the first tick that counts is the first one after
+//                 the start (now + start_latency).  restart: tick m (m >= 1) is at start + ceil(m p / q).
+//   The period is N ticks (timer.count = n) or N + 1 (n_plus_1); done_latency after the last of them the done latch is set.
+Cycle timerDoneAt(Cycle now, int64_t period, int64_t cpuHz, int64_t timerHz, int64_t div, bool freeRunning, bool plusOne, int64_t phase, int64_t startLat, int64_t doneLat) {
+    int64_t p = div > 0 ? div : std::max<int64_t>(1, cpuHz), q = div > 0 ? 1 : std::max<int64_t>(1, timerHz);
+    const int64_t g = gcd64(p, q); p /= g; q /= g;
+    // ceil(k p / q) without overflow for a large k: k = a q + b  ->  a p + ceil(b p / q)
+    auto at = [&](int64_t k) { const int64_t a = floorDiv(k, q), b = k - a * q; return a * p + (b * p + q - 1) / q; };
+    const int64_t ticks = period + (plusOne ? 1 : 0);
+    const int64_t start = (int64_t)now + startLat;
+    int64_t last;
+    if (freeRunning) {
+        // the first k with phase + ceil(k p / q) > start: k = floor((start - phase) q / p) + 1, again split so that nothing overflows
+        const int64_t t = start - phase, a = floorDiv(t, p), r = t - a * p;
+        const int64_t k1 = a * q + (r * q) / p + 1;
+        last = phase + at(k1 + ticks - 1);
+    } else {
+        last = start + at(ticks);
+    }
+    return (Cycle)(last + doneLat);
+}
+
+namespace {
+
 void startTimer(ActionContext& c, const std::string& arg, const char* done, const char* period, const char* gen) {
     bool ok = false;
     int64_t cycles = arg.empty() ? c.signal(period) : numberOrZero(arg, &ok);
     int64_t g = c.signal(gen) + 1;                          // a new generation: earlier expiries no longer count
     c.setSignal(gen, g);
     c.setSignal(done, 0);
-    // hardware parameters of this timer: it ticks every clock_div ISA cycles, starts start_latency after the EXEC_CSR and shows done done_latency after the last tick
-    const char* who = std::string(done).compare(0, 5, "main_") == 0 ? "main" : "peri";
-    const int64_t div = std::max<int64_t>(1, c.param(std::string("timer.") + who + ".clock_div"));
-    const int64_t delay = c.param(std::string("timer.") + who + ".start_latency") + cycles * div + c.param(std::string("timer.") + who + ".done_latency");
-    if (cycles > 0) c.setSignalAfterGuarded((Cycle)delay, done, 1, gen, g);
-    else c.note(std::string(done) + ": timer started with no period (set the '" + period + "' CSR or give 'timer_start:<cycles>')");
+    if (cycles <= 0) { c.note(std::string(done) + ": timer started with no period (set the '" + period + "' CSR or give 'timer_start:<cycles>')"); return; }
+    // Both timers count the same clock (clock.timer_hz) with the same prescaler model; only the start / done latencies (and a test override of the divider) are per timer.
+    const std::string k = std::string("timer.") + (std::string(done).compare(0, 5, "main_") == 0 ? "main" : "peri") + ".";
+    const Cycle at = timerDoneAt(c.now(), cycles, c.param("clock.cpu_hz"), c.param("clock.timer_hz"), c.param(k + "clock_div"),
+                                 c.param("timer.prescaler") == 0, c.param("timer.count") == 1, c.param("timer.phase"),
+                                 c.param(k + "start_latency"), c.param(k + "done_latency"));
+    c.setSignalAfterGuarded(at > c.now() ? at - c.now() : 0, done, 1, gen, g);
 }
 
 // A device whose registers are described in the environment file.

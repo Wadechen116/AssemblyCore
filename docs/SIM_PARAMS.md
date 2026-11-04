@@ -12,7 +12,7 @@
 - **快速參數**（`Ctrl+Shift+P`，Debug 選單與工具列的「Quick Parameters」；在任何分頁都可用）：一個小彈窗，上面是搜尋框，下面是**已釘選**的常用參數（預設有取指令週期、CSR 存取、Timer 時脈除數、I2C 延展…），每個都有編輯器可以當場改；搜尋時顯示符合的前 14 個，同樣可以當場改。每列右邊：★ 釘選／取消、↺ 還原為初始值、→ 到模擬器頁面顯示並開始編輯。
 - **狀態列**常駐「Parameters: 3 changed · fpga.simparams *」：一眼看出模擬器現在是不是還在初始（規劃）值；按一下開模擬器頁面。
 - **執行狀態（頁面右半）**：把程式在獨立的模擬器跑一次，Main 與 Peri 是兩條軌道（寬度＝指令花的週期，EXEC_XFER 會拉長；事件、I2C 傳輸結束、發佈、結果槽被取走各有標記），**下方的「基準」軌道是用初始值（或存下的那次）跑出來的**，兩者疊在一起，位移一目了然；最下面的折線是兩個定序器的**累積位移**；表格列出每一條被移動的指令（基準週期、現在週期、位移）。參數一改就自動重跑（可關），「第一個差異」跳到最先被動到的指令並放大，滾輪縮放、拖曳平移、雙擊全部看到、點指令跳到原始碼那一行。「存下這次」把現在這次當基準，之後每調一次參數都和它比。
-- **模擬器會一直跑下去**：Run（F5）之後模擬器持續執行，畫面（暫存器、事件、狀態列的週期數）跟著動，只有碰到斷點、錯誤、按 Pause，或程式再也沒有事可做時才停，停在當下讓你檢查。跑多快由參數 `sim.speed`（真實時間每秒幾個 ISA 週期）決定：預設 1000，想一條一條看就調到 20～100，`0` 是全速。**調速度不用進參數表**：Debug 工具列有「速度」下拉（全速／100,000／10,000／1,000／100／10／1，也可以直接輸入任何數字），Debug 選單的「加快」「減慢」（`Ctrl+Alt+↑／↓`）一檔一檔調，執行中也立刻生效，和參數表、快速參數窗同步；Main 與 Peri 各自的 Timer（`timer.*.clock_div`）則決定程式本身的節奏。**執行中改任何參數都立即生效、不中斷**（時間、暫存器、待處理的事件都保留，之後才計時的部分用新數字）；改 Frame Timing 的 WCET 也立刻寫進暫存器。「Restart with these parameters」則是從週期 0 用新參數重來。
+- **模擬器會一直跑下去**：Run（F5）之後模擬器持續執行，畫面（暫存器、事件、狀態列的週期數）跟著動，只有碰到斷點、錯誤、按 Pause，或程式再也沒有事可做時才停，停在當下讓你檢查。跑多快由參數 `sim.speed`（真實時間每秒幾個 ISA 週期）決定：預設 1000，想一條一條看就調到 20～100，`0` 是全速。**調速度不用進參數表**：Debug 工具列有「速度」下拉（全速／100,000／10,000／1,000／100／10／1，也可以直接輸入任何數字），Debug 選單的「加快」「減慢」（`Ctrl+Alt+↑／↓`）一檔一檔調，執行中也立刻生效，和參數表、快速參數窗同步；Main 與 Peri 的 Timer（共用 `clock.timer_hz` = 13.5 MHz，即 ISA 時脈除 2；`timer.prescaler`、`timer.count`、`timer.phase`）則決定程式本身的節奏。**執行中改任何參數都立即生效、不中斷**（時間、暫存器、待處理的事件都保留，之後才計時的部分用新數字）；改 Frame Timing 的 WCET 也立刻寫進暫存器。「Restart with these parameters」則是從週期 0 用新參數重來。
 
 ## 怎麼設定
 
@@ -53,6 +53,7 @@
 |---|---|---|---|---|---|
 | `clock.cpu_hz` | Hz | 27000000 | 1000 … 1000000000 | the ISA clock (spec 14.1) | from the FPGA design |
 | `clock.i2c_hz` | Hz | 400000 | 1000 … 10000000 | the I2C bus clock; 400 kHz is 67.5 ISA cycles per SCL pulse at 27 MHz (spec 14.4) | SCL period on a logic analyzer |
+| `clock.timer_hz` | Hz | 13500000 | 1000 … 1000000000 | the clock both timers count (Main and Peri share it): 13.5 MHz, the ISA clock divided by 2, is 2 ISA cycles per tick | start a timer with period N, measure the cycles until done, divide by N |
 
 ## Frame timing
 
@@ -103,12 +104,15 @@
 
 | 參數 | 單位 | 初始值 | 範圍 | 說明 | 在 FPGA 上怎麼量 |
 |---|---|---|---|---|---|
-| `timer.main.clock_div` | ISA cycles per tick | 1 | 1 … 65535 | main timer: the timer counts at the ISA clock divided by this | start with period N, measure the cycles until done, divide by N |
+| `timer.main.clock_div` | ISA cycles per tick | 0 | 0 … 65535 | main timer: 0 = count clock.timer_hz like the other timer (normal: both share one clock); a number = this timer alone ticks every that many ISA cycles (a test override) | start with period N, measure the cycles until done, divide by N |
 | `timer.main.start_latency` | ISA cycles | 0 | 0 … 1000000 | main timer: from the EXEC_CSR that starts it to the first tick | start with period 1: total time minus the done latency |
 | `timer.main.done_latency` | ISA cycles | 0 | 0 … 1000000 | main timer: from the last tick to the done latch being visible to BR | start with period 1: total time minus the start latency |
-| `timer.peri.clock_div` | ISA cycles per tick | 1 | 1 … 65535 | peri timer: the timer counts at the ISA clock divided by this | start with period N, measure the cycles until done, divide by N |
+| `timer.peri.clock_div` | ISA cycles per tick | 0 | 0 … 65535 | peri timer: 0 = count clock.timer_hz like the other timer (normal: both share one clock); a number = this timer alone ticks every that many ISA cycles (a test override) | start with period N, measure the cycles until done, divide by N |
 | `timer.peri.start_latency` | ISA cycles | 0 | 0 … 1000000 | peri timer: from the EXEC_CSR that starts it to the first tick | start with period 1: total time minus the done latency |
 | `timer.peri.done_latency` | ISA cycles | 0 | 0 … 1000000 | peri timer: from the last tick to the done latch being visible to BR | start with period 1: total time minus the start latency |
+| `timer.prescaler` |  | free_running | free_running \| restart | the tick of both timers. free_running: the divided clock runs all the time, ticks fall on a fixed grid (timer.phase), so the first tick after a start comes 1 to (cycles per tick) cycles later and the wait depends on when it starts. restart: a start also restarts the divider, every wait is exactly period x cycles per tick | start the same timer one cycle apart (odd and even cycle): free_running gives waits that differ, restart gives the same wait |
+| `timer.count` |  | n | n \| n_plus_1 | how many ticks a period of N is: n (load N, count down, done at 0) or n_plus_1 (done one tick after 0, on the underflow) | period 1, 2 and 3: the differences give cycles per tick, what is left over says n or n + 1 |
+| `timer.phase` | ISA cycles | 0 | 0 … 65535 | free_running only: the cycle of the first tick after reset (the tick grid is phase, phase + cycles per tick, ...) | free_running: the start cycles that give the longer wait |
 
 ## I2C path
 
@@ -144,5 +148,8 @@
 
 | 參數 | 單位 | 初始值 | 範圍 | 說明 | 在 FPGA 上怎麼量 |
 |---|---|---|---|---|---|
+| `flag.arbiter_policy` |  | main_first | none \| main_first \| peri_first \| round_robin | Main and Peri read their branch conditions through ONE Status Flag unit: a BR whose condition reads a stored flag (timers, poll, error / done, result slot, frame timing; not ALWAYS and not the ALU flags) holds it for flag.access_cycles, and a BR of the other decoder that finds it taken waits until it is free (plus flag.arbiter_penalty). When both want it in the same cycle this policy chooses: main_first, peri_first or round_robin (the one that did not have it last). none: not shared, the two never wait for each other | both decoders poll a flag in a tight loop, started together: who is slowed, and by how much |
+| `flag.access_cycles` | ISA cycles | 1 | 1 … 100000 | how long one BR holds the Status Flag unit (only with flag.arbiter_policy other than none) | two BRs on a flag in the same cycle: the cycles between the first and the second one |
+| `flag.arbiter_penalty` | ISA cycles | 0 | 0 … 100000 | extra cycles a BR waits after the Status Flag unit became free (the hand-over) | see flag.access_cycles |
 | `flag.sample_delay_main` | ISA cycles | 0 | 0 … 100000 | a Main BR sees the flags as they were this many cycles ago (stored signals such as the timers, the video windows, the result slot; not the ALU flags) | toggle a condition, find the first BR that sees it |
 | `flag.sample_delay_peri` | ISA cycles | 0 | 0 … 100000 | the same for a Peri BR | toggle a condition, find the first BR that sees it |

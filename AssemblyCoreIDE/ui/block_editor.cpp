@@ -166,6 +166,11 @@ BlockEditor::BlockEditor(AppContext& ctx, const std::string& path, QWidget* pare
         catalog_.setCustom(mine);
         toolbox_->refresh();
     }
+    // the samples of the toolbox drawn as blocks, the way the canvas draws them
+    toolbox_->setPreviewer([this](const blocks::CatalogEntry& e) {
+        asmcore::blocks::Document scratch;                                    // fresh ids from a throwaway document: the program's own is not touched
+        return scene_->preview(catalog_.instantiate(e, scratch), toolbox_->devicePixelRatioF());
+    });
     typeblock_ = new TypeBlockBox(catalog_, this);
     pages_->addWidget(blocksPage_);
     pages_->addWidget(code_);

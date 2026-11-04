@@ -189,10 +189,11 @@ void Simulator::Impl::stepPeri() {
     const auto& h = periOps[op];
     if (!h) { raise(Domain::Peri, pc, "fault_opcode", "opcode " + std::to_string(op) + " has no handler"); return; }
     const bool usesCsr = op == 0, usesXfer = op == 2 && xferContention;
-    if (gate(1, pc, usesCsr, usesXfer)) return;                                   // a shared resource is taken: not now
+    const bool usesFlag = flagPolicy != 0 && nextReadsFlag(1);
+    if (gate(1, pc, usesCsr, usesXfer, usesFlag)) return;                                   // a shared resource is taken: not now
     h(oc);
     if (p.faulted || oc.skipAdvance) return;
-    occupy(1, usesCsr, usesXfer, oc.latency);
+    occupy(1, usesCsr, usesXfer, usesFlag, oc.latency);
     p.pc = oc.next;
     if (oc.latency >= 0) p.readyAt = st.now + (Cycle)(oc.latency + fetchExtra[1]);
     p.instrs++;

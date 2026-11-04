@@ -64,6 +64,7 @@ std::vector<ParamDef> build() {
     // ---- clocks
     add("clock.cpu_hz", "Clocks", "Hz", L.cpuHz, 1000, 1000000000, "the ISA clock (spec 14.1)", "from the FPGA design")->latency = &Latency::cpuHz;
     add("clock.i2c_hz", "Clocks", "Hz", L.i2cHz, 1000, 10000000, "the I2C bus clock; 400 kHz is 67.5 ISA cycles per SCL pulse at 27 MHz (spec 14.4)", "SCL period on a logic analyzer")->latency = &Latency::i2cHz;
+    add("clock.timer_hz", "Clocks", "Hz", 13500000, 1000, 1000000000, "the clock both timers count (Main and Peri share it): 13.5 MHz, the ISA clock divided by 2, is 2 ISA cycles per tick", "start a timer with period N, measure the cycles until done, divide by N");
 
     // ---- frame timing (the video timing that Main's conditions look at)
     const int64_t kMaxCycles = 2147483647;
@@ -104,10 +105,18 @@ std::vector<ParamDef> build() {
             d.key = k + name; d.group = "Timers"; d.unit = unit; d.def = def; d.lo = lo; d.hi = hi; d.help = std::string(who) + " timer: " + help; d.measure = measure;
             v.push_back(d);
         };
-        put("clock_div", 1, 1, 65535, "ISA cycles per tick", "the timer counts at the ISA clock divided by this", "start with period N, measure the cycles until done, divide by N");
+        put("clock_div", 0, 0, 65535, "ISA cycles per tick", "0 = count clock.timer_hz like the other timer (normal: both share one clock); a number = this timer alone ticks every that many ISA cycles (a test override)", "start with period N, measure the cycles until done, divide by N");
         put("start_latency", 0, 0, 1000000, "ISA cycles", "from the EXEC_CSR that starts it to the first tick", "start with period 1: total time minus the done latency");
         put("done_latency", 0, 0, 1000000, "ISA cycles", "from the last tick to the done latch being visible to BR", "start with period 1: total time minus the start latency");
     }
+
+    choice("timer.prescaler", "Timers", {"free_running", "restart"}, 0,
+           "the tick of both timers. free_running: the divided clock runs all the time, ticks fall on a fixed grid (timer.phase), so the first tick after a start comes 1 to (cycles per tick) cycles later and the wait depends on when it starts. restart: a start also restarts the divider, every wait is exactly period x cycles per tick",
+           "start the same timer one cycle apart (odd and even cycle): free_running gives waits that differ, restart gives the same wait", true);
+    choice("timer.count", "Timers", {"n", "n_plus_1"}, 0,
+           "how many ticks a period of N is: n (load N, count down, done at 0) or n_plus_1 (done one tick after 0, on the underflow)",
+           "period 1, 2 and 3: the differences give cycles per tick, what is left over says n or n + 1", true);
+    add("timer.phase", "Timers", "ISA cycles", 0, 0, 65535, "free_running only: the cycle of the first tick after reset (the tick grid is phase, phase + cycles per tick, ...)", "free_running: the start cycles that give the longer wait");
 
     // ---- the I2C path behind EXEC_XFER
     add("i2ch.overhead", "I2C path", "ISA cycles", 0, 0, 1000000, "extra cycles from EXEC_XFER to the I2C master starting (the i2ch block)", "EXEC_XFER issue to the first SCL pulse");
@@ -126,6 +135,11 @@ std::vector<ParamDef> build() {
     add("datapath.contention_cycles", "Data path", "ISA cycles", 0, 0, 100000, "extra cycles the one that waited for Data Xfer waits after it became free; only with datapath.contention", "see datapath.contention", true);
     add("slot.copy_extra", "Result slot", "ISA cycles", 0, 0, 100000, "extra cycles for EXEC_PUB to copy rx_buf into result_slot: the instruction takes this much longer and the result becomes visible this much later", "EXEC_PUB of 8 bytes against the model", true);
     add("slot.valid_delay", "Result slot", "ISA cycles", 0, 0, 100000, "delay from the copy to PERI_RESULT_VALID being visible to Main (a BR or a MOV before that does not see the result)", "Main polling PERI_RESULT_VALID after a PUB", true);
+    choice("flag.arbiter_policy", "Status flags", {"none", "main_first", "peri_first", "round_robin"}, 1,
+           "Main and Peri read their branch conditions through ONE Status Flag unit: a BR whose condition reads a stored flag (timers, poll, error / done, result slot, frame timing; not ALWAYS and not the ALU flags) holds it for flag.access_cycles, and a BR of the other decoder that finds it taken waits until it is free (plus flag.arbiter_penalty). When both want it in the same cycle this policy chooses: main_first, peri_first or round_robin (the one that did not have it last). none: not shared, the two never wait for each other",
+           "both decoders poll a flag in a tight loop, started together: who is slowed, and by how much", true);
+    add("flag.access_cycles", "Status flags", "ISA cycles", 1, 1, 100000, "how long one BR holds the Status Flag unit (only with flag.arbiter_policy other than none)", "two BRs on a flag in the same cycle: the cycles between the first and the second one", true);
+    add("flag.arbiter_penalty", "Status flags", "ISA cycles", 0, 0, 100000, "extra cycles a BR waits after the Status Flag unit became free (the hand-over)", "see flag.access_cycles", true);
     add("flag.sample_delay_main", "Status flags", "ISA cycles", 0, 0, 100000, "a Main BR sees the flags as they were this many cycles ago (stored signals such as the timers, the video windows, the result slot; not the ALU flags)", "toggle a condition, find the first BR that sees it", true);
     add("flag.sample_delay_peri", "Status flags", "ISA cycles", 0, 0, 100000, "the same for a Peri BR", "toggle a condition, find the first BR that sees it", true);
     return v;

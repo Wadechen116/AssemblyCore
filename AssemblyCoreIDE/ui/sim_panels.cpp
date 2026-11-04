@@ -63,7 +63,7 @@ QString groupName(const std::string& g) { return QCoreApplication::translate("Si
 // The "pinned" parameters are the ones shown in the quick popup without searching (the settings keep the list; until it is first changed these are the ones).
 std::vector<std::string> pinnedKeys(Settings& s) {
     if (s.getBool("simparams.pinned.set", false)) return s.getList("simparams.pinned");
-    return {"sim.speed", "main.fetch_cycles", "peri.fetch_cycles", "csr.access_main", "csr.access_peri", "latency.alu", "timer.main.clock_div", "timer.peri.clock_div", "i2c.stretch", "i2ch.overhead", "reset.boot_cycles"};
+    return {"sim.speed", "main.fetch_cycles", "peri.fetch_cycles", "csr.access_main", "csr.access_peri", "latency.alu", "clock.timer_hz", "timer.prescaler", "i2c.stretch", "i2ch.overhead", "reset.boot_cycles"};
 }
 bool isPinned(Settings& s, const std::string& key) {
     const std::vector<std::string> v = pinnedKeys(s);
@@ -986,7 +986,7 @@ QString ExecutionView::describeMarker(int i) const {
         case 'f': s = tr("FAULT on %1: %2 (cycle %3)").arg(lane(m.domain)).arg(fromStd(m.what)).arg(cyc(m.at)); break;
         case 's': s = tr("%1 started (cycle %2)").arg(fromStd(m.what)).arg(cyc(m.at)); break;
         case 'd': s = tr("%1 is done (cycle %2)").arg(fromStd(m.what)).arg(cyc(m.at)); break;
-        case 'z': s = tr("%1 waits %2 cycles for %3 (cycle %4)").arg(lane(m.domain)).arg(m.a).arg(m.what == "xfer" ? tr("Data Xfer, which the other one is using") : tr("the CSR arbiter, which the other one is using")).arg(cyc(m.at)); break;
+        case 'z': s = tr("%1 waits %2 cycles for %3 (cycle %4)").arg(lane(m.domain)).arg(m.a).arg(m.what == "xfer" ? tr("Data Xfer, which the other one is using") : m.what == "flag" ? tr("the Status Flag unit, which the other one is using") : tr("the CSR arbiter, which the other one is using")).arg(cyc(m.at)); break;
         default: s = fromStd(m.what); break;
     }
     for (const TraceLink& l : links_)                                                        // what it belongs to

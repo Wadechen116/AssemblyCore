@@ -143,6 +143,7 @@ private:
     bool stop_ = false;
     std::atomic<bool> pause_{false};
     std::atomic<bool> running_{false};
+    std::atomic<bool> uiBusy_{false};                  // an update was posted to the owner thread and it has not been handled yet
     std::atomic<int> pendingRuns_{0};                          // runs asked for that the worker has not started yet (Pause applies to them too)
     std::shared_ptr<bool> alive_ = std::make_shared<bool>(true);
 

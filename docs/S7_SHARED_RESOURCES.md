@@ -2,7 +2,7 @@
 
 AssemblyCore ・ Sensor Micro-Sequencer ISA v1.6 r10 模擬器 ・ 2026-10-29
 
-> **一句話**：Main 與 Peri 兩個 decoder 在硬體上共用 CSR Arbiter 與 Data Xfer，也共用結果槽；S7 把「兩邊會互相等待」、「結果槽的複製與可見需要時間」、「分支看到的旗標有取樣延遲」做成**可由參數打開的模型**。**八個參數全部預設關閉，開著等於完全沒有改變現有行為**；打開之後，兩邊才開始互相等，而且等了多久、誰在等，在時間軸、ISA Top 圖和統計裡都看得到。
+> **一句話**：Main 與 Peri 兩個 decoder 在硬體上共用 CSR Arbiter 與 Data Xfer，也共用結果槽；S7 把「兩邊會互相等待」、「結果槽的複製與可見需要時間」、「分支看到的旗標有取樣延遲」做成**可由參數打開的模型**。**十個參數預設關閉，開著等於完全沒有改變現有行為；`flag.arbiter_policy` 預設 `main_first`（硬體確認共用 Status Flag）**；打開之後，兩邊才開始互相等，而且等了多久、誰在等，在時間軸、ISA Top 圖和統計裡都看得到。
 >
 > **要先說清楚的**：這些是**模型**，不是已經對照 RTL 或 FPGA 驗證過的硬體行為。使用者尚未確認硬體的實際規則（Arbiter 是否真的存在競爭、裁決規則為何），所以預設全關，由量測來決定要不要打開、數值多少。
 
@@ -37,7 +37,7 @@ ISA Top 架構圖上，Main 與 Peri 各自有 decoder、計時器與狀態旗�
 | **Main/Peri CSR Arbiter** | 兩個 decoder 的 `EXEC_CSR` 都要經過它才到 CSR | 各自獨立計時，**從不互相等** |
 | **Data Xfer** | Peri 的 `EXEC_PUB`（寫結果槽）與 Main 從結果槽的 `MOV` 共用 | 從不互相卡 |
 | **result_slot** | Peri `EXEC_PUB` 複製 rx_buf 進去，Main 用 `MOV` 取走 | 發佈的那一刻 `valid` 立刻為 1，複製沒有額外時間 |
-| **Status Flag** | 條件來源（計時器、視窗、結果槽）→ 分支能看到 | 分支看到的就是**當下**的值，沒有取樣延遲 |
+| **Status Flag** | 條件來源（計時器、視窗、結果槽）→ 分支能看到；**Main 與 Peri 共用一個單元** | 分支看到的就是**當下**的值，沒有取樣延遲；兩邊的 BR 不互相等。**現在**：`flag.arbiter_policy` 預設 `main_first`（使用者確認硬體上共用，同一週期 Main 先） |
 
 如果硬體上這些都有成本，而模擬器假裝沒有，**模擬出來的 Main 與 Peri 時間就會比 FPGA 上的樂觀**，而且兩邊交會的時機（例如 Main 何時看到結果）會不一樣。S7 的目的是讓模擬器**能夠**表達這些成本，等你量到硬體的實際行為，再把參數填進去。
 
@@ -51,7 +51,7 @@ ISA Top 架構圖上，Main 與 Peri 各自有 decoder、計時器與狀態旗�
 
 ## 2. 參數一覽
 
-八個參數，全部在「模擬器」分頁的參數表與「快速參數」裡，也可以用 `asmsim --param key=value` 或 `.simparams` 檔設定。**運行中修改立即生效，不中斷。**
+十一個參數，全部在「模擬器」分頁的參數表與「快速參數」裡，也可以用 `asmsim --param key=value` 或 `.simparams` 檔設定。**運行中修改立即生效，不中斷。**
 
 | 參數 | 群組 | 單位 | 預設 | 範圍 | 意思 |
 |---|---|---|---|---|---|
@@ -61,10 +61,13 @@ ISA Top 架構圖上，Main 與 Peri 各自有 decoder、計時器與狀態旗�
 | `datapath.contention_cycles` | Data path | ISA 週期 | 0 | 0..100000 | 同上，Data Xfer 的交接延遲 |
 | `slot.copy_extra` | Result slot | ISA 週期 | 0 | 0..100000 | `EXEC_PUB` 把 rx_buf 複製進結果槽**多花的週期**：指令變長，結果也晚這麼久才可見 |
 | `slot.valid_delay` | Result slot | ISA 週期 | 0 | 0..100000 | 從複製完成到 `PERI_RESULT_VALID` 對 Main 可見之間的延遲 |
+| `flag.arbiter_policy` | Status flags | 列舉 | `main_first` | none / main_first / peri_first / round_robin | Main 與 Peri 的 BR 是否共用**一個 Status Flag 單元**：條件會讀旗標的 BR（不含 ALWAYS／JMP 與 ALU 旗標）佔用它 `flag.access_cycles`，另一邊的 BR 碰到它正被佔用就等；同一週期都要時由 policy 決定誰先 |
+| `flag.access_cycles` | Status flags | ISA 週期 | 1 | 1..100000 | 一條 BR 佔用 Status Flag 單元多久 |
+| `flag.arbiter_penalty` | Status flags | ISA 週期 | 0 | 0..100000 | Status Flag 單元空出來後，等待的 BR 再等多久（交接） |
 | `flag.sample_delay_main` | Status flags | ISA 週期 | 0 | 0..100000 | Main 的 BR 看到的旗標是「這麼多週期以前」的值 |
 | `flag.sample_delay_peri` | Status flags | ISA 週期 | 0 | 0..100000 | 同上，Peri 的 BR |
 
-**預設值的意義**：全部為 0／關閉＝**不建模**。測試強制驗證了：把這八個參數明確寫成它們的初始值，跑出來的結果和完全不設定**逐週期相同**（見 §7）。
+**預設值的意義**：全部為 0／關閉＝**不建模**；唯一的例外是 `flag.arbiter_policy`，使用者確認硬體上 Main 與 Peri 共用 Status Flag，預設 `main_first`（這會改變舊結果：兩邊同一週期 BR 讀旗標時 Peri 晚 1 週期）。測試強制驗證了：把這十一個參數明確寫成它們的初始值，跑出來的結果和完全不設定**逐週期相同**（見 §7）。
 
 ---
 
@@ -290,7 +293,7 @@ slot.valid（Main 看到的） = 原始 valid  且  現在 >= validAt
 | 測試 | 證明什麼 |
 |---|---|
 | 所有參數寫成初始值，跑出來和不設定相同 | **預設不改變任何結果**（原則 1） |
-| 目錄裡沒有「未啟用」的參數 | 八個參數都被模擬器使用 |
+| 目錄裡沒有「未啟用」的參數 | 十一個參數都被模擬器使用 |
 | 不建模：兩邊各自跑，互相不等 | 預設行為 |
 | `main_first`／`peri_first`／`round_robin` 第一個週期誰的 CSR 先寫入 | 同週期撞上的策略 |
 | 持續爭用後兩邊輪流，差不超過 2 條 | 先到先得的穩態 |
@@ -413,7 +416,7 @@ CSR Arbiter：opcode 0。Data Xfer：Peri 的 opcode 2，以及 Main 的 MOV 且
 
 | 內容 | 檔案與函式 |
 |---|---|
-| 八個參數的定義、說明、量法 | `core/src/sim_params.cpp`（群組 CSR arbiter／Data path／Result slot／Status flags） |
+| 十一個參數的定義、說明、量法 | `core/src/sim_params.cpp`（群組 CSR arbiter／Data path／Result slot／Status flags） |
 | 狀態：資源占用、等待計數、信號歷史、結果槽可見時刻 | `core/src/sim/impl.h`：`State::SharedRes`、`stalls`、`stallCycles`、`sigPrev`、`sigAt`、`SlotState::validAt` |
 | 參數讀取（含運行中套用） | `core/src/sim/impl.cpp`：`applyParams` |
 | 閘門、輪次、占用、同週期策略 | `core/src/sim/run.cpp`：`claim`、`gate`、`occupy`、`nextIsCsr`、`mainMoveFromSlot`、`nextTime` |

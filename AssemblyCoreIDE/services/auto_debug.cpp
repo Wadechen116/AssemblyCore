@@ -163,7 +163,7 @@ AutoDebugReport autoDebug(const Result& program, const SimConfig& cfg, const Aut
         f.title = "Result slot overrun";
         f.detail = "Peri published a result (service " + std::to_string(w.overrun.a) + ") before Main took the previous one; the earlier result was lost" +
                    (w.overrun.count > 1 ? " (" + std::to_string(w.overrun.count) + " times)." : ".");
-        f.hint = "Main is too slow for Peri: take the result sooner (check PERI_RESULT_VALID more often, or do less between two checks), or let Peri publish less often (a longer Peri timer: timer.peri.clock_div).";
+        f.hint = "Main is too slow for Peri: take the result sooner (check PERI_RESULT_VALID more often, or do less between two checks), or let Peri publish less often (a longer Peri timer period).";
         add(f);
     }
     // ---- stuck

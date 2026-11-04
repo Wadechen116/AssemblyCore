@@ -123,6 +123,31 @@ BlockScene::BlockScene(BlockSession& session, const BlockTheme& theme, const QFo
 
 BlockScene::~BlockScene() = default;
 
+QImage BlockScene::preview(const std::vector<asmcore::blocks::Block>& blocks, qreal dpr) {
+    if (blocks.empty()) return QImage();
+    asmcore::blocks::Section s;
+    s.domain = "floating";
+    s.blocks = blocks;
+    LayoutEngine eng(metrics_, style_, session_.registry(), ShapeRegistry::defaults(), &text_);
+    const StackLayout L = eng.layoutStack(s, 0);
+    if (L.blocks.empty()) return QImage();
+    QRectF bb;
+    for (const BlockBox& b : L.blocks) bb |= QRectF(b.rect.x - b.plugDepth, b.rect.y, b.rect.w + b.plugDepth, b.rect.h);
+    const qreal m = 2;                                                       // room for the outline and the tab under a block
+    bb.adjust(-m, -m, m, m + 4);
+    QImage img((bb.size() * dpr).toSize(), QImage::Format_ARGB32_Premultiplied);
+    if (img.isNull()) return img;
+    img.setDevicePixelRatio(dpr);
+    img.fill(Qt::transparent);
+    QPainter p(&img);
+    p.setRenderHint(QPainter::Antialiasing, true);
+    p.setRenderHint(QPainter::TextAntialiasing, true);
+    p.translate(-bb.topLeft());
+    for (const BlockBox& b : L.blocks) painter_.paintBlock(p, b, BlockPaintState());     // parents come before what is inside them
+    p.end();
+    return img;
+}
+
 void BlockScene::setTheme(const BlockTheme& t) {
     painter_.setTheme(t);
     update();
