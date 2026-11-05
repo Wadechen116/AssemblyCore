@@ -992,7 +992,7 @@ QString ExecutionView::describeMarker(int i) const {
         case 'f': s = tr("FAULT on %1: %2 (cycle %3)").arg(lane(m.domain)).arg(fromStd(m.what)).arg(cyc(m.at)); break;
         case 's': s = tr("%1 started (cycle %2)").arg(fromStd(m.what)).arg(cyc(m.at)); break;
         case 'd': s = tr("%1 is done (cycle %2)").arg(fromStd(m.what)).arg(cyc(m.at)); break;
-        case 'z': s = tr("%1 waits %2 cycles for %3 (cycle %4)").arg(lane(m.domain)).arg(m.a).arg(m.what == "xfer" ? tr("Data Xfer, which the other one is using") : m.what == "flag" ? tr("the Status Flag unit, which the other one is using") : tr("the CSR arbiter, which the other one is using")).arg(cyc(m.at)); break;
+        case 'z': s = tr("%1 waits %2 cycles for %3 (cycle %4)").arg(lane(m.domain)).arg(m.a).arg(m.what == "xfer" ? tr("Data Xfer, which the other one is using") : m.what == "flag" ? tr("the Status Flag unit, which the other one is using") : m.what == "i2c" ? tr("the I2C bus (an EEPROM fetch or an EXEC_XFER of the other one)") : tr("the CSR arbiter, which the other one is using")).arg(cyc(m.at)); break;
         default: s = fromStd(m.what); break;
     }
     for (const TraceLink& l : links_)                                                        // what it belongs to
@@ -1216,6 +1216,7 @@ private:
         cfg.profile = pf;
         cfg.env = env;
         cfg.params = store_.params();
+        cfg.baseParams = ctx_.debugger.baseParams();
         const Cycle limit = (Cycle)maxCycles_->value();
         cur_ = recordRun(prog->result, cfg, limit);
         if (!cur_.ok()) {

@@ -985,6 +985,14 @@ The assembler produced:  %2</source>
         <translation>從 EEPROM 取到：%1
 組譯器產生的：%2</translation>
     </message>
+    <message>
+        <source>Fetch cycles</source>
+        <translation>取指令週期</translation>
+    </message>
+    <message>
+        <source>Read from the EEPROM over the I2C bus before it executes: %1 byte(s) (%2 read(s) of %3), %4 ISA cycles with fetch.read_mode now</source>
+        <translation>執行前經 I2C 匯流排從 EEPROM 讀出：共 %1 byte（%2 次讀取：%3），依目前的 fetch.read_mode 需 %4 個 ISA 週期</translation>
+    </message>
 </context>
 <context>
     <name>EventModel</name>
@@ -2478,6 +2486,10 @@ Double click on the time line: wind the simulator back to that cycle (what is la
     <message>
         <source>the Status Flag unit, which the other one is using</source>
         <translation>另一個正在使用的 Status Flag 單元</translation>
+    </message>
+    <message>
+        <source>the I2C bus (an EEPROM fetch or an EXEC_XFER of the other one)</source>
+        <translation>I2C 匯流排（另一個正在從 EEPROM 取指令或做 EXEC_XFER）</translation>
     </message>
 </context>
 <context>

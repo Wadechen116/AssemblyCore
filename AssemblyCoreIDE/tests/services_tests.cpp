@@ -36,6 +36,19 @@
 using namespace acide;
 
 static int g_pass = 0, g_fail = 0;
+// The tests below measure the IDE's services, not the EEPROM fetch: they pin it to no bus time (fetch.read_mode = instant) under everything else.
+static asmcore::SimParams pinnedWith(asmcore::SimParams p) {                 // (a set of the test's own, with the fetch pinned unless it sets it)
+    std::string e;
+    if (!p.isSet("fetch.read_mode")) p.set("fetch.read_mode", "instant", e);
+    return p;
+}
+static asmcore::SimParams pinnedBase() {
+    asmcore::SimParams p;
+    std::string e;
+    p.set("fetch.read_mode", "instant", e);
+    return p;
+}
+
 static void check(bool ok, const std::string& name, const std::string& detail = "") {
     if (ok) g_pass++;
     else { g_fail++; std::printf("  FAIL  %s\n        %s\n", name.c_str(), detail.c_str()); }
@@ -243,12 +256,12 @@ static void t_sim_compare() {
     const std::string alus = ".main\ns: ALU ADD unsigned\n ALU ADD unsigned\n ALU ADD unsigned\n ALU ADD unsigned\n ALU ADD unsigned\n ALU ADD unsigned\n ALU ADD unsigned\n ALU ADD unsigned\n ALU ADD unsigned\n ALU ADD unsigned\nh: JMP h\n";
     const asmcore::Result ra = simAssemble(alus);
     check(ra.ok, "(the program of the comparison assembles)", ra.diagnosticsText());
-    asmcore::sim::SimConfig cfg;
+    asmcore::sim::SimConfig cfg; cfg.baseParams = pinnedBase();
     const RunTrace base = recordRun(ra, cfg, 100000);
     check(base.ok() && base.rows.size() == 11 && base.instrs[0] >= 10 && base.rows[0].what.find("ALU") != std::string::npos && base.rows[0].at == 0, "a run is recorded: every instruction with its cycle, mnemonic and pc", std::to_string(base.rows.size()));
     check(base.endOf(0) == base.rows[1].at && base.endOf(10) >= base.rows[10].at, "a row lasts until the next of the same sequencer");
     check(compareTraces(base, recordRun(ra, cfg, 100000)).same, "the same run twice is the same");
-    asmcore::sim::SimConfig slow;
+    asmcore::sim::SimConfig slow; slow.baseParams = pinnedBase();
     std::string e;
     slow.params.set("main.fetch_cycles", "1", e);
     const TraceDiff d = compareTraces(base, recordRun(ra, slow, 100000));
@@ -262,7 +275,7 @@ static void t_sim_compare() {
     // Peri: the bus time shows in the next row and in the bus marker
     const std::string prog = ".devmap 0, I2C, 0x68, DEV0\n.main\nh: JMP h\n.peri\ns: EXEC_XFER READ dev=0, addr=0x10, addrlen=1, ptr=0\nq: JMP q\n";
     const asmcore::Result rp = simAssemble(prog);
-    asmcore::sim::SimConfig dev;
+    asmcore::sim::SimConfig dev; dev.baseParams = pinnedBase();
     dev.env = "[device d]\naddr = 0x68\nreg 0x10 = 0x55\n";
     const RunTrace pb = recordRun(rp, dev, 100000);
     asmcore::sim::SimConfig dev2 = dev;
@@ -273,7 +286,7 @@ static void t_sim_compare() {
     for (const TraceMarker& m : pb.marks) bus |= m.kind == 'b' && m.what == "i2c.read";
     check(bus, "the end of the I2C transaction is a marker");
     // a bad environment is said, not thrown
-    asmcore::sim::SimConfig bad;
+    asmcore::sim::SimConfig bad; bad.baseParams = pinnedBase();
     bad.env = "[nonsense]\n";
     check(!recordRun(ra, bad, 1000).ok(), "an environment the simulator refuses is reported as an error of the trace");
     // the limit
@@ -597,7 +610,7 @@ struct SessionRig {
     bool loadSource(const std::string& src, const std::string& env = "") {
         SnapshotPtr prog = buildSource(src);
         if (!prog->result.ok) { std::printf("        build failed: %s\n", prog->result.diagnosticsText().c_str()); return false; }
-        ses.load(prog, env, asmcore::Profile());
+        ses.load(prog, env, asmcore::Profile(), pinnedBase());
         return disp->pumpUntil([&] { return loadedCount > 0; }, 5000);
     }
 };
@@ -620,6 +633,7 @@ struct DebugRig {
     bool loadedOk = false;
     explicit DebugRig(const std::string& src, const std::string& projectExtra = "")
         : ws(fs), ses(disp), dbg(ses, ws, &settings, [this] { return latest; }) {
+        dbg.setBaseParams(pinnedBase());
         fs->write("/p/p.acproj", "name = p\nsource = a.asm\n" + projectExtra);
         fs->write("/p/a.asm", src);
         std::vector<std::string> errs;
@@ -892,11 +906,11 @@ static void t_session() {
     }
     {   // bad inputs
         SessionRig r;
-        r.ses.load(buildSource(".main\nx: JMP nowhere\n"), "", asmcore::Profile());
+        r.ses.load(buildSource(".main\nx: JMP nowhere\n"), "", asmcore::Profile(), pinnedBase());
         r.disp->pumpUntil([&] { return r.loadedCount > 0; }, 3000);
         check(r.loadedCount == 1 && !r.loadedOk && !r.loadErrors.empty() && r.ses.state() == SimState::Failed, "a program with errors cannot be simulated");
         SessionRig e;
-        e.ses.load(buildSource(kFinite), "[csr X]\nkind = banana\n", asmcore::Profile());
+        e.ses.load(buildSource(kFinite), "[csr X]\nkind = banana\n", asmcore::Profile(), pinnedBase());
         e.disp->pumpUntil([&] { return e.loadedCount > 0; }, 3000);
         check(e.loadedCount == 1 && !e.loadedOk && !e.loadErrors.empty(), "an environment file with errors is reported", e.loadErrors.empty() ? "" : e.loadErrors[0]);
         e.ses.run();                                            // commands without a simulator are ignored
@@ -908,7 +922,7 @@ static void t_session() {
         auto disp = std::make_shared<QueueDispatcher>();
         {
             SimSession ses(disp);
-            ses.load(buildSource(kEndless), "", asmcore::Profile());
+            ses.load(buildSource(kEndless), "", asmcore::Profile(), pinnedBase());
             RunSpec forever;
             forever.maxCycles = 0;
             forever.maxMillis = 0;
@@ -938,7 +952,7 @@ static void t_live_run() {
     live.stopOnIdle = false;
     {   // the pace
         SessionRig r;
-        r.ses.load(buildSource(kEndless), "", Profile(), slow);
+        r.ses.load(buildSource(kEndless), "", Profile(), pinnedWith(slow));
         r.disp->pumpUntil([&] { return r.ses.view() != nullptr; }, 3000);
         r.ses.run(live);
         wait(r, 500);
@@ -972,7 +986,7 @@ static void t_live_run() {
     }
     {   // a breakpoint set while it runs
         SessionRig r;
-        r.ses.load(buildSource(kEndless), "", Profile(), slow);
+        r.ses.load(buildSource(kEndless), "", Profile(), pinnedWith(slow));
         r.disp->pumpUntil([&] { return r.ses.view() != nullptr; }, 3000);
         r.ses.run(live);
         wait(r, 150);
@@ -992,7 +1006,7 @@ static void t_live_run() {
         SessionRig r;
         SimParams one = slow;
         one.set("sim.speed", "1", err);
-        r.ses.load(buildSource(kEndless), "", Profile(), one);
+        r.ses.load(buildSource(kEndless), "", Profile(), pinnedWith(one));
         r.disp->pumpUntil([&] { return r.ses.view() != nullptr; }, 3000);
         r.ses.run(live);
         wait(r, 100);
@@ -1009,7 +1023,7 @@ static void t_auto_debug() {
         SnapshotPtr prog = buildSource(src);
         AutoDebugReport r;
         if (!prog->result.ok) { r.error = "build: " + prog->result.diagnosticsText(); return r; }
-        sim::SimConfig cfg;
+        sim::SimConfig cfg; cfg.baseParams = pinnedBase();
         cfg.env = env;
         cfg.params = p;
         AutoDebugOptions o;
@@ -1089,7 +1103,7 @@ static void t_auto_debug() {
         auto lang = asmcore::lang::Language::defaults();
         SnapshotPtr prog = buildNow(ws.snapshot(), lang);
         check(prog->result.ok, "the shipped example builds", prog->result.diagnosticsText());
-        sim::SimConfig cfg;
+        sim::SimConfig cfg; cfg.baseParams = pinnedBase();
         cfg.env = slurp(d + "main_peri_env.cfg");
         AutoDebugOptions o;
         AutoDebugReport good = autoDebug(prog->result, cfg, o);
@@ -1536,13 +1550,13 @@ static void t_trace_links() {
         // a program in which both decoders fight for the CSR bus
         const std::string prog = ".csr A = 0x50\n.csr B = 0x51\n.main\nm: EXEC_CSR WRITE8 A, 1\n JMP m\n.peri\np: EXEC_CSR WRITE8 B, 1\n JMP p\n";
         SnapshotPtr sp = buildSource(prog);
-        SimConfig cfg;
+        SimConfig cfg; cfg.baseParams = pinnedBase();
         cfg.params.set("csr.arbiter_policy", "main_first", err);
         cfg.params.set("latency.csr_access", "6", err);
         RunTrace rt = recordRun(sp->result, cfg, 2000);
         const TraceStats rs = traceStats(rt);
         check(rs.stalls[0] + rs.stalls[1] > 100 && rs.stallCycles[0] + rs.stallCycles[1] > 300, "a run with the arbiter on: both decoders waited, over and over", std::to_string(rs.stalls[0]) + "/" + std::to_string(rs.stalls[1]));
-        SimConfig off;
+        SimConfig off; off.baseParams = pinnedBase();
         check(traceStats(recordRun(sp->result, off, 2000)).stalls[0] == 0, "...and without it nobody waited");
     }
     {   // a real run: the shipped example 14 has all of it
@@ -1560,9 +1574,9 @@ static void t_trace_links() {
             ws.openProject("/p/p.acproj", errs);
             auto lang = asmcore::lang::Language::defaults();
             SnapshotPtr prog = buildNow(ws.snapshot(), lang);
-            SimConfig cfg;
+            SimConfig cfg;                                                       // (the hardware's EEPROM fetch: few instructions in a million cycles)
             cfg.env = slurp(d + "main_peri_env.cfg");
-            RunTrace t = recordRun(prog->result, cfg, 12000);
+            RunTrace t = recordRun(prog->result, cfg, 1000000);                      // (past the second blanking window: frames of 450,000 cycles)
             const TraceStats st = traceStats(t);
             check(st.published >= 1 && st.taken >= 1 && st.resultLatency.n >= 1, "example 14: Peri publishes, Main takes (with a latency)", std::to_string(st.published) + "/" + std::to_string(st.taken));
             check(st.timersStarted >= 2 && st.timersDone >= 1 && st.timerRun[1].n >= 1, "...Peri's timer runs and finishes", std::to_string(st.timersStarted) + "/" + std::to_string(st.timersDone));
@@ -1570,7 +1584,7 @@ static void t_trace_links() {
             int blanking = 0;
             for (const TraceLink& l : traceLinks(t)) blanking += l.kind == TraceLink::Blanking;
             check(blanking >= 2, "...the blanking window opens and closes (the commit waits for it)", std::to_string(blanking));
-            std::printf("        example 14 in 12000 cycles: %llu published, %llu taken, latency avg %.0f max %llu; Peri timer avg %.0f; %llu bus transfers\n", (unsigned long long)st.published, (unsigned long long)st.taken, st.resultLatency.avg(), (unsigned long long)st.resultLatency.max, st.timerRun[1].avg(), (unsigned long long)st.busTransfers);
+            std::printf("        example 14 in 1000000 cycles: %llu published, %llu taken, latency avg %.0f max %llu; Peri timer avg %.0f; %llu bus transfers\n", (unsigned long long)st.published, (unsigned long long)st.taken, st.resultLatency.avg(), (unsigned long long)st.resultLatency.max, st.timerRun[1].avg(), (unsigned long long)st.busTransfers);
         }
     }
 }

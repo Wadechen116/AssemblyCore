@@ -11,7 +11,7 @@ Debugger::Debugger(SimSession& s, Workspace& w, Settings* settings, std::functio
     : params_(w), session_(s), ws_(w), settings_(settings), latest_(std::move(latest)) {
     if (settings_) trace_.setCapacity((size_t)std::max(1000, std::min(2000000, settings_->getInt("trace.rows", 60000))));
     conns_.add(session_.updated, [this](const SimUpdate& u) { onUpdate(u); });
-    conns_.add(params_.changed, [this] { if (active()) session_.setParams(params_.params()); });                  // a changed value reaches the simulator that is running
+    conns_.add(params_.changed, [this] { if (active()) session_.setParams(effectiveParams()); });                  // a changed value reaches the simulator that is running
     conns_.add(ws_.projectChanged, [this] { params_.syncWithProject(); });             // the project's .simparams file is the values of the parameters
 }
 
@@ -27,7 +27,7 @@ bool Debugger::start(std::string& why) {
     std::string env;
     Profile pf;
     if (!inputs(prog, env, pf, why)) return false;
-    session_.load(prog, env, pf, params_.params(), eeprom_);
+    session_.load(prog, env, pf, effectiveParams(), eeprom_);
     // re-resolve every breakpoint against this program
     session_.setWatchExprs(watchExprs_);
     session_.setDataWatches(dataWatches_);
@@ -126,6 +126,7 @@ bool Debugger::autoDebug(const AutoDebugOptions& opt, AutoDebugReport& out, std:
     cfg.profile = pf;
     cfg.env = env;
     cfg.params = params_.params();
+    cfg.baseParams = base_;
     out = acide::autoDebug(prog->result, cfg, opt);
     return true;
 }

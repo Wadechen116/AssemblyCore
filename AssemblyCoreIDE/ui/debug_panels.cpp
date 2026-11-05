@@ -380,9 +380,9 @@ public:
         summary_->setWordWrap(true);
         summary_->setMinimumHeight(0);
         lay->addWidget(summary_);
-        table_ = new QTableWidget(0, 7);
+        table_ = new QTableWidget(0, 8);
         table_->setObjectName("decoderTable");
-        table_->setHorizontalHeaderLabels({"", tr("Dom"), tr("PC"), tr("EEPROM"), tr("Bytes"), tr("Decoded from the EEPROM"), tr("Source")});
+        table_->setHorizontalHeaderLabels({"", tr("Dom"), tr("PC"), tr("EEPROM"), tr("Bytes"), tr("Decoded from the EEPROM"), tr("Source"), tr("Fetch cycles")});
         table_->horizontalHeader()->setSectionResizeMode(5, QHeaderView::Stretch);
         table_->verticalHeader()->hide();
         table_->setSelectionBehavior(QAbstractItemView::SelectRows);
@@ -407,7 +407,7 @@ private:
         if (!v) { table_->setRowCount(0); summary_->setText(tr("Start debugging to see what the decoders fetch.")); return; }
         // the table is rebuilt only when what it shows changed (the decoded lines rarely do; the cursors move all the time)
         std::string key;
-        for (int d = 0; d < 2; d++) for (const auto& L : v->decoded[d]) { key += L.text; key += L.matches ? '1' : '0'; key += std::to_string(L.eepromAddr); key += '|'; }
+        for (int d = 0; d < 2; d++) for (const auto& L : v->decoded[d]) { key += L.text; key += L.matches ? '1' : '0'; key += std::to_string(L.eepromAddr); key += std::to_string(L.fetchCycles); key += '|'; }
         if (key != key_) { key_ = key; rebuild(*v); }
         // the cursors: the line each sequencer is at
         for (int r = 0; r < table_->rowCount(); r++) {
@@ -457,9 +457,16 @@ private:
                 put(4, bytes.trimmed());
                 put(5, fromStd(L.text) + (L.valid ? QString() : "    ; " + fromStd(L.problem)));
                 put(6, fromStd(L.source));
+                {
+                    QString reads;
+                    for (uint32_t n : L.fetchBytes) reads += (reads.isEmpty() ? "" : " + ") + QString::number(n);
+                    auto* fc = put(7, L.fetchCycles ? QString::number((qulonglong)L.fetchCycles) : QString("0"));
+                    fc->setToolTip(tr("Read from the EEPROM over the I2C bus before it executes: %1 byte(s) (%2 read(s) of %3), %4 ISA cycles with fetch.read_mode now")
+                                       .arg([&] { uint32_t t = 0; for (uint32_t n : L.fetchBytes) t += n; return t; }()).arg(L.fetchBytes.size()).arg(reads).arg((qulonglong)L.fetchCycles));
+                }
                 if (!L.matches || !L.valid) {
                     const QString tip = tr("Fetched from the EEPROM:  %1\nThe assembler produced:  %2").arg(fromStd(L.text), fromStd(L.expected));
-                    for (int c = 0; c < 7; c++) { table_->item(r, c)->setBackground(QColor(208, 64, 64, 90)); table_->item(r, c)->setToolTip(tip); }
+                    for (int c = 0; c < 8; c++) { table_->item(r, c)->setBackground(QColor(208, 64, 64, 90)); table_->item(r, c)->setToolTip(tip); }
                 }
                 r++;
             }

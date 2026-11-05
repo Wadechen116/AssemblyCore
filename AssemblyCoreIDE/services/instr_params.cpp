@@ -74,6 +74,7 @@ InstrParams instructionParams(const std::string& lineIn, int domain) {
     }
     if (known) {
         p.mnemonics.push_back(m);
+        rel("fetch.read_mode");                                               // every instruction is read from the I2C EEPROM first
         rel(dom + ".fetch_cycles");                                           // every instruction of that decoder
     }
     return p;

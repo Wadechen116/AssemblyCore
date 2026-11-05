@@ -57,6 +57,11 @@ public:
     bool inputs(SnapshotPtr& program, std::string& env, asmcore::Profile& profile, std::string& why);
     bool environmentAndProfile(std::string& env, asmcore::Profile& profile, std::string& why);      // the project's environment file and profile, as inputs() reads them
     SimParamsStore& simParams() { return params_; }
+    // Parameters under the user's (they win): a bench's starting point that is not a change of the user's -- the UI tests pin the EEPROM fetch
+    // to no bus time here. Every simulator the debugger makes (debugging, the analysis run, auto debug) gets them.
+    void setBaseParams(const asmcore::SimParams& p) { base_ = p; }
+    const asmcore::SimParams& baseParams() const { return base_; }
+    asmcore::SimParams effectiveParams() const { asmcore::SimParams p = base_; p.merge(params_.params()); return p; }
     // The recent past of the session (both sequencers, events, bus transfers ...): what the time line shows, running or stopped. Holds the last `trace.rows`
     // instructions (a setting, 60000 by default).
     const TraceRing& trace() const { return trace_; }
@@ -129,6 +134,7 @@ private:
     void onUpdate(const SimUpdate& u);
 
     SimParamsStore params_;
+    asmcore::SimParams base_;
     std::shared_ptr<const std::pair<std::vector<uint8_t>, asmcore::EepromMap>> eeprom_;
     std::string eepromPath_;
     SimSession& session_;

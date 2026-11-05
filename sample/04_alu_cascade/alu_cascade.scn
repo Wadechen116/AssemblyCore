@@ -1,4 +1,4 @@
-run until main.halted max 100000
+run until main.halted max 100000000
 expect scratch[8..9] == 325 :: ADD
 expect scratch[10..11] == 275 :: SUB
 expect scratch[12..13] == 7500 :: MUL

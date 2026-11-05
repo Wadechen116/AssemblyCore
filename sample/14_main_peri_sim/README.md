@@ -10,15 +10,13 @@
 ## 怎麼玩
 1. 開專案 `14_main_peri_sim.acproj`（專案樹雙擊）。它已登記 `simparams = main_peri.simparams`。
 2. `Ctrl+Shift+M` 開**模擬器頁面**：上面是 ISA Top 架構圖，下面是 Main／Peri 兩條時間軸。參數在方塊或積木上按右鍵「設定參數…」，或用 ISA Top 標題列的「所有參數…」。
-3. 改參數看差異（基準軌道是初始值跑出的）。這份參數下（兩個 Timer 都數 13.5 MHz，即 27 MHz 除 2，每個 tick 2 個 ISA 週期）：Peri 在第 6686 週期發佈，Main 在 6708 取走，**在第二個畫面的消隱視窗（7000～7900）的 7015 提交**。
-   - `clock.timer_hz` 改 6750000（每 tick 4 個 ISA 週期）：兩個 Timer 一起慢一倍，發佈延到 7884，越過了 7000 的消隱視窗，提交延到下一個畫面的 11015。
-   - `flag.arbiter_policy`（初始值 `main_first`：同一週期 Main 先）改 `none`：Main 與 Peri 的 BR 不再搶同一個 Status Flag 單元，發佈早 1 週期（6685），取用早 2 週期（6706）。
-   - `csr.arbiter_policy`（初始值 `main_first`：先到先得，同時抵達 Main 先）改 `none`：Main 寫 CSR 時不必等 Peri，提交早 1 週期（7014）。
-   - `timer.prescaler`（`free_running`／`restart`）、`timer.count`（`n`／`n_plus_1`）：Timer 的 tick 格點與週期計數，等 RTL 確認。
-   - `i2c.stretch` 改 20、`i2ch.overhead`、`i2c.ack_delay`：I2C 讀取變長，發佈時間往後移。
-   - 注意：**提交時間不會跟著發佈連續移動**，它被 Frame Timing 量化到消隱視窗；發佈再晚，只要還在 7000 之前，提交就還是 7015 附近。想讓提交跟著動，要讓發佈越過 7000，或改 `frame.wcet_pgl`。
-   - `frame.wcet_pgl`：視窗剩餘時間不夠 WCET 就不算「可提交」。調到 1000（超過視窗長度 900）→ `PGL_COMMIT_ELIGIBLE` 永遠不成立，Main 一直卡在 `window:`，不提交（情境檔最後一項檢查會失敗，這正是要看到的）。
-   - `timer.main.start_latency`、`csr.access_main`、`main.fetch_cycles`：Main 側的節奏。
+3. 改參數看差異（基準軌道是初始值跑出的）。**每條指令都先從 I2C EEPROM 讀出來才執行**（`fetch.read_mode = sequential`，一條約 6,000～12,000 週期），所以畫面用規格 14 章的實際時序：27 MHz／60 fps，一個畫面 450,000 週期，消隱視窗是最後 14,362 週期（435,638～450,000）。這份參數下：Peri 在第 108,814 週期發佈，Main 在 206,688 取走，在第一個畫面的消隱視窗通過 `PGL_COMMIT_ELIGIBLE`，**第 531,292 週期才寫入 CSR**。
+   - **注意這個結果**：檢查視窗之後還有好幾條指令（算校正值、寫 CSR），每條都要讀 EEPROM，寫入時已經離開消隱視窗了。照這個硬體架構，「先檢查視窗、再做好幾條指令才提交」可能來不及。
+   - `fetch.read_mode` 改 `per_byte`（每個 byte 各讀一次）：發佈延到 157,474，提交延到 1,488,398。改 `instant`（取指令不花時間，舊模型）：發佈 6,686，提交 435,653。
+   - `frame.wcet_pgl`：視窗剩餘時間不夠 WCET 就不算「可提交」。調到 20000（超過視窗長度 14,362）→ `PGL_COMMIT_ELIGIBLE` 永遠不成立，Main 一直卡在 `window:`，不提交（情境檔最後一項檢查會失敗，這正是要看到的）。
+   - `i2c.stretch`、`i2c.ack_delay`、`clock.i2c_hz`：I2C 匯流排變慢或變快，取指令和讀感測器都跟著變，整個時間軸等比例移動。
+   - `clock.timer_hz`、`flag.arbiter_policy`、`csr.arbiter_policy`、`timer.prescaler`、`timer.count`：這些只差 1 到幾千週期，在讀法 A 下被取指令的時間蓋過，看不出差別；改 `fetch.read_mode = instant` 再試就看得到。
+   - Decoder 解碼面板（View 選單）：看兩個 Decoder 從 EEPROM 解出的每一條指令，和原始碼對照。
 4. 想看單步：Debug → Start Debugging，Main／Peri 的暫存器與事件都在面板裡。
 5. 命令列：`asmsim main_peri.asm -I ../common --env main_peri_env.cfg --params main_peri.simparams --scenario main_peri.scn`。
 

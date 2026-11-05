@@ -66,6 +66,12 @@ struct Fixture {
     Debugger dbg;
     AppContext ctx;
     Fixture() : ws(fs), build(disp, lang), sim(disp), dbg(sim, ws, &settings, [this] { return ctx.snapshot; }), ctx(ws, build, settings, dbg, lang) {
+        {   // the UI tests measure the IDE, not the EEPROM fetch: no bus time for it, under the user's parameters (not counted as a change)
+            asmcore::SimParams b;
+            std::string e;
+            b.set("fetch.read_mode", "instant", e);
+            dbg.setBaseParams(b);
+        }
         fs->write("/w/p.acproj", "name = p\nsource = main.asm\n");
         fs->write("/w/main.asm", ".csr C = 0x120\n.main\nstart: EXEC_CSR WRITE8 C, 1\n    ALU ADD unsigned\nh: JMP h\n");
         std::vector<std::string> errs;
@@ -1311,12 +1317,13 @@ private slots:
         QApplication::processEvents();
         QVERIFY(r.waitBuild());
         QVERIFY(r.until([&] { return view->property("links").toInt() > 0; }, 8000));
-        QVERIFY2(stats->text().contains("Results: ") && stats->text().contains(" published, ") && stats->text().contains("waited avg 21 / max 22 cycles") && stats->text().contains("Timers: Main ") && stats->text().contains("Peri ") && stats->text().contains("Bus: "), qPrintable(stats->text()));
+        QVERIFY2(stats->text().contains("Results: ") && stats->text().contains(" published, ") && stats->text().contains("waited avg 22 / max 22 cycles") && stats->text().contains("Timers: Main ") && stats->text().contains("Peri ") && stats->text().contains("Bus: "), qPrintable(stats->text()));
         // the same run, to know where things are
         std::string env = slurp(dir + "14_main_peri_sim/main_peri_env.cfg");
         asmcore::sim::SimConfig cfg;
         cfg.env = env;
         cfg.params = r.f.dbg.simParams().params();
+        cfg.baseParams = r.f.dbg.baseParams();                                                  // (what the page ran with)
         const RunTrace t = recordRun(r.f.ctx.snapshot->result, cfg, 100000);
         const TraceMarker *pub = nullptr, *take = nullptr;
         for (const TraceMarker& m : t.marks) { if (m.kind == 'p' && !pub) pub = &m; if (m.kind == 'c' && !take) take = &m; }

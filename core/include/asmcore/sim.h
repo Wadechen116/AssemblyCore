@@ -118,6 +118,9 @@ struct SimConfig {
     Profile profile;              // layout assumptions (offset width, byte order) and latencies
     std::string env;              // environment file text (docs/SIM.md); may be empty
     SimParams params;             // hardware parameters (sim_params.h): these win over the environment file's sections and its [params]
+    // Under everything else (the environment file and `params` win): the starting point of a test bench, e.g. the instruction-timing tests
+    // pin fetch.read_mode = instant here without it counting as a parameter the user changed.
+    SimParams baseParams;
     // The burned EEPROM the decoders fetch from (eeprom.h). Empty: the simulator makes it from the assembler result and the profile's
     // eeprom_* addresses, as asmc --eeprom would. Given: exactly these bytes (asmsim --eeprom: a binary without its source).
     std::vector<uint8_t> eepromImage;
@@ -183,6 +186,10 @@ struct DecodedLine {
     std::string source;               // the line of the program at that pc ("" when only a binary was given)
     std::string expected;             // what the assembler's image decodes to at that pc ("" without it)
     bool matches = true;              // the fetched bytes (code, descriptors, constants) are the assembler's: what runs is what was written
+    // What the decoder reads from the EEPROM to make this instruction, in order: the code bytes, each descriptor (and DeviceMap entry), the
+    // constants -- one contiguous read each (fetch.read_mode decides whether each is one I2C transaction or one per byte).
+    std::vector<uint32_t> fetchBytes;
+    uint64_t fetchCycles = 0;         // what reading them over the I2C bus takes with the parameters now (0 with fetch.read_mode = instant)
 };
 struct CallFrame {
     std::string proc;

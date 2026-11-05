@@ -330,7 +330,7 @@ box xfer       830 440 150  60 shared  "Data Xfer"                     help="The
 row xfer "busy" flag xfer.busy
 box i2ch      1020 440 160  60 shared  "i2ch"                          help="CSR -> i2ch -> i2cm_top: parameter i2ch.overhead." params="i2ch.overhead"
 box i2cm       830 540 150  60 shared  "i2cm_top"                      help="The I2C master: parameters i2c.ack_delay, i2c.stretch, i2c.turnaround." params="clock.i2c_hz i2c.ack_delay i2c.stretch i2c.turnaround"
-box dev       1020 540 160  92 device  "I2C device / EEPROM"           help="The I2C devices of the environment file ([device ...]) and the EEPROM the two decoders fetch the program from (its code, descriptor tables, const pool and DeviceMap)." params="fetch.source"
+box dev       1020 540 160  92 device  "I2C device / EEPROM"           help="The I2C devices of the environment file ([device ...]) and the EEPROM the two decoders fetch the program from (its code, descriptor tables, const pool and DeviceMap)." params="fetch.source fetch.read_mode fetch.transaction_overhead"
 row dev "bus" text "I2C"
 row dev "cycle" cycle
 

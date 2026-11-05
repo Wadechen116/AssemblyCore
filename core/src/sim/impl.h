@@ -50,6 +50,7 @@ struct XferInFlight {
     int dev = 0, addrLen = 0, len = 1, ptr = 0;
     uint32_t addr = 0;
     uint8_t data = 0;
+    Cycle doneAt = 0;                  // when the bus transaction ends (it holds the I2C bus until then)
 };
 struct PeriState {
     uint32_t pc = 0;
@@ -112,7 +113,9 @@ struct State {
     // shared resources (parameters csr.arbiter_*, datapath.*). freeAt: when the one that has it lets go. next: the decoder that was granted it next (it waited), and
     // grantAt: when its turn comes (freeAt plus the hand-over penalty); the other decoder queues behind it. last: who used it last (round robin).
     struct SharedRes { Cycle freeAt = 0, grantAt = 0; int next = -1, last = -1; };
-    SharedRes arb, xfer, flag;                                              // CSR arbiter, Data Xfer, Status Flag unit
+    SharedRes arb, xfer, flag, bus;                                         // CSR arbiter, Data Xfer, Status Flag unit, the I2C bus (EEPROM fetches, EXEC_XFER)
+    bool fetched[2] = {false, false};                                       // the instruction at the pc has been read from the EEPROM (it executes next)
+    uint64_t fetches[2] = {0, 0}, fetchCycles[2] = {0, 0}, busWaits[2] = {0, 0}, busWaitCycles[2] = {0, 0};
     uint64_t stalls[2] = {0, 0}, stallCycles[2] = {0, 0};                  // how often and how long each decoder was held back
     // the value of each stored signal before its last change, and when it changed (flag.sample_delay_*)
     std::vector<int64_t> sigPrev;
@@ -220,6 +223,11 @@ struct Simulator::Impl : public ExprBinder, public ExprEnv, public ActionContext
     std::vector<uint8_t> eepromReset;
     int regionSig[ER_COUNT] = {-1, -1, -1, -1, -1, -1};
     bool fetchEeprom = false;
+    int fetchMode = 0;                                 // fetch.read_mode: 0 sequential (one transaction per region read), 1 per_byte, 2 instant (no bus time)
+    int fetchOverhead = 2;                             // fetch.transaction_overhead
+    bool fetchTimed() const { return fetchEeprom && fetchMode != 2 && st.eeprom; }
+    uint64_t fetchCost(const std::vector<uint32_t>& bytes) const;
+    bool beginFetch(int domain);                       // true: the decoder is reading (or waits for the bus); the instruction executes later
     std::string eepromError;                           // why there is no EEPROM (it did not fit ...): fetch.source = eeprom is then a configuration error
     void syncFetch();                                  // point the two images at the EEPROM through the registers (or back at the plain bytes)
     // the decoder's view (decode.cpp): one instruction from the bytes as fetched, compared with the assembler's image; cached per fetch state
@@ -261,7 +269,7 @@ struct Simulator::Impl : public ExprBinder, public ExprEnv, public ActionContext
     bool nextIsCsr(int domain) const;                  // the instruction a decoder is about to issue is an EXEC_CSR
     bool nextReadsFlag(int domain) const;              // ... is a BR whose condition reads the Status Flag unit
     Cycle claim(State::SharedRes& r, int domain, int penalty);      // 0: the resource is the decoder's now; else the cycle it has to wait for
-    bool gate(int domain, uint32_t pc, bool csr, bool xfer, bool flag);       // true: a shared resource is taken, the instruction waits (and tries again)
+    bool gate(int domain, uint32_t pc, bool csr, bool xfer, bool flag, bool bus = false);       // true: a shared resource is taken, the instruction waits (and tries again)
     void occupy(int domain, bool csr, bool xfer, bool flag, int latency);
     bool mainMoveFromSlot(int arg) const;
     void applyParams();

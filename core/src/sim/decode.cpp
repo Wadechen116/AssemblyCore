@@ -78,6 +78,7 @@ DecodedLine Simulator::Impl::decode(int d, uint32_t pc) const {
     // the cache holds as long as the bytes and the registers are the same
     std::vector<uint64_t> key{(uint64_t)(uintptr_t)(fetchEeprom && st.eeprom ? st.eeprom.get() : nullptr)};
     for (int i = 0; i < 2; i++) for (int k = 0; k < 3; k++) key.push_back(img[i].regionBase[k]);
+    for (int64_t v : {(int64_t)fetchMode, (int64_t)fetchOverhead, (int64_t)fetchEeprom, (int64_t)lat.i2cHz, (int64_t)lat.cpuHz, (int64_t)i2cAck, (int64_t)i2cStretch}) key.push_back((uint64_t)v);      // (the fetch time)
     if (key != decodeKey) { decodeKey = key; decodeCache[0].clear(); decodeCache[1].clear(); }
     auto hit = decodeCache[d].find(pc);
     if (hit != decodeCache[d].end()) return hit->second;
@@ -95,6 +96,13 @@ DecodedLine Simulator::Impl::decode(int d, uint32_t pc) const {
     L.text = d == 0 ? withConst(withLabel(x, labelAt[d]), iv) : withLabel(x, labelAt[d]);
     L.eepromAddr = iv.eeprom ? iv.eepromAddressOf(pc) : pc;
     for (uint32_t i = 0; i < L.length; i++) L.bytes.push_back((uint8_t)iv.u8(pc + i));
+    L.fetchBytes.push_back(L.length);                                     // the code bytes (opcode and inline bytes)
+    for (const auto& e : reads.entries) L.fetchBytes.push_back((uint32_t)(e.first % 1000));      // each descriptor / DeviceMap entry
+    {
+        uint32_t c0 = 0, c1 = 0;
+        if (d == 0 && constRange(L.text, c0, c1) && c1 >= c0) L.fetchBytes.push_back(c1 - c0 + 1);     // the constants
+    }
+    L.fetchCycles = fetchTimed() ? fetchCost(L.fetchBytes) : 0;
     auto src = instrAt[d].find(pc);
     if (src != instrAt[d].end()) L.source = src->second->text;
     if (iv.eeprom) {                                                     // what the assembler's image holds at the same place, decoded the same way
@@ -131,6 +139,51 @@ void Simulator::Impl::annotateIssue(Event& e) const {
     const DecodedLine L = decode(e.domain, e.pc);
     if (!haveSource) e.what = L.text;
     else if (!L.matches) e.text = "fetched from the EEPROM: " + L.text + (L.valid ? std::string() : " (" + L.problem + ")");
+}
+
+// The bus time of reading these pieces from the EEPROM: each a random read (address+W, the memory address, address+R, the data), or one per byte.
+uint64_t Simulator::Impl::fetchCost(const std::vector<uint32_t>& bytes) const {
+    if (fetchMode == 2) return 0;
+    const int ab = std::max(1, emap.addrBytes);
+    auto txn = [&](uint32_t n) {
+        const int phases = 2 + ab + (int)n;
+        return (uint64_t)lat.i2cCycles(phases) + (uint64_t)phases * (uint64_t)(i2cAck + i2cStretch) + (uint64_t)fetchOverhead;
+    };
+    uint64_t total = 0;
+    for (uint32_t n : bytes) {
+        if (!n) continue;
+        if (fetchMode == 0) total += txn(n);
+        else total += n * txn(1);
+    }
+    return total;
+}
+
+// The decoder reads the instruction at its pc from the EEPROM over the I2C bus. The bus is shared (the other decoder, EXEC_XFER): taken, it waits.
+bool Simulator::Impl::beginFetch(int who) {
+    const uint32_t pc = who == 0 ? st.m.pc : st.p.pc;
+    Cycle& ready = who == 0 ? st.m.readyAt : st.p.readyAt;
+    if (!img[who].present || pc >= img[who].codeLimit) { st.fetched[who] = true; return false; }       // (the step faults on it)
+    const DecodedLine L = decode(who, pc);
+    const uint64_t cost = fetchCost(L.fetchBytes);
+    if (!cost) { st.fetched[who] = true; return false; }
+    const Cycle until = claim(st.bus, who, 0);
+    if (until) {
+        ready = until;
+        st.busWaits[who]++;
+        st.busWaitCycles[who] += until - st.now;
+        emit([&](Event& e) { e.type = EventType::Stall; e.domain = who; e.pc = pc; e.what = "i2c"; e.a = (int64_t)(until - st.now); });
+        return true;
+    }
+    st.bus.freeAt = st.now + (Cycle)cost;
+    st.bus.last = who;
+    ready = st.now + (Cycle)cost;
+    st.fetched[who] = true;
+    st.fetches[who]++;
+    st.fetchCycles[who] += cost;
+    uint32_t total = 0;
+    for (uint32_t n : L.fetchBytes) total += n;
+    emit([&](Event& e) { e.type = EventType::Bus; e.domain = who; e.pc = pc; e.what = "eeprom.fetch"; e.a = emap.devAddr; e.b = 1; e.c = total; e.text = std::to_string(cost) + " cycles"; });
+    return true;
 }
 
 DecodedLine Simulator::decodedAt(Domain d, uint32_t pc) const { return p_->decode(di(d), pc); }

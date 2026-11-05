@@ -14,7 +14,7 @@
    - 把 `BR.ERET` 換成 `JMP on_frame` → **E315**（handler 走不到 ERET）。
    - 在 `start:` 前面加 `BR.ERET` → **E315**（正常流程不能執行 ERET）。
 3. 打開 `out/05_events.events.json`：列出向量，以及事件時間分項（pending→checkpoint、派送、handler、ERET）與總和；`.map` 有同樣的 `events` 段。
-4. **除錯中看事件**：事件由 `events_env.cfg` 的 `[inject]` 段在第 200、300、500、800 週期注入（IDE 目前沒有「即時注入」對話框，所以用環境檔）。在 `on_frame` 設中斷點，F5 開始 → 約第 200 週期後停在 handler 第一行；**Signals** 面板看到 `main.in_handler = 1`；**Call Stack** 看不到呼叫（handler 不是 CALL）；F5 繼續 → ERET 後回到前景。改環境檔的時間可以讓事件落在不同的前景位置。
+4. **除錯中看事件**：事件由 `events_env.cfg` 的 `[inject]` 段在第 200,000、300,000、500,000、800,000 週期注入（指令要先從 I2C EEPROM 讀出來，一條數千週期，所以間隔也拉長）（IDE 目前沒有「即時注入」對話框，所以用環境檔）。在 `on_frame` 設中斷點，F5 開始 → 約第 200 週期後停在 handler 第一行；**Signals** 面板看到 `main.in_handler = 1`；**Call Stack** 看不到呼叫（handler 不是 CALL）；F5 繼續 → ERET 後回到前景。改環境檔的時間可以讓事件落在不同的前景位置。
 5. **Events 面板**：篩選 `event`：看到 `raise`、`dispatch`、`eret` 三種紀錄，點一筆跳到對應原始碼。
 6. 觀察「不巢狀」：把環境檔的 `at 800 = event main id=1` 改成與事件 0 的 handler 同一時間（例如 `at 205`），事件 1 會維持 pending（**Signals** 面板的 `main.events_pending` 位元 1），ERET 之後下一個前景 `safe` 分支才派送。
 

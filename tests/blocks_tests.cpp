@@ -375,7 +375,12 @@ static Document loopProgram(const std::string& mode, const std::string& count, c
     return d;
 }
 static long long scratchWord(const Result& r, int at) {
-    sim::Simulator sm(r, sim::SimConfig());
+    sim::SimConfig sc;
+    {
+        std::string e;
+        sc.params.set("fetch.read_mode", "instant", e);                      // (the blocks' behaviour, not the EEPROM fetch time)
+    }
+    sim::Simulator sm(r, sc);
     sim::RunLimits lim;
     lim.maxCycles = 100000;
     lim.maxInstrs = 5000;

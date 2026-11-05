@@ -157,12 +157,13 @@ Cycle Simulator::Impl::claim(State::SharedRes& r, int d, int penalty) {
 }
 
 // An instruction that needs a resource both decoders share and does not get it now does not start: it tries again when its turn has come.
-bool Simulator::Impl::gate(int d, uint32_t pc, bool csr, bool xfer, bool flag) {
+bool Simulator::Impl::gate(int d, uint32_t pc, bool csr, bool xfer, bool flag, bool bus) {
     Cycle until = 0;
     const char* what = nullptr;
     if (csr && arbPolicy != 0) { const Cycle u = claim(st.arb, d, arbPenalty); if (u) { until = u; what = "csr"; } }
     if (xfer && xferContention) { const Cycle u = claim(st.xfer, d, xferPenalty); if (u && u > until) { until = u; what = "xfer"; } }
     if (flag && flagPolicy != 0) { const Cycle u = claim(st.flag, d, flagPenalty); if (u && u > until) { until = u; what = "flag"; } }
+    if (bus) { const Cycle u = claim(st.bus, d, 0); if (u && u > until) { until = u; what = "i2c"; } }
     if (!what) return false;
     (d == 0 ? st.m.readyAt : st.p.readyAt) = until;
     st.stalls[d]++;
@@ -272,6 +273,8 @@ RunResult Simulator::Impl::runLoop(const RunLimits& lim, int stepDomain, bool, u
         } else {
             Domain d = who == 0 ? Domain::Main : Domain::Peri;
             uint32_t pcBefore = who == 0 ? st.m.pc : st.p.pc;
+            // first the decoder reads the instruction from the EEPROM (over the shared I2C bus); it executes when that is done
+            if (fetchTimed() && !st.fetched[who] && beginFetch(who)) { takeSnapshotIfDue(); continue; }
             if (!suppressStops) {
                 int id = -1;
                 bool skip = skipValid && skipDomain == who && skipPc == pcBefore;
@@ -285,7 +288,9 @@ RunResult Simulator::Impl::runLoop(const RunLimits& lim, int stepDomain, bool, u
                 }
             }
             lastWrites.clear();
+            const uint64_t instrsBefore = who == 0 ? st.m.instrs : st.p.instrs;
             if (who == 0) stepMain(); else stepPeri();
+            if ((who == 0 ? st.m.instrs : st.p.instrs) != instrsBefore || (who == 0 ? st.m.pc : st.p.pc) != pcBefore) st.fetched[who] = false;      // executed: the next one is fetched
             afterInstruction(d, pcBefore);
             executed++;
             {

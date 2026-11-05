@@ -63,7 +63,12 @@ Simulator::Impl::Impl(const Result& r, const SimConfig& c, const Extensions* e) 
 
 // The parameters (environment [params], then SimConfig::params) over what the environment's other sections set.
 void Simulator::Impl::applyParams() {
-    params.merge(cfg.params);
+    {
+        SimParams p = cfg.baseParams;                                        // the bench's starting point, then the environment, then the parameters
+        p.merge(params);
+        p.merge(cfg.params);
+        params = p;
+    }
     params.apply(pf.latency);
     lat = pf.latency;
     auto get = [&](const char* k) { return params.get(k); };
@@ -97,6 +102,8 @@ void Simulator::Impl::applyParams() {
     sampleDelay[0] = (int)get("flag.sample_delay_main");
     sampleDelay[1] = (int)get("flag.sample_delay_peri");
     fetchEeprom = get("fetch.source") == 0;
+    fetchMode = (int)get("fetch.read_mode");
+    fetchOverhead = (int)get("fetch.transaction_overhead");
     flagPolicy = (int)get("flag.arbiter_policy");
     flagAccess = (int)get("flag.access_cycles");
     flagPenalty = (int)get("flag.arbiter_penalty");

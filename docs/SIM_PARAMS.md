@@ -90,6 +90,8 @@
 | 參數 | 單位 | 初始值 | 範圍 | 說明 | 在 FPGA 上怎麼量 |
 |---|---|---|---|---|---|
 | `fetch.source` |  | eeprom | eeprom \| sram | where the two decoders read the code, the descriptor tables, the const pool and the DeviceMap. eeprom (the hardware): the I2C EEPROM, at the addresses its six region registers (main_code_addr ... peri_devmap_addr) hold now -- a wrong address or a wrong byte in the EEPROM is a wrong instruction, and an EXEC_XFER write to the EEPROM changes what is fetched. sram: the assembled images directly (the earlier model) |  |
+| `fetch.read_mode` |  | sequential | sequential \| per_byte \| instant | how a decoder reads an instruction from the I2C EEPROM before it executes it (fetch.source = eeprom). sequential (read A): one transaction per contiguous piece -- the code bytes, each descriptor, the DeviceMap entry, the constants -- each a random read of N bytes: address+W, the memory address (eeprom_address_bytes), address+R, N data bytes. per_byte (read B): every byte its own random read. instant: no bus time (the model before the EEPROM). The decoders and EXEC_XFER share the one I2C bus: first come first served, Main first when both arrive together | an instruction of each kind alone in a loop: the cycles per instruction minus its execution, against the number of bytes it reads |
+| `fetch.transaction_overhead` | ISA cycles | 2 | 0 … 100000 | extra cycles of every EEPROM read transaction of a decoder (like latency.xfer_issue for EXEC_XFER) | a one-byte instruction: its fetch time minus the bus time of the transaction |
 
 ## Decoders
 

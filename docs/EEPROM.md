@@ -64,15 +64,37 @@ asmsim --eeprom prog.eeprom.bin --cycles 100000      # 只有燒錄檔、沒有�
 - **Decoder 解碼面板**（View 選單，或除錯時開）：列出兩個 domain 的每一條指令——PC、EEPROM 位址、byte、**從 EEPROM 解出的指令**、原始碼；目前執行位置標 `M▶`／`P▶`。和組譯器產生的不同的行標紅，滑鼠移上去顯示「從 EEPROM 取到」與「組譯器產生的」。雙擊跳到原始碼那一行。
 - 時間軸與事件：沒有原始碼時顯示解出的指令；有原始碼但取到的不一樣時，事件附註「fetched from the EEPROM: …」，追蹤檔該行後面標 `!!`。
 
-## 7. 參數
+## 7. 取指令的時間與共用的 I2C 匯流排
+
+每條指令**執行前**，Decoder 先經 I2C 從 EEPROM 讀出它要的 byte：程式碼（opcode 與內嵌 byte）、每個描述子（以及 EXEC_XFER 的 DeviceMap 項目）、MOV 讀的常數。讀完才執行。
+
+一次隨機讀取 N byte 的交易：裝置位址＋W、記憶體位址（`eeprom_address_bytes`，預設 2）、裝置位址＋R、N 個資料 byte，共 `2 + 2 + N` 個 byte 階段，每個階段 9 個 SCL。27 MHz／400 kHz 時一個階段約 607.5 個 ISA 週期，另加 `fetch.transaction_overhead`（預設 2），以及每個階段的 `i2c.ack_delay` 與 `i2c.stretch`。
+
+| 指令 | 要讀的 byte | 讀法 A（`sequential`，預設） | 讀法 B（`per_byte`） |
+|---|---|---|---|
+| `ALU ADD` | 1 + 1 | 2 次讀取，6,080 週期 | 2 次，6,080 週期 |
+| `JMP`、`BR.COND` | 1 + 2 | 2 次，6,687 週期 | 3 次，9,120 週期 |
+| `EXEC_CSR WRITE8` | 2（含內嵌 byte）+ 2 | 2 次，7,294 週期 | 4 次，12,160 週期 |
+| `MOV CONST(…, 2)` | 1 + 4 + 2 | 3 次，11,549 週期 | 7 次，21,280 週期 |
+
+**一條匯流排**：Main 取指令、Peri 取指令、Peri 的 `EXEC_XFER` 共用同一個 I2C master。先到先用；同一週期同時要用時 Main 先，另一個等（時間軸標「等待共用資源：I2C 匯流排」）。`EXEC_XFER` 從發出到傳輸結束都佔著匯流排。
+
+Decoder 解碼面板的「取指令週期」欄顯示每條指令讀 EEPROM 要多少週期；`asmsim --decoded` 也列出。
+
+**影響**：一條指令從 1～3 週期變成數千到兩萬多週期。範例 14 改用規格 14 章的實際畫面時序（450,000 週期、消隱視窗 14,362 週期），可以看到「檢查視窗之後再做好幾條指令才提交」會落到視窗外。
+
+## 8. 參數
 
 | 參數 | 預設 | 意思 |
 |---|---|---|
 | `fetch.source` | `eeprom` | Decoder 從哪裡取指令。`eeprom`（硬體）：I2C EEPROM，經過六個位址暫存器；`sram`：直接用組譯後的映像（舊模型，EEPROM 內容不影響執行） |
+| `fetch.read_mode` | `sequential` | 讀法 A `sequential`：每段連續的 byte 一次讀取；讀法 B `per_byte`：每個 byte 各讀一次；`instant`：不花匯流排時間（舊模型，方便和以前的結果比對） |
+| `fetch.transaction_overhead` | 2 | 每次讀取交易額外的週期 |
 
-設定位置：ISA Top 的「I2C device / EEPROM」方塊按右鍵 → 設定參數。
+設定位置：ISA Top 的「I2C device / EEPROM」方塊按右鍵 → 設定參數；積木右鍵「設定參數」的相關參數裡也有 `fetch.read_mode`。
 
-## 8. 尚未建模
+## 9. 待確認
 
-- **從 EEPROM 取指令的時間**：目前取指令仍不花 I2C 時間（每條指令照舊的週期數）。下一步依讀法 A（每區一次連續讀）／B（每 byte 一次）計算 I2C 週期，並和 Peri 的 `EXEC_XFER` 共用匯流排排隊。
-- 各位址暫存器實際的 CSR 位址、DeviceMap 是否真的在 EEPROM、程式碼起點是否有自己的暫存器：都待硬體確認，目前做成可設定。
+- 硬體實際用讀法 A 還是 B，或是更快的讀法（例如連續的 opcode 用「目前位址讀取」）。
+- 各位址暫存器實際的 CSR 位址、DeviceMap 是否真的在 EEPROM、程式碼起點是否有自己的暫存器。
+- EEPROM 容量、I2C 位址 0x50、記憶體位址 2 byte、每次交易的額外週期：目前都是暫定值。

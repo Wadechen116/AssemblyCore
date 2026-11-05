@@ -38,6 +38,15 @@ static std::string dir() {
 #endif
 }
 
+// The tests of the instruction timing and of the sequencers pin the decoders' EEPROM reads to no bus time (fetch.read_mode = instant): what they
+// measure is the instructions themselves. The fetch over the I2C bus has tests of its own (t_fetch_timing), with the hardware default.
+static SimConfig pinned() {
+    SimConfig c;
+    std::string e;
+    c.params.set("fetch.read_mode", "instant", e);
+    return c;
+}
+
 static Result assemble1(const std::string& src, CallModel m = CallModel::Inline) {
     Options o;
     o.callModel = m;
@@ -61,7 +70,7 @@ static void runAlu(const char* name, int a, int b, const std::string& op, const 
         << " MOV MAIN_CONST_POOL[@CB] -> MAIN_SCRATCHPAD[2..3]\n MOV MAIN_SCRATCHPAD[2..3] -> ALU_OPB\n " << op << "\nh: JMP h\n";
     Result r = assemble1(src.str());
     if (!r.ok) { check(false, name, diags(r)); return; }
-    Simulator sim(r, SimConfig());
+    Simulator sim(r, pinned());
     RunLimits l;
     l.maxCycles = 1000;
     RunResult rr = sim.run(l);
@@ -110,7 +119,7 @@ static void t_imu() {
     Result r = imuProgram();
     check(r.ok, "examples/imu_gyro.asm assembles", diags(r));
     if (!r.ok) return;
-    SimConfig cfg;
+    SimConfig cfg = pinned();
     cfg.env = slurp(dir() + "/examples/imu_env.cfg");
     Simulator sim(r, cfg);
     check(sim.ok(), "environment file loads", sim.configErrors().empty() ? "" : sim.configErrors()[0]);
@@ -148,9 +157,9 @@ struct Fx {
     Fx(const std::string& src, const std::string& env = "", CallModel m = CallModel::Inline, const SimParams* params = nullptr) {
         r = assemble1(std::string(kDefs) + src, m);
         if (!r.ok) { std::printf("        assembly failed:\n%s", diags(r).c_str()); return; }
-        SimConfig c;
+        SimConfig c = pinned();
         c.env = env;
-        if (params) c.params = *params;
+        if (params) c.params.merge(*params);
         sim.reset(new Simulator(r, c));
         if (!sim->ok()) std::printf("        env error: %s\n", sim->configErrors()[0].c_str());
     }
@@ -175,7 +184,7 @@ static void t_faults() {
         Result r = assemble1(".main\ns: MOV MAIN_SCRATCHPAD[0..1] -> MAIN_SCRATCHPAD[4..5]\nh: JMP h\n");
         const SectionInfo* mv = sectionOf(r, Domain::Main, "MainMoveDesc_32b");
         patchByte(r, Domain::Main, mv->offset, r.main.bytes[mv->offset] | 0x20);
-        Simulator sim(r, SimConfig());
+        Simulator sim(r, pinned());
         sim.writeRegion("scratch", 0, {0x11, 0x22});
         RunLimits l; l.maxCycles = 100;
         RunResult rr = sim.run(l);
@@ -196,7 +205,7 @@ static void t_faults() {
             uint32_t v = r.main.bytes[o] | (r.main.bytes[o + 1] << 8);
             if ((v >> 14) == 2 && ((v >> 10) & 15) == 1) { v = (v & ~(15u << 10)) | (3u << 10); r.main.bytes[o] = (uint8_t)v; r.main.bytes[o + 1] = (uint8_t)(v >> 8); }
         }
-        Simulator sim(r, SimConfig());
+        Simulator sim(r, pinned());
         RunLimits l; l.maxCycles = 1000;
         sim.run(l);
         const Fault* f = sim.fault(Domain::Main);
@@ -205,7 +214,7 @@ static void t_faults() {
     {   // reserved Peri CSR format
         Result r = assemble1(std::string(kDefs) + ".peri\ns: EXEC_CSR WRITE8 POLL_MASK, 1\nh: JMP h\n");
         patchByte(r, Domain::Peri, 0, r.peri.bytes[0] | 0x20);
-        Simulator sim(r, SimConfig());
+        Simulator sim(r, pinned());
         RunLimits l; l.maxCycles = 100;
         sim.run(l);
         const Fault* f = sim.fault(Domain::Peri);
@@ -214,7 +223,7 @@ static void t_faults() {
     {   // a fault in one domain does not stop the other
         Result r = assemble1(std::string(kDefs) + ".main\ns: EXEC_CSR WRITE8 MARK, 7\nh: JMP h\n.peri\np: EXEC_CSR WRITE8 POLL_MASK, 1\nq: JMP q\n");
         patchByte(r, Domain::Peri, 0, r.peri.bytes[0] | 0x20);
-        Simulator sim(r, SimConfig());
+        Simulator sim(r, pinned());
         RunLimits l; l.maxCycles = 1000;
         RunResult first = sim.run(l);                 // stops at the Peri fault
         sim.run(l);                                   // ...and Main carries on
@@ -337,11 +346,11 @@ static void t_eeprom() {
         check(!buildEeprom(r, p3, e2, m2, err) && err.find("does not fit") != std::string::npos, "a program larger than the EEPROM: refused", err);
     }
     auto runWith = [&](const std::vector<uint8_t>& image, const SimParams* p, const std::string& env = "") {
-        SimConfig c;
+        SimConfig c = pinned();
         c.eepromImage = image;
         c.eepromMap = map;
         c.env = env;
-        if (p) c.params = *p;
+        if (p) c.params.merge(*p);
         auto sim = std::make_unique<Simulator>(r, c);
         RunLimits l; l.maxCycles = 40000; l.stopOnIdle = false;
         sim->run(l);
@@ -375,7 +384,7 @@ static void t_eeprom() {
         std::vector<uint8_t> ew;
         EepromMap mw;
         buildEeprom(rw, pf, ew, mw, err);
-        SimConfig c;
+        SimConfig c = pinned();
         c.eepromImage = ew;
         c.eepromMap = mw;
         Simulator sim(rw, c);
@@ -388,7 +397,7 @@ static void t_eeprom() {
         check(sim.eepromByte(0x100) == 0xFF, "a snapshot from before the write has the EEPROM as it was (each snapshot keeps its own EEPROM)");
     }
     {   // what the decoder makes of the EEPROM: the program as it is burned, line by line, each compared with what the assembler produced
-        SimConfig c;
+        SimConfig c = pinned();
         c.eepromImage = eep;
         c.eepromMap = map;
         Simulator sim(r, c);
@@ -403,7 +412,7 @@ static void t_eeprom() {
     {   // a wrong descriptor, a wrong constant: the decoder's line is not the assembler's, and the run says so where it executes it
         std::vector<uint8_t> bad = eep;
         bad[map.region[ER_MAIN_CONST].addr] ^= 0xFF;
-        SimConfig c;
+        SimConfig c = pinned();
         c.eepromImage = bad;
         c.eepromMap = map;
         Simulator sim(r, c);
@@ -430,7 +439,7 @@ static void t_eeprom() {
         bin.ok = true;
         bin.main = mi;
         bin.peri = pi;
-        SimConfig c;
+        SimConfig c = pinned();
         c.eepromImage = eep;
         c.eepromMap = map;
         Simulator sim(bin, c);
@@ -446,6 +455,79 @@ static void t_eeprom() {
         check(!tx->t.empty() && tx->t[0].find("; const 34 12") != std::string::npos, "without the source the instruction events carry what the decoder made of the bytes", tx->t.empty() ? "" : tx->t[0]);
         const DecodedLine L = s2.decodedAt(Domain::Main, 0);
         check(L.source.empty() && L.matches, "...and there is no source line to compare with");
+    }
+}
+
+// The decoders read every instruction from the I2C EEPROM before they execute it (fetch.read_mode, the hardware default: sequential).
+static void t_fetch_timing() {
+    section("fetching from the I2C EEPROM: what an instruction reads, how long it takes, the shared bus");
+    // 27 MHz / 400 kHz: 607.5 ISA cycles a byte phase; a random read of N bytes is 2 + 2 (address bytes) + N phases, plus 2 cycles a transaction
+    auto txn = [](int n) { return (uint64_t)((9LL * (4 + n) * 27000000 + 400000 - 1) / 400000) + 2; };
+    const std::string prog = std::string(kDefs) + ".main\ns: ALU ADD unsigned\n JMP s\nc: MOV CONST(0x1234, 2) -> MAIN_SCRATCHPAD[0..1]\n EXEC_CSR WRITE8 MARK, 1\n JMP c\n";
+    Result r = assemble1(prog);
+    check(r.ok, "(the program assembles)", diags(r));
+    if (!r.ok) return;
+    {
+        Simulator sim(r, SimConfig());                                          // the hardware default
+        const DecodedLine alu = sim.decodedAt(Domain::Main, 0), jmp = sim.decodedAt(Domain::Main, 1), mov = sim.decodedAt(Domain::Main, 2), csr = sim.decodedAt(Domain::Main, 3);
+        check(alu.fetchBytes == std::vector<uint32_t>({1, 1}) && alu.fetchCycles == 2 * txn(1), "ALU: the opcode, then its 1-byte descriptor: two reads, about 6,080 cycles", std::to_string(alu.fetchCycles));
+        check(jmp.fetchBytes == std::vector<uint32_t>({1, 2}) && jmp.fetchCycles == txn(1) + txn(2), "JMP: the opcode and a 2-byte branch descriptor: about 6,687 cycles", std::to_string(jmp.fetchCycles));
+        check(mov.fetchBytes == std::vector<uint32_t>({1, 4, 2}) && mov.fetchCycles == txn(1) + txn(4) + txn(2), "MOV CONST(.., 2): the opcode, the 4-byte descriptor, the 2 constants: about 11,549 cycles", std::to_string(mov.fetchCycles));
+        check(csr.fetchBytes == std::vector<uint32_t>({2, 2}), "EXEC_CSR WRITE8: the opcode with its inline byte (one read), then the descriptor");
+        check(alu.fetchCycles == 6080 && jmp.fetchCycles == 6687 && mov.fetchCycles == 11549, "the numbers of the table: 6,080 / 6,687 / 11,549");
+    }
+    {
+        SimParams p;
+        std::string e;
+        p.set("fetch.read_mode", "per_byte", e);
+        SimConfig c;
+        c.params = p;
+        Simulator sim(r, c);
+        check(sim.decodedAt(Domain::Main, 2).fetchCycles == 7 * txn(1), "per_byte (read B): every byte its own read -- MOV CONST(.., 2) is 7 reads, about 21,280 cycles", std::to_string(sim.decodedAt(Domain::Main, 2).fetchCycles));
+        p.set("fetch.read_mode", "instant", e);
+        c.params = p;
+        Simulator s2(r, c);
+        check(s2.decodedAt(Domain::Main, 2).fetchCycles == 0, "instant: no bus time (the model before the EEPROM)");
+        p.set("fetch.read_mode", "sequential", e);
+        p.set("i2c.stretch", "10", e);
+        c.params = p;
+        Simulator s3(r, c);
+        check(s3.decodedAt(Domain::Main, 0).fetchCycles == 2 * (txn(1) + 50), "i2c.stretch is on the EEPROM reads too (10 cycles a byte phase, 5 phases a read)");
+    }
+    {   // the instruction executes when its read is over
+        Fx f(".main\ns: EXEC_CSR WRITE8 MARK, 1\nh: JMP h\n", "", CallModel::Inline, nullptr);
+        SimParams hw;
+        std::string e;
+        hw.set("fetch.read_mode", "sequential", e);
+        f.sim->setParams(hw);
+        const Cycle at = f.runUntil("csr[0x50] == 1", 100000).now;
+        check(at == (Cycle)(txn(2) + txn(2)), "EXEC_CSR writes its CSR once it has been read (opcode + inline byte, then the descriptor): cycle " + std::to_string(txn(2) + txn(2)), std::to_string(at));
+    }
+    {   // one bus: Main and Peri start together, Main reads first and Peri waits for it
+        const std::string two = std::string(kDefs) + ".csr B = 0x51\n.main\ns: EXEC_CSR WRITE8 MARK, 1\nh: JMP h\n.peri\np: EXEC_CSR WRITE8 B, 2\nq: JMP q\n";
+        Result r2 = assemble1(two);
+        Simulator sim(r2, SimConfig());
+        struct Waits : EventSink { int main = 0, peri = 0, fetches = 0; void onEvent(const Event& e) override { if (e.type == EventType::Stall && e.what == "i2c") (e.domain == 0 ? main : peri)++; if (e.type == EventType::Bus && e.what == "eeprom.fetch") fetches++; } };
+        auto w = std::make_shared<Waits>();
+        sim.addSink(w);
+        RunLimits l; l.maxCycles = 100000; l.stopOnIdle = false; l.untilExpr = "csr[0x51] == 2";
+        const RunResult rr = sim.run(l);
+        const Cycle one = (Cycle)(txn(2) + txn(2));
+        check(rr.now == 2 * one && w->peri >= 1, "both want the bus at cycle 0: Main reads first; Peri waits, and executes after its own read (" + std::to_string(2 * one) + ")", std::to_string(rr.now) + " waits " + std::to_string(w->peri));
+        check(ev(sim, "csr[0x50]") == 1 && w->fetches >= 2, "Main's CSR was written long before");
+    }
+    {   // EXEC_XFER holds the bus while it transfers: a decoder that wants to read then waits
+        const std::string x = std::string(kDefs) + ".main\ns: ALU ADD unsigned\n JMP s\n.peri\np: EXEC_XFER READ dev=0, len=6, ptr=0, ext=[0x10]\nq: JMP q\n";
+        Result r3 = assemble1(x);
+        SimConfig c;
+        c.env = "[device d]\naddr = 0x68\nblock 0x10 = 1 2 3 4 5 6\n";
+        Simulator sim(r3, c);
+        struct Waits : EventSink { int main = 0; void onEvent(const Event& e) override { if (e.type == EventType::Stall && e.what == "i2c" && e.domain == 0) main++; } };
+        auto w = std::make_shared<Waits>();
+        sim.addSink(w);
+        RunLimits l; l.maxCycles = 200000; l.stopOnIdle = false;
+        sim.run(l);
+        check(w->main >= 1 && ev(sim, "rx[5]") == 6, "Peri's EXEC_XFER has the bus: Main's next read waits for the transfer to end", std::to_string(w->main));
     }
 }
 
@@ -588,7 +670,7 @@ static void t_debug() {
     }
     {
         Result r = imuProgram();
-        SimConfig cfg;
+        SimConfig cfg = pinned();
         cfg.env = slurp(dir() + "/examples/imu_env.cfg");
         Simulator a(r, cfg), b(r, cfg);
         RunLimits l;
@@ -619,7 +701,7 @@ static void t_debug() {
     }
     {
         Result r = imuProgram();
-        SimConfig cfg;
+        SimConfig cfg = pinned();
         cfg.env = slurp(dir() + "/examples/imu_env.cfg");
         Simulator sim(r, cfg);
         std::string text, csv, vcd;
@@ -740,7 +822,7 @@ static void t_v31_rules() {
         Result r = assemble1(p.src);
         if (!r.ok) { check(false, p.name, diags(r)); continue; }
         patchMoveDesc(r, 0, p.edit);
-        Simulator sim(r, SimConfig());
+        Simulator sim(r, pinned());
         RunLimits l;
         l.maxCycles = 100;
         sim.run(l);
@@ -771,7 +853,7 @@ static void t_v31_rules() {
         Result r = assemble(v, nullptr, o);
         check(r.ok, "assembles with remapped ALU numbers and 2-byte DeviceMap entries", diags(r));
         if (r.ok) {
-            SimConfig cfg;
+            SimConfig cfg = pinned();
             cfg.profile = p;
             cfg.env = std::string(kEnvCsr) + "[device d]\naddr = 0x68\nreg 0x00 = 0x5A\n";
             Simulator sim(r, cfg);
@@ -782,7 +864,7 @@ static void t_v31_rules() {
                   std::to_string(ev(sim, "scratch[8..9]")) + " " + std::to_string(ev(sim, "scratch[10..11]")));
             check(ev(sim, "rx[0]") == 0x5A && ev(sim, "peri.done") == 1, "the device address is found through the 2-byte DeviceMap entry (the read returned 0x5A)", std::to_string(ev(sim, "rx[0]")));
             // the same bytes under the DEFAULT numbers are a different program: the profile is not optional
-            SimConfig wrong;
+            SimConfig wrong = pinned();
             Simulator sim2(r, wrong);
             sim2.run(l);
             check(ev(sim2, "scratch[8..9]") != 12 || sim2.fault(Domain::Main) != nullptr, "read with the default ALU numbering the same image does not compute the same result");
@@ -790,7 +872,7 @@ static void t_v31_rules() {
     }
     {   // the branch descriptor of a BR.ERET outside any handler
         Result r = assemble1(".main\ns: BR.ERET\n");
-        Simulator sim(r, SimConfig());
+        Simulator sim(r, pinned());
         RunLimits l;
         l.maxCycles = 100;
         sim.run(l);
@@ -804,7 +886,7 @@ static void t_v31_rules() {
             uint32_t v = r.main.bytes[o] | (r.main.bytes[o + 1] << 8);
             if ((v >> 14) == 1) { v |= 1u << 9; r.main.bytes[o] = (uint8_t)v; r.main.bytes[o + 1] = (uint8_t)(v >> 8); }
         }
-        Simulator sim(r, SimConfig());
+        Simulator sim(r, pinned());
         RunLimits l;
         l.maxCycles = 100;
         sim.run(l);
@@ -945,7 +1027,7 @@ static void t_events() {
             uint32_t eretPc = 0;
             for (auto& ii : r.instrs) if (ii.text.find("BR.ERET") != std::string::npos) eretPc = ii.pc;
             patchByte(r, Domain::Main, br->offset, (uint8_t)eretPc);
-            Simulator sim(r, SimConfig());
+            Simulator sim(r, pinned());
             RunLimits l; l.maxCycles = 200;
             sim.run(l);
             const Fault* fl = sim.fault(Domain::Main);
@@ -959,14 +1041,14 @@ static void t_csr_buf_valid() {
     const char* prog = ".main\ns: MOV MAIN_CSR_DATA_BUF[0..1] -> MAIN_SCRATCHPAD[4..5]\nh: JMP h\n";
     {
         Result r = assemble1(prog);
-        Simulator sim(r, SimConfig());
+        Simulator sim(r, pinned());
         RunLimits l; l.maxCycles = 100;
         sim.run(l);
         check(!sim.faulted(Domain::Main), "without the feature a MOV from never-read csrbuf bytes just copies them");
     }
     {
         Result r = assemble1(prog);
-        SimConfig c;
+        SimConfig c = pinned();
         c.profile.csrBufValid = true;
         Simulator sim(r, c);
         RunLimits l; l.maxCycles = 100;
@@ -977,7 +1059,7 @@ static void t_csr_buf_valid() {
     {   // a completed READ_BUF makes exactly its bytes valid
         Result r = assemble1(".main\n.csr C = 0x120\ns: EXEC_CSR READ_BUF C, len=2, ptr=0\n MOV MAIN_CSR_DATA_BUF[0..1] -> MAIN_SCRATCHPAD[4..5]\n MOV MAIN_CSR_DATA_BUF[1..2] -> MAIN_SCRATCHPAD[6..7]\nh: JMP h\n");
         check(r.ok, "setup", diags(r));
-        SimConfig c;
+        SimConfig c = pinned();
         c.profile.csrBufValid = true;
         Simulator sim(r, c);
         RunLimits l; l.maxCycles = 200;
@@ -988,7 +1070,7 @@ static void t_csr_buf_valid() {
     }
     {   // a failed read leaves its range invalid
         Result r = assemble1(".main\n.csr C = 0x120\ns: EXEC_CSR READ_BUF C, len=2, ptr=0\n MOV MAIN_CSR_DATA_BUF[0..1] -> MAIN_SCRATCHPAD[4..5]\nh: JMP h\n");
-        SimConfig c;
+        SimConfig c = pinned();
         c.profile.csrBufValid = true;
         c.env = "[sim]\nunmapped_csr = fault\n";
         Simulator sim(r, c);
@@ -1025,7 +1107,7 @@ static void t_extensions() {
         };
         ext.registerDevice("counter", [](const DeviceSpec&, std::string&) { return std::unique_ptr<I2cDevice>(new Dev()); });
         Result r = assemble1(std::string(kDefs) + ".main\ns: EXEC_CSR WRITE8 MARK, 1\nh: JMP h\n.peri\np: EXEC_XFER READ dev=0, addr=0x10, addrlen=1, ptr=0\nq: JMP q\n");
-        SimConfig cfg;
+        SimConfig cfg = pinned();
         cfg.env = "[signal beeped]\n[csr MARK]\nkind = action\nbit0 = beep:x\n[device c]\nkind = counter\naddr = 0x68\n";
         Simulator sim(r, cfg, &ext);
         check(sim.ok(), "custom action and device kind are accepted", sim.configErrors().empty() ? "" : sim.configErrors()[0]);
@@ -1036,7 +1118,7 @@ static void t_extensions() {
     }
     {
         Result r = assemble1(".main\nh: JMP h\n");
-        SimConfig cfg;
+        SimConfig cfg = pinned();
         cfg.env = "[csr X]\nkind = banana\naddr = 1\n[device d]\naddr = 0x70\nbogus = 1\n[timing]\nnope = 1\n[csr Y]\nkind = action\naddr = 2\nbit0 = nothing\n[condition main 0x3]\nexpr = nosuch.signal\n";
         Simulator sim(r, cfg);
         check(!sim.ok() && sim.configErrors().size() >= 5, "five environment mistakes are all reported", std::to_string(sim.configErrors().size()));
@@ -1047,7 +1129,7 @@ static void t_extensions() {
 static void t_scenario() {
     section("scenario scripts");
     Result r = imuProgram();
-    SimConfig cfg;
+    SimConfig cfg = pinned();
     cfg.env = slurp(dir() + "/examples/imu_env.cfg");
     Simulator sim(r, cfg);
     ScenarioResult sr = runScenario(sim,
@@ -1426,9 +1508,11 @@ static void t_params() {
             RunResult rr = f.sim->run(l);
             return std::to_string(rr.now) + "/" + std::to_string(ev(*f.sim, "peri.instrs")) + "/" + std::to_string(ev(*f.sim, "slot.valid")) + "/" + std::to_string(ev(*f.sim, "slot[0..1]"));
         };
-        const std::string ref = final(SimParams());
-        SimParams defaults;
         std::string e;
+        SimParams none;                                                       // nothing set but the read mode the other tests pin: back to the hardware default here
+        none.set("fetch.read_mode", SimParams().text("fetch.read_mode"), e);
+        const std::string ref = final(none);
+        SimParams defaults;
         for (const ParamDef& d : paramCatalog()) defaults.set(d.key, SimParams().text(d.key), e);
         check(final(defaults) == ref, "every parameter set explicitly to its initial value: the run is the same as with none set", ref);
     }
@@ -1453,6 +1537,7 @@ int main() {
     t_same_cycle();
     t_timing();
     t_eeprom();
+    t_fetch_timing();
     t_peri_units();
     t_main_units();
     t_debug();

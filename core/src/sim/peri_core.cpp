@@ -161,6 +161,7 @@ void Simulator::Impl::opPeriXfer(OpCtx& oc) {
         p.xfer.dev = devEntry.addr7;                   // from here on `dev` is the 7-bit I2C address
         const Cycle done = st.now + (Cycle)(lat.xfer(x.read, x.addrLen, x.len) + xferExtra(x.read, x.addrLen, x.len) + fetchExtra[1]);
         p.readyAt = kNever;                            // waits for the bus (spec 14.3: not a 1-cycle instruction)
+        p.xfer.doneAt = done;
         schedule(done, TimedEvent::XferDone);
         next = pc + length;
         latency = -1;
@@ -191,10 +192,12 @@ void Simulator::Impl::stepPeri() {
     if (!h) { raise(Domain::Peri, pc, "fault_opcode", "opcode " + std::to_string(op) + " has no handler"); return; }
     const bool usesCsr = op == 0, usesXfer = op == 2 && xferContention;
     const bool usesFlag = flagPolicy != 0 && nextReadsFlag(1);
-    if (gate(1, pc, usesCsr, usesXfer, usesFlag)) return;                                   // a shared resource is taken: not now
+    const bool usesBus = op == 3 && fetchTimed();                                 // EXEC_XFER: the I2C bus the decoders fetch over
+    if (gate(1, pc, usesCsr, usesXfer, usesFlag, usesBus)) return;                                   // a shared resource is taken: not now
     h(oc);
     if (p.faulted || oc.skipAdvance) return;
     occupy(1, usesCsr, usesXfer, usesFlag, oc.latency);
+    if (usesBus && p.xfer.active) { st.bus.freeAt = p.xfer.doneAt; st.bus.last = 1; }      // held until the transfer ends
     p.pc = oc.next;
     if (oc.latency >= 0) p.readyAt = st.now + (Cycle)(oc.latency + fetchExtra[1]);
     p.instrs++;

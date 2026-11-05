@@ -13,4 +13,4 @@
 8. **失控保護**：把最後的 `done: JMP done` 改成 `done: JMP loop`（不再停機），F5 會在上限（5000 萬週期或 15 秒）停下並說明原因。
 
 ## 預期（情境腳本）
-`asmsim -I ../common hello.asm --scenario hello.scn` → `PASS (4 checks)`，約在第 122 週期停機。
+`asmsim -I ../common hello.asm --scenario hello.scn` → `PASS (4 checks)`，約在第 389,165 週期停機（每條指令都先從 I2C EEPROM 讀出來；`--param fetch.read_mode=instant` 不算取指令時間，約第 122 週期）。
