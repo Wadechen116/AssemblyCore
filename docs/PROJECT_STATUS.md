@@ -194,8 +194,8 @@ Windows 建置在 `/mnt/d/WSL/acbuild_msvc`（`build.bat`、`uitest.bat`），�
 
 | # | 問題 | 目前模型的假設 | 答覆 |
 |---|---|---|---|
-| B1 | CSR Arbiter 在硬體上是否真的存在 Main／Peri 競爭？ | 是（可選，預設關） | |
-| B2 | 裁決規則：先到先得、固定優先（誰優先）、還是輪流？ | 先到先得；同週期撞上才用 `csr.arbiter_policy` | |
+| B1 | CSR Arbiter 在硬體上是否真的存在 Main／Peri 競爭？ | 是（可選，預設關） | 是（2026-11-05）：預設改為打開 |
+| B2 | 裁決規則：先到先得、固定優先（誰優先）、還是輪流？ | 先到先得；同週期撞上才用 `csr.arbiter_policy` | 先到先得；同時抵達 Main 先、Peri 等（2026-11-05）→ 預設 `main_first` |
 | B3 | 一次 `EXEC_CSR` 占用仲裁器多久？ | `max(1, 延遲 − 1)` 週期（只含存取段） | |
 | B4 | 交接有沒有額外延遲？幾週期？ | 0（`csr.arbiter_penalty`） | |
 | B5 | `EXEC_XFER` 的 I2C 路徑是否也要經過 Arbiter？ | 否 | |

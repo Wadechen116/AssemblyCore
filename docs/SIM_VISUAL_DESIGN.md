@@ -39,7 +39,7 @@ Timer 是**硬體計時 ＋ BR polling**，由 EXEC_CSR 啟動（`timer_start[:�
 | # | 參數（草案名） | 單位 | 預設 | 意義 | FPGA 上的量法 |
 |---|---|---|---|---|---|
 | 1 | `main.fetch_cycles`、`peri.fetch_cycles` | ISA 週期 | 0 | 兩個 decoder 取描述子／解碼額外花的週期（SRAM 時脈是 ISA 的 2 倍，取 32 位元字） | 連續 N 條 NOP 型指令的總週期 ÷ N |
-| 2 | `csr.arbiter_policy` | 列舉 | `none`（不建模） | CSR Arbiter 的裁決：`main_first`／`peri_first`／`round_robin`／`none` | 兩邊同時 EXEC_CSR 的先後 |
+| 2 | `csr.arbiter_policy` | 列舉 | `main_first`（先到先得，同週期 Main 先；2026-11-05 硬體確認） | CSR Arbiter 的裁決：`main_first`／`peri_first`／`round_robin`／`none` | 兩邊同時 EXEC_CSR 的先後 |
 | 3 | `csr.arbiter_penalty` | ISA 週期 | 0 | 被擋的一方多等的週期 | 同上，量等待差 |
 | 4 | `csr.access_latency_main`、`_peri` | ISA 週期 | = `csrAccess` | 兩側各自的 CSR 讀寫延遲（可能不同） | 單獨連續 EXEC_CSR |
 | 5 | `datapath.contention` | 開關＋週期 | 關 | Data Xfer 被 MOV 與 result_slot 讀取／EXEC_PUB 共用時是否互相等待 | Main 讀 slot 同時 Peri PUB |

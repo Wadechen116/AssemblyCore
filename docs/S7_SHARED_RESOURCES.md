@@ -2,7 +2,7 @@
 
 AssemblyCore ・ Sensor Micro-Sequencer ISA v1.6 r10 模擬器 ・ 2026-10-29
 
-> **一句話**：Main 與 Peri 兩個 decoder 在硬體上共用 CSR Arbiter 與 Data Xfer，也共用結果槽；S7 把「兩邊會互相等待」、「結果槽的複製與可見需要時間」、「分支看到的旗標有取樣延遲」做成**可由參數打開的模型**。**十個參數預設關閉，開著等於完全沒有改變現有行為；`flag.arbiter_policy` 預設 `main_first`（硬體確認共用 Status Flag）**；打開之後，兩邊才開始互相等，而且等了多久、誰在等，在時間軸、ISA Top 圖和統計裡都看得到。
+> **一句話**：Main 與 Peri 兩個 decoder 在硬體上共用 CSR Arbiter 與 Data Xfer，也共用結果槽；S7 把「兩邊會互相等待」、「結果槽的複製與可見需要時間」、「分支看到的旗標有取樣延遲」做成**可由參數打開的模型**。**九個參數預設關閉，開著等於完全沒有改變現有行為；`csr.arbiter_policy` 與 `flag.arbiter_policy` 預設 `main_first`（硬體確認共用，先到先得、同週期 Main 先）**；打開之後，兩邊才開始互相等，而且等了多久、誰在等，在時間軸、ISA Top 圖和統計裡都看得到。
 >
 > **要先說清楚的**：這些是**模型**，不是已經對照 RTL 或 FPGA 驗證過的硬體行為。使用者尚未確認硬體的實際規則（Arbiter 是否真的存在競爭、裁決規則為何），所以預設全關，由量測來決定要不要打開、數值多少。
 
@@ -55,7 +55,7 @@ ISA Top 架構圖上，Main 與 Peri 各自有 decoder、計時器與狀態旗�
 
 | 參數 | 群組 | 單位 | 預設 | 範圍 | 意思 |
 |---|---|---|---|---|---|
-| `csr.arbiter_policy` | CSR arbiter | 列舉 | `none` | none / main_first / peri_first / round_robin | 兩個 decoder 的 `EXEC_CSR` 是否共用一個仲裁器，以及**同一週期都想用時誰先**。`none`＝完全不建模 |
+| `csr.arbiter_policy` | CSR arbiter | 列舉 | `main_first` | none / main_first / peri_first / round_robin | 兩個 decoder 的 `EXEC_CSR` 共用一個仲裁器，**先到先得**；**同一週期都想用時誰先**由它決定。預設 `main_first`（使用者 2026-11-05 確認硬體：同時抵達時 Main 先、Peri 等）。`none`＝完全不建模 |
 | `csr.arbiter_penalty` | CSR arbiter | ISA 週期 | 0 | 0..100000 | 輪到等待者時的**交接延遲**：仲裁器空閒後，等待者再等這麼久才開始。只有 policy 不是 `none` 才有意義 |
 | `datapath.contention` | Data path | 開關 | 關 | 開／關 | Data Xfer 是否被 Peri 的 `EXEC_PUB` 與 Main 從結果槽的 `MOV` 共用 |
 | `datapath.contention_cycles` | Data path | ISA 週期 | 0 | 0..100000 | 同上，Data Xfer 的交接延遲 |
@@ -67,7 +67,7 @@ ISA Top 架構圖上，Main 與 Peri 各自有 decoder、計時器與狀態旗�
 | `flag.sample_delay_main` | Status flags | ISA 週期 | 0 | 0..100000 | Main 的 BR 看到的旗標是「這麼多週期以前」的值 |
 | `flag.sample_delay_peri` | Status flags | ISA 週期 | 0 | 0..100000 | 同上，Peri 的 BR |
 
-**預設值的意義**：全部為 0／關閉＝**不建模**；唯一的例外是 `flag.arbiter_policy`，使用者確認硬體上 Main 與 Peri 共用 Status Flag，預設 `main_first`（這會改變舊結果：兩邊同一週期 BR 讀旗標時 Peri 晚 1 週期）。測試強制驗證了：把這十一個參數明確寫成它們的初始值，跑出來的結果和完全不設定**逐週期相同**（見 §7）。
+**預設值的意義**：全部為 0／關閉＝**不建模**；例外是 `flag.arbiter_policy` 與 `csr.arbiter_policy`：使用者確認硬體上 Main 與 Peri 共用 Status Flag 與 CSR Arbiter，兩者預設 `main_first`（先到先得，同週期 Main 先；這會改變舊結果：兩邊同一週期都要用時 Peri 晚一些）。測試強制驗證了：把這十一個參數明確寫成它們的初始值，跑出來的結果和完全不設定**逐週期相同**（見 §7）。
 
 ---
 

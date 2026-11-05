@@ -124,9 +124,9 @@ std::vector<ParamDef> build() {
     add("i2c.stretch", "I2C path", "ISA cycles per byte", 0, 0, 1000000, "clock stretching per byte phase", "SCL held low by the device");
     add("i2c.turnaround", "I2C path", "ISA cycles", 0, 0, 1000000, "extra cycles for the direction change (repeated start) of a read with a register address", "repeated start on the bus");
 
-    // ---- what the architecture drawing shows but the simulator does not model yet (stored, not used; a later stage turns them on)
-    choice("csr.arbiter_policy", "CSR arbiter", {"none", "main_first", "peri_first", "round_robin"}, 0,
-           "the Main/Peri CSR arbiter. none: no arbitration is modelled (the two decoders never wait for each other). Otherwise both decoders reach the CSRs through ONE arbiter: an EXEC_CSR holds it for the access part of the instruction, and an EXEC_CSR of the other decoder that finds it taken does not start until it is free (plus csr.arbiter_penalty). When both want it in the same cycle this policy chooses who goes first: main_first, peri_first, or round_robin (the one that did not have it last). A MODEL: confirm it against the RTL / the FPGA",
+    // ---- the shared resources of the architecture drawing (S7)
+    choice("csr.arbiter_policy", "CSR arbiter", {"none", "main_first", "peri_first", "round_robin"}, 1,
+           "the Main/Peri CSR arbiter. Both decoders reach the CSRs through ONE arbiter, first come first served: an EXEC_CSR holds it for the access part of the instruction, and an EXEC_CSR of the other decoder that finds it taken does not start until it is free (plus csr.arbiter_penalty). When both arrive in the same cycle this policy chooses who goes first: main_first (the hardware, user-confirmed 2026-11-05: Main goes, Peri waits), peri_first, or round_robin (the one that did not have it last). none: no arbitration is modelled (the two decoders never wait for each other)",
            "both decoders issue EXEC_CSR in a loop, started together: who is slowed, and by how much", true);
     add("csr.arbiter_penalty", "CSR arbiter", "ISA cycles", 0, 0, 100000, "extra cycles an EXEC_CSR waits after the arbiter became free (the hand-over); only with csr.arbiter_policy other than none", "difference in completion between the winner and the loser, minus the time the winner held the arbiter", true);
     boolean("datapath.contention", "Data path", false,
