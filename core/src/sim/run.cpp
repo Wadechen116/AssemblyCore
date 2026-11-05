@@ -421,6 +421,10 @@ bool Simulator::faulted(Domain d) const { return d == Domain::Main ? p_->st.m.fa
 const Fault* Simulator::fault(Domain d) const { return p_->st.hasFault[di(d)] ? &p_->st.fault[di(d)] : nullptr; }
 bool Simulator::inHandler(Domain d) const { return p_->st.ev[di(d)].active; }
 uint64_t Simulator::pendingEvents(Domain d) const { return p_->st.ev[di(d)].pending; }
+size_t Simulator::eepromSize() const { return p_->st.eeprom ? p_->st.eeprom->size() : 0; }
+uint8_t Simulator::eepromByte(uint32_t a) const { return p_->st.eeprom && a < p_->st.eeprom->size() ? (*p_->st.eeprom)[a] : 0xFF; }
+const EepromMap& Simulator::eepromMap() const { return p_->emap; }
+
 std::vector<EventRecord> Simulator::eventLog() const {
     std::vector<EventRecord> v;
     for (const auto& c : p_->st.evFrozen) v.insert(v.end(), c->begin(), c->end());

@@ -23,13 +23,32 @@ Simulator::Impl::Impl(const Result& r, const SimConfig& c, const Extensions* e) 
     for (const VectorInfo& v : r.vectors) if (v.id >= 0 && v.id < 64) vecPc[di(v.domain)][v.id] = v.pc;
     if (softret) for (const CallSiteInfo& cs : callSites) callByTransfer[di(cs.domain)][cs.transferPc] = &cs;
     for (const SymbolInfo& s : r.symbols) {
-        if (s.kind == "label") labels[s.name] = (uint32_t)s.value;
+        if (s.kind == "label") {
+            labels[s.name] = (uint32_t)s.value;
+            const size_t colon = s.name.find(':');
+            const int d = s.name.compare(0, 5, "peri:") == 0 ? 1 : 0;
+            if (colon != std::string::npos && !labelAt[d].count((uint32_t)s.value)) labelAt[d][(uint32_t)s.value] = s.name.substr(colon + 1);
+        }
         else if (s.kind == "csr") csrSymbols[s.name] = (uint32_t)s.value;
     }
-    // MAIN_CONST_POOL size
+    // MAIN_CONST_POOL size (a bare image without a section list: the table runs to the end of the image)
     for (const SectionInfo& s : r.main.sections) if (s.name == "MAIN_CONST_POOL") constSize = s.size;
+    if (!constSize && img[0].present) constSize = img[0].end[MT_CONST] - img[0].off[MT_CONST];
+    // the EEPROM: the one given, or the one the assembler would burn
+    if (!c.eepromImage.empty()) { eepromReset = c.eepromImage; emap = c.eepromMap; }
+    else if (!buildEeprom(r, pf, eepromReset, emap, eepromError)) eepromReset.clear();
+    if (!eepromReset.empty() || !eepromError.empty()) eepromReset.resize(std::max<size_t>(eepromReset.size(), emap.capacity), (uint8_t)emap.fill);      // the whole chip, erased where unused
+    for (int d = 0; d < 2; d++) {                                            // where each domain's regions start in its logical image
+        img[d].regionStart[0] = emap.region[d * 3 + 0].logicalStart;
+        img[d].regionStart[1] = emap.region[d * 3 + 1].logicalStart;
+        img[d].regionStart[2] = emap.region[d * 3 + 2].logicalStart;
+    }
     registerOps();
     buildSignals();
+    for (int i = 0; i < ER_COUNT; i++) {                                     // the region registers (an environment [csr] can bind one: kind = value, bind = main_desc_addr)
+        defStored(eepromRegisterName(i), (int64_t)emap.region[i].addr);
+        regionSig[i] = sigId(eepromRegisterName(i));
+    }
     buildDefaultConditions();
     loadEnv(cfg.env);
     envParams = params;
@@ -77,6 +96,7 @@ void Simulator::Impl::applyParams() {
     slotValidDelay = (int)get("slot.valid_delay");
     sampleDelay[0] = (int)get("flag.sample_delay_main");
     sampleDelay[1] = (int)get("flag.sample_delay_peri");
+    fetchEeprom = get("fetch.source") == 0;
     flagPolicy = (int)get("flag.arbiter_policy");
     flagAccess = (int)get("flag.access_cycles");
     flagPenalty = (int)get("flag.arbiter_penalty");
@@ -231,6 +251,7 @@ void Simulator::Impl::resetState() {
     n.sigPrev = n.sig;
     n.sigAt.assign((size_t)nStored, kNever);
     n.dev.resize(devs.size());
+    if (!eepromReset.empty()) n.eeprom = std::make_shared<const std::vector<uint8_t>>(eepromReset);
     st = n;
     st.m.bufOk = pf.csrBufResetDefined ? 0xFFFFFFFFu : 0u;
     for (auto& kv : csrDefs) if (kv.second.kind == "ram") st.csr[kv.first] = (uint8_t)kv.second.reset;
@@ -343,7 +364,10 @@ int64_t Simulator::Impl::get(int h, int64_t idx, int len) const {
         case S_OUT: return (int64_t)st.m.out;
         case S_CONST: {
             if (idx < 0 || (size_t)(img[0].off[MT_CONST] + idx) >= img[0].bytes.size() || idx >= (int64_t)constSize) return 0;
-            const uint8_t* b = img[0].bytes.data() + img[0].off[MT_CONST] + idx;
+            const_cast<Impl*>(this)->syncFetch();                       // (the registers may have changed since the last instruction)
+            uint8_t bb[8] = {0};
+            for (int k = 0; k < 8; k++) bb[k] = (uint8_t)img[0].u8(img[0].off[MT_CONST] + (uint32_t)idx + (uint32_t)k);
+            const uint8_t* b = bb;
             return le(b, n, (int)constSize - (int)idx);
         }
         case S_CSR: {
@@ -481,6 +505,35 @@ bool Simulator::Impl::fetchOk(Domain d, uint32_t pc) {
     if (pc >= img[di(d)].codeLimit) {
         raise(d, pc, "fault_pc_out_of_code", "pc " + std::to_string(pc) + " is outside the executable code (" + std::to_string(img[di(d)].codeLimit) + " bytes)");
         return false;
+    }
+    return true;
+}
+
+// The decoders fetch through the region registers: each domain's image reads the EEPROM at the addresses the registers hold now.
+void Simulator::Impl::syncFetch() {
+    const bool on = fetchEeprom && st.eeprom;
+    for (int d = 0; d < 2; d++) {
+        img[d].eeprom = on ? st.eeprom.get() : nullptr;
+        if (!on) continue;
+        for (int k = 0; k < 3; k++) {
+            const int id = regionSig[d * 3 + k];
+            img[d].regionBase[k] = id >= 0 ? (uint32_t)signal(sigs[(size_t)id].name) : emap.region[d * 3 + k].addr;
+        }
+    }
+}
+
+// The EEPROM on the I2C bus: a random read returns its bytes from the register address on, a write changes them (what the decoders then fetch).
+bool Simulator::Impl::eepromDevice(const XferInFlight& x, I2cReply& r) {
+    if (!st.eeprom || x.dev != emap.devAddr || devIndexByAddr.count(x.dev)) return false;          // (a device of the environment at that address wins)
+    const std::vector<uint8_t>& e = *st.eeprom;
+    const size_t n = e.size();
+    r = I2cReply();
+    if (x.read) {
+        for (int i = 0; i < x.len; i++) r.data.push_back(n ? e[(x.addr + (uint32_t)i) % n] : 0);
+    } else if (n) {
+        auto copy = std::make_shared<std::vector<uint8_t>>(e);
+        (*copy)[x.addr % n] = x.data;
+        st.eeprom = copy;
     }
     return true;
 }

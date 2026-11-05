@@ -27,6 +27,7 @@ struct BuildSnapshot {
     std::vector<std::string> sourcePaths;
     std::vector<asmcore::Source> sources;         // the texts that were built (the artifact manifest hashes them)
     std::string prefix;
+    asmcore::Profile profile;                     // the profile it was built with (the EEPROM image is placed by its eeprom_* addresses)
     double milliseconds = 0;
 
     BuildSnapshot() = default;

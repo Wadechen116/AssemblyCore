@@ -85,6 +85,12 @@
 | `sim.unmapped_csr` |  | ram | ram \| fault | an EXEC_CSR to an address the environment does not define: behaves as RAM, or faults |  |
 | `sim.fault_stops` |  | domain | domain \| all | a fault stops only its own sequencer, or both |  |
 
+## Program store
+
+| 參數 | 單位 | 初始值 | 範圍 | 說明 | 在 FPGA 上怎麼量 |
+|---|---|---|---|---|---|
+| `fetch.source` |  | eeprom | eeprom \| sram | where the two decoders read the code, the descriptor tables, the const pool and the DeviceMap. eeprom (the hardware): the I2C EEPROM, at the addresses its six region registers (main_code_addr ... peri_devmap_addr) hold now -- a wrong address or a wrong byte in the EEPROM is a wrong instruction, and an EXEC_XFER write to the EEPROM changes what is fetched. sram: the assembled images directly (the earlier model) |  |
+
 ## Decoders
 
 | 參數 | 單位 | 初始值 | 範圍 | 說明 | 在 FPGA 上怎麼量 |

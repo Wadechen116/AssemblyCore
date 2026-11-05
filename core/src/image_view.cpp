@@ -46,7 +46,7 @@ bool ImageView::entry(int t, uint32_t idx, int entryBytes, uint32_t& v) const {
     v = 0;
     for (int k = 0; k < entryBytes; k++) {
         int sh = big ? 8 * (entryBytes - 1 - k) : 8 * k;
-        v |= (uint32_t)bytes[pos + k] << sh;
+        v |= u8((uint32_t)(pos + k)) << sh;
     }
     return true;
 }

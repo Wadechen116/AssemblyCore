@@ -36,6 +36,7 @@ add_library(asmcore STATIC
   core/src/image_view.cpp
   core/src/disasm.cpp
   core/src/sim_params.cpp
+  core/src/eeprom.cpp
   core/src/sim/ini.cpp
   core/src/sim/sexpr.cpp
   core/src/sim/impl.cpp
@@ -45,6 +46,7 @@ add_library(asmcore STATIC
   core/src/sim/main_core.cpp
   core/src/sim/peri_core.cpp
   core/src/sim/debug.cpp
+  core/src/sim/decode.cpp
   core/src/sim/scenario.cpp)
 target_include_directories(asmcore PUBLIC core/include)
 

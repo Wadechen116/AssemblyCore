@@ -365,6 +365,113 @@ private:
     ConnectionBag conns_;
 };
 
+// ---- the decoder's view ------------------------------------------------------------------------------------------------------------------
+// What the two decoders make of the bytes they fetch from the EEPROM (through the region registers): every instruction with its EEPROM address, the bytes,
+// the instruction decoded from them and the source line it should be. A line that is not what the assembler produced (a wrong byte burned, a register
+// pointing elsewhere, an EXEC_XFER write into the program) is marked. The instruction each sequencer is at is marked with its letter.
+class DecoderPanel : public QWidget {
+    Q_DECLARE_TR_FUNCTIONS(DecoderPanel)
+public:
+    explicit DecoderPanel(AppContext& ctx) : ctx_(ctx) {
+        auto* lay = new QVBoxLayout(this);
+        lay->setContentsMargins(2, 2, 2, 2);
+        summary_ = new QLabel;
+        summary_->setObjectName("decoderSummary");
+        summary_->setWordWrap(true);
+        summary_->setMinimumHeight(0);
+        lay->addWidget(summary_);
+        table_ = new QTableWidget(0, 7);
+        table_->setObjectName("decoderTable");
+        table_->setHorizontalHeaderLabels({"", tr("Dom"), tr("PC"), tr("EEPROM"), tr("Bytes"), tr("Decoded from the EEPROM"), tr("Source")});
+        table_->horizontalHeader()->setSectionResizeMode(5, QHeaderView::Stretch);
+        table_->verticalHeader()->hide();
+        table_->setSelectionBehavior(QAbstractItemView::SelectRows);
+        table_->setEditTriggers(QAbstractItemView::NoEditTriggers);
+        table_->setFont(editorFont(ctx.settings));
+        table_->setMinimumHeight(30);                                            // (a panel at the bottom can be made small)
+        lay->addWidget(table_);
+        connect(table_, &QTableWidget::cellDoubleClicked, this, [this](int row, int) { open(row); });
+        conns_.add(ctx.debugger.updated, [this](const SimUpdate& u) { fill(u.view); });
+        fill(ctx.debugger.session().view());
+    }
+
+private:
+    void open(int row) {
+        auto* it = table_->item(row, 2);
+        if (!it) return;
+        const asmcore::Domain d = it->data(Qt::UserRole + 1).toInt() == 1 ? asmcore::Domain::Peri : asmcore::Domain::Main;
+        const DebugLocation l = ctx_.debugger.locationForPc(d, (uint32_t)it->data(Qt::UserRole).toUInt());
+        if (l.valid) { Location loc; loc.file = l.file; loc.line = l.line; ctx_.goTo.fire(loc); }
+    }
+    void fill(const ViewPtr& v) {
+        if (!v) { table_->setRowCount(0); summary_->setText(tr("Start debugging to see what the decoders fetch.")); return; }
+        // the table is rebuilt only when what it shows changed (the decoded lines rarely do; the cursors move all the time)
+        std::string key;
+        for (int d = 0; d < 2; d++) for (const auto& L : v->decoded[d]) { key += L.text; key += L.matches ? '1' : '0'; key += std::to_string(L.eepromAddr); key += '|'; }
+        if (key != key_) { key_ = key; rebuild(*v); }
+        // the cursors: the line each sequencer is at
+        for (int r = 0; r < table_->rowCount(); r++) {
+            auto* pcItem = table_->item(r, 2);
+            const int d = pcItem->data(Qt::UserRole + 1).toInt();
+            const bool here = !v->halted[d] && (uint32_t)pcItem->data(Qt::UserRole).toUInt() == v->pc[d];
+            auto* mark = table_->item(r, 0);
+            const QString want = here ? (d == 0 ? QString::fromUtf8("M\xE2\x96\xB6") : QString::fromUtf8("P\xE2\x96\xB6")) : QString();
+            if (mark->text() != want) {
+                mark->setText(want);
+                for (int c = 0; c < table_->columnCount(); c++) { QFont f = table_->item(r, c)->font(); f.setBold(here); table_->item(r, c)->setFont(f); }
+            }
+        }
+        QString s;
+        int differ = 0, invalid = 0, total = 0;
+        for (int d = 0; d < 2; d++) for (const auto& L : v->decoded[d]) { total++; if (!L.matches) differ++; if (!L.valid) invalid++; }
+        const std::string img = ctx_.debugger.eepromImagePath();
+        if (v->fromEeprom) s = img.empty() ? tr("EEPROM: the image of the build") : tr("EEPROM: %1 (a burned image)").arg(QFileInfo(fromStd(img)).fileName());
+        s += "\n";
+        if (!v->fromEeprom) s = tr("The decoders read the assembled image directly (fetch.source = sram), not the EEPROM.");
+        else s += tr("Main code at 0x%1, descriptor tables at 0x%2, const pool at 0x%3 \xC2\xB7 Peri code at 0x%4, tables at 0x%5, DeviceMap at 0x%6")
+                     .arg(v->regionAddr[0], 4, 16, QChar('0')).arg(v->regionAddr[1], 4, 16, QChar('0')).arg(v->regionAddr[2], 4, 16, QChar('0'))
+                     .arg(v->regionAddr[3], 4, 16, QChar('0')).arg(v->regionAddr[4], 4, 16, QChar('0')).arg(v->regionAddr[5], 4, 16, QChar('0'));
+        s += "\n";
+        if (differ == 0) s += tr("%1 instructions: every one is what the assembler produced.").arg(total);
+        else s += tr("%1 instructions: %2 are NOT what the assembler produced (marked red)%3.").arg(total).arg(differ).arg(invalid ? tr(", %1 cannot be decoded").arg(invalid) : QString());
+        summary_->setText(s);
+        summary_->setStyleSheet(differ ? "color: #d04040;" : QString());
+    }
+    void rebuild(const SimView& v) {
+        table_->setRowCount(0);
+        int rows = 0;
+        for (int d = 0; d < 2; d++) rows += (int)v.decoded[d].size();
+        table_->setRowCount(rows);
+        int r = 0;
+        for (int d = 0; d < 2; d++)
+            for (const asmcore::sim::DecodedLine& L : v.decoded[d]) {
+                QString bytes;
+                for (uint8_t b : L.bytes) bytes += QString("%1 ").arg(b, 2, 16, QChar('0')).toUpper();
+                auto put = [&](int c, const QString& t) { auto* it = new QTableWidgetItem(t); table_->setItem(r, c, it); return it; };
+                put(0, QString());
+                put(1, d == 0 ? "M" : "P");
+                auto* pc = put(2, QString("%1").arg(L.pc, 3, 16, QChar('0')).toUpper());
+                pc->setData(Qt::UserRole, L.pc);
+                pc->setData(Qt::UserRole + 1, d);
+                put(3, QString("%1").arg(L.eepromAddr, 4, 16, QChar('0')).toUpper());
+                put(4, bytes.trimmed());
+                put(5, fromStd(L.text) + (L.valid ? QString() : "    ; " + fromStd(L.problem)));
+                put(6, fromStd(L.source));
+                if (!L.matches || !L.valid) {
+                    const QString tip = tr("Fetched from the EEPROM:  %1\nThe assembler produced:  %2").arg(fromStd(L.text), fromStd(L.expected));
+                    for (int c = 0; c < 7; c++) { table_->item(r, c)->setBackground(QColor(208, 64, 64, 90)); table_->item(r, c)->setToolTip(tip); }
+                }
+                r++;
+            }
+        table_->resizeColumnsToContents();
+    }
+    AppContext& ctx_;
+    QLabel* summary_;
+    QTableWidget* table_;
+    std::string key_;
+    ConnectionBag conns_;
+};
+
 // ---- call stack -------------------------------------------------------------------------------------------------------------------
 class CallStackPanel : public QWidget {
     Q_DECLARE_TR_FUNCTIONS(CallStackPanel)
@@ -997,6 +1104,7 @@ void registerDebugPanels(PanelRegistry& r) {
     r.add({"signals", QT_TRANSLATE_NOOP("QObject", "Signals"), Qt::RightDockWidgetArea, false, [](AppContext& c) -> QWidget* { return new SignalsPanel(c); }});
     r.add({"csrs", QT_TRANSLATE_NOOP("QObject", "CSRs"), Qt::RightDockWidgetArea, false, [](AppContext& c) -> QWidget* { return new CsrPanel(c); }});
     r.add({"watch", QT_TRANSLATE_NOOP("QObject", "Watch"), Qt::RightDockWidgetArea, false, [](AppContext& c) -> QWidget* { return new WatchPanel(c); }});
+    r.add({"decoder", QT_TRANSLATE_NOOP("QObject", "Decoder"), Qt::BottomDockWidgetArea, false, [](AppContext& c) -> QWidget* { return new DecoderPanel(c); }});
     r.add({"callstack", QT_TRANSLATE_NOOP("QObject", "Call Stack"), Qt::BottomDockWidgetArea, false, [](AppContext& c) -> QWidget* { return new CallStackPanel(c); }});
     r.add({"breakpoints", QT_TRANSLATE_NOOP("QObject", "Breakpoints"), Qt::BottomDockWidgetArea, false, [](AppContext& c) -> QWidget* { return new BreakpointsPanel(c); }});
     r.add({"events", QT_TRANSLATE_NOOP("QObject", "Events"), Qt::BottomDockWidgetArea, false, [](AppContext& c) -> QWidget* { return new EventsPanel(c); }});

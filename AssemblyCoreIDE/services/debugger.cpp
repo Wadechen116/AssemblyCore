@@ -27,11 +27,26 @@ bool Debugger::start(std::string& why) {
     std::string env;
     Profile pf;
     if (!inputs(prog, env, pf, why)) return false;
-    session_.load(prog, env, pf, params_.params());
+    session_.load(prog, env, pf, params_.params(), eeprom_);
     // re-resolve every breakpoint against this program
     session_.setWatchExprs(watchExprs_);
     session_.setDataWatches(dataWatches_);
     pushBreakpoints();
+    return true;
+}
+
+bool Debugger::useEepromImage(const std::string& path, std::string& why) {
+    std::string bin, map;
+    std::string mapPath = path;
+    const size_t dot = mapPath.rfind(".bin");
+    mapPath = (dot != std::string::npos && dot + 4 == mapPath.size() ? mapPath.substr(0, dot) : mapPath) + ".json";
+    if (!ws_.fileSystem()->read(path, bin)) { why = "cannot read " + path; return false; }
+    if (!ws_.fileSystem()->read(mapPath, map)) { why = "cannot read its map " + mapPath + " (asmc --eeprom writes it next to the image)"; return false; }
+    auto e = std::make_shared<std::pair<std::vector<uint8_t>, asmcore::EepromMap>>();
+    e->first.assign(bin.begin(), bin.end());
+    if (!asmcore::loadEepromMapJson(map, e->second, why)) return false;
+    eeprom_ = e;
+    eepromPath_ = path;
     return true;
 }
 

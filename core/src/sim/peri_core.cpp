@@ -169,6 +169,7 @@ void Simulator::Impl::opPeriXfer(OpCtx& oc) {
 void Simulator::Impl::stepPeri() {
     PeriState& p = st.p;
     const uint32_t pc = p.pc;
+    syncFetch();
     if (!fetchOk(Domain::Peri, pc)) return;
     const ImageView& im = img[1];
     const uint8_t b = (uint8_t)im.u8(pc);
@@ -211,6 +212,7 @@ void Simulator::Impl::xferComplete() {
     auto n = st.nack.find(x.dev);
     auto di_ = devIndexByAddr.find(x.dev);
     if (n != st.nack.end() && n->second > 0) { n->second--; ack = false; }
+    else if (eepromDevice(x, r)) ack = true;                         // the program store itself
     else if (di_ == devIndexByAddr.end()) ack = false;               // nobody at that address
     else if (x.read) { r = devs[(size_t)di_->second].dev->read(x.addr, x.addrLen, x.len, st.dev[(size_t)di_->second], st.now); ack = r.ack; }
     else { r = devs[(size_t)di_->second].dev->write(x.addr, x.addrLen, std::vector<uint8_t>{x.data}, st.dev[(size_t)di_->second], st.now); ack = r.ack; }

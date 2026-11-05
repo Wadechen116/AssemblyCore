@@ -38,6 +38,10 @@ const Key kKeys[] = {
     {"ret_slot_base", &Profile::retSlotBase, nullptr, nullptr},
     {"ret_stage_base", &Profile::retStageBase, nullptr, nullptr},
     {"layout_offset_bits", &Profile::layoutOffsetBits, nullptr, nullptr},
+    {"eeprom_capacity", &Profile::eepromCapacity, nullptr, nullptr},
+    {"eeprom_i2c_address", &Profile::eepromDevAddr, nullptr, nullptr},
+    {"eeprom_address_bytes", &Profile::eepromAddrBytes, nullptr, nullptr},
+    {"eeprom_erased", &Profile::eepromFill, nullptr, nullptr},
     {"sram_depth_words", &Profile::physicalSramDepthWords, nullptr, nullptr},
     {"main_image_base_word", &Profile::mainImageBaseWord, nullptr, nullptr},
     {"peri_image_base_word", &Profile::periImageBaseWord, nullptr, nullptr},
@@ -81,6 +85,9 @@ const ArrayKey kArrayKeys[] = {
     SECT("main_move", PS_MAIN_MOVE), SECT("main_branch", PS_MAIN_BRANCH), SECT("main_csr1", PS_MAIN_CSR1), SECT("main_csrm", PS_MAIN_CSRM),
     SECT("main_alu", PS_MAIN_ALU), SECT("main_const", PS_MAIN_CONST), SECT("peri_xfer1", PS_PERI_XFER1), SECT("peri_xferm", PS_PERI_XFERM),
     SECT("peri_pub", PS_PERI_PUB), SECT("peri_branch", PS_PERI_BRANCH), SECT("peri_csr1", PS_PERI_CSR1), SECT("peri_devmap", PS_PERI_DEVMAP),
+    {"eeprom_main_code_addr", [](Profile& p) { return &p.eepromAddr[0]; }, -1, 1 << 24}, {"eeprom_main_desc_addr", [](Profile& p) { return &p.eepromAddr[1]; }, -1, 1 << 24},
+    {"eeprom_main_const_addr", [](Profile& p) { return &p.eepromAddr[2]; }, -1, 1 << 24}, {"eeprom_peri_code_addr", [](Profile& p) { return &p.eepromAddr[3]; }, -1, 1 << 24},
+    {"eeprom_peri_desc_addr", [](Profile& p) { return &p.eepromAddr[4]; }, -1, 1 << 24}, {"eeprom_peri_devmap_addr", [](Profile& p) { return &p.eepromAddr[5]; }, -1, 1 << 24},
     ALUK("alu_arith_add", arith, 0, 31), ALUK("alu_arith_sub", arith, 1, 31), ALUK("alu_arith_mul", arith, 2, 31), ALUK("alu_arith_inc", arith, 3, 31),
     ALUK("alu_arith_dec", arith, 4, 31),
     ALUK("alu_cmp_eq", cmp, 0, 3), ALUK("alu_cmp_ne", cmp, 1, 3), ALUK("alu_cmp_lt", cmp, 2, 3), ALUK("alu_cmp_ge", cmp, 3, 3),
@@ -95,6 +102,7 @@ const Range kRanges[] = {
     {"event_count", 1, 64},
     {"main_pc_width", 8, 16}, {"peri_pc_width", 8, 16}, {"layout_offset_bits", 8, 32}, {"device_map_entry_bytes", 1, 4},
     {"device_map_bus_shift", 0, 31}, {"device_map_addr_shift", 0, 31}, {"boot_pad_byte", 0, 255}, {"sram_depth_words", 1, 1 << 24},
+    {"eeprom_capacity", 1, 1 << 24}, {"eeprom_i2c_address", 0, 127}, {"eeprom_address_bytes", 1, 3}, {"eeprom_erased", 0, 255},
     {"main_image_base_word", 0, 1 << 24}, {"peri_image_base_word", 0, 1 << 24}, {"main_capacity_bytes", 1, 1 << 26}, {"peri_capacity_bytes", 1, 1 << 26},
 };
 

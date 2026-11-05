@@ -311,7 +311,7 @@ public:
         char b[64];
         std::snprintf(b, sizeof b, "[%9llu] %c ", (unsigned long long)e.t, e.domain == 0 ? 'M' : e.domain == 1 ? 'P' : '-');
         *out_ += b;
-        if (e.type == EventType::Issue) { std::snprintf(b, sizeof b, "%04X  ", e.pc); *out_ += b; *out_ += e.what; }
+        if (e.type == EventType::Issue) { std::snprintf(b, sizeof b, "%04X  ", e.pc); *out_ += b; *out_ += e.what; if (!e.text.empty()) *out_ += "    !! " + e.text; }       // (!! the decoder fetched something else)
         else {
             *out_ += std::string("  ") + typeName(e.type) + " " + e.what;
             if (!e.text.empty()) *out_ += " " + e.text;

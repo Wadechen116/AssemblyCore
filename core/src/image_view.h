@@ -17,8 +17,21 @@ struct ImageView {
     bool present = false;
     bool big = false;
 
+    // Where the bytes come from. Normally `bytes`. The simulator can point it at the I2C EEPROM instead (what the decoders really fetch): logical
+    // offset o of region k (0 code, 1 descriptor tables, 2 const pool / DeviceMap; k is the last region whose regionStart <= o) is read at
+    // regionBase[k] + (o - regionStart[k]) of the EEPROM, wrapping at its size. The table offsets (off/end) keep their logical meaning.
+    const std::vector<uint8_t>* eeprom = nullptr;
+    uint32_t regionStart[3] = {0, 0, 0}, regionBase[3] = {0, 0, 0};
+
     bool load(const DomainImage& im, const Profile& pf, std::string& error);
-    uint32_t u8(uint32_t o) const { return o < bytes.size() ? bytes[o] : 0; }
+    uint32_t u8(uint32_t o) const {
+        if (o >= bytes.size()) return 0;
+        if (!eeprom) return bytes[o];
+        const int k = o >= regionStart[2] ? 2 : o >= regionStart[1] ? 1 : 0;
+        const size_t n = eeprom->size();
+        return n ? (*eeprom)[(regionBase[k] + (o - regionStart[k])) % n] : 0;
+    }
+    uint32_t eepromAddressOf(uint32_t o) const { const int k = o >= regionStart[2] ? 2 : o >= regionStart[1] ? 1 : 0; return regionBase[k] + (o - regionStart[k]); }
     // Entry `idx` of table `t` (entryBytes wide); false if it lies outside the table.
     bool entry(int t, uint32_t idx, int entryBytes, uint32_t& v) const;
 };

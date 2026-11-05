@@ -405,6 +405,9 @@ static void t_build() {
         check(fs->read("/w/out/imu.main.layout.json", layout) && layout.find("main_move_desc_offset") != std::string::npos, "the sideband ImageLayout is written next to the image (v31: the .bin has none)");
         check(fs->exists("/w/out/imu.sram.hex") && fs->exists("/w/out/imu.boot.json") && fs->exists("/w/out/imu.memory.json") && fs->exists("/w/out/imu.events.json") && fs->exists("/w/out/imu.validation.json"), "the v31 artifact set is written");
         check(fs->read("/w/out/imu.manifest.json", manifest) && manifest.find("\"sources\"") != std::string::npos, "the manifest hashes the sources that were built");
+        std::string eep, emap;
+        check(fs->read("/w/out/imu.eeprom.bin", eep) && fs->read("/w/out/imu.eeprom.json", emap) && emap.find("main_desc_addr") != std::string::npos && fs->exists("/w/out/imu.eeprom.hex") &&
+              eep.size() >= s->result.main.bytes.size(), "the EEPROM image is written too: what is burned, its Intel HEX, and the map of its regions");
         ArtifactOptions plain;
         plain.v31 = false;
         std::string e2;

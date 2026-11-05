@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "asmcore/asmcore.h"
+#include "asmcore/eeprom.h"
 #include "fs.h"
 
 namespace acide {
@@ -15,6 +16,9 @@ struct ArtifactOptions {
     // validation report and (when `sources` is given) the build manifest.
     bool v31 = true;
     std::vector<asmcore::Source> sources;
+    // PREFIX.eeprom.bin / .hex / .json: what is burned into the I2C EEPROM the decoders fetch from (needs the profile: its eeprom_* addresses)
+    bool eeprom = true;
+    const asmcore::Profile* profile = nullptr;
 };
 // Returns the paths written; `error` names the first file that could not be written ("" if all went well).
 std::vector<std::string> writeArtifacts(IFileSystem& fs, const std::string& prefix, const asmcore::Result& r, const ArtifactOptions& opt, std::string& error);

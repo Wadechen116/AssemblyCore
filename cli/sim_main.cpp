@@ -41,6 +41,10 @@ void listParams() {
 void usage() {
     std::puts(
         "usage: asmsim [options] file.asm [more.asm ...]\n"
+        "       asmsim [options] --eeprom PREFIX.eeprom.bin [file.asm ...]\n"
+        "  --eeprom FILE        run what is burned into the EEPROM (asmc --eeprom): the decoders fetch every instruction from these bytes. With\n"
+        "                       the source too, the source only names things (labels, lines); without it, the binary alone is run\n"
+        "  --eeprom-map FILE    the map of the EEPROM image (default: PREFIX.eeprom.json next to it)\n"
         "  --env FILE           environment file (CSR behaviours, I2C devices, video timing; docs/SIM.md)\n"
         "  --scenario FILE      run a scenario script instead of a plain run\n"
         "  --cycles N           plain run: stop after N cycles (default 1000000)\n"
@@ -57,6 +61,8 @@ void usage() {
         "  --events FILE        every event as CSV\n"
         "  --vcd FILE           value-change dump (GTKWave)\n"
         "  --dump               print the final state\n"
+        "  --decoded            print what the decoders make of the program they fetch (EEPROM address, bytes, instruction, source line);\n"
+        "                       a line that is not what the assembler produced is marked !!\n"
         "Exit status: 0 ok, 1 assembly error / failed scenario / fault, 2 usage or I/O error.");
 }
 }  // namespace
@@ -65,10 +71,10 @@ int main(int argc, char** argv) {
     Options opt;
     sim::SimConfig cfg;
     std::vector<std::string> inputs, incDirs;
-    std::string envPath, scnPath, untilExpr, tracePath, eventsPath, vcdPath, profilePath, paramsPath;
+    std::string eepromPath, eepromMapPath, envPath, scnPath, untilExpr, tracePath, eventsPath, vcdPath, profilePath, paramsPath;
     std::vector<std::string> paramArgs;
     long long cycles = 1000000;
-    bool dump = false;
+    bool dump = false, decoded = false;
     for (int i = 1; i < argc; i++) {
         std::string a = argv[i];
         auto need = [&]() -> std::string {
@@ -77,6 +83,8 @@ int main(int argc, char** argv) {
         };
         if (a == "-h" || a == "--help") { usage(); return 0; }
         else if (a == "--env") envPath = need();
+        else if (a == "--eeprom") eepromPath = need();
+        else if (a == "--eeprom-map") eepromMapPath = need();
         else if (a == "--scenario") scnPath = need();
         else if (a == "--cycles") cycles = std::atoll(need().c_str());
         else if (a == "--until") untilExpr = need();
@@ -92,10 +100,11 @@ int main(int argc, char** argv) {
         else if (a == "--events") eventsPath = need();
         else if (a == "--vcd") vcdPath = need();
         else if (a == "--dump") dump = true;
+        else if (a == "--decoded") decoded = true;
         else if (!a.empty() && a[0] == '-') { std::fprintf(stderr, "asmsim: unknown option %s\n", a.c_str()); return 2; }
         else inputs.push_back(a);
     }
-    if (inputs.empty()) { usage(); return 2; }
+    if (inputs.empty() && eepromPath.empty()) { usage(); return 2; }
     if (!profilePath.empty()) {
         std::string t;
         std::vector<std::string> errs;
@@ -128,9 +137,26 @@ int main(int argc, char** argv) {
         for (auto& p : tries) if (readFile(p, out.text)) { out.name = p.string(); return true; }
         return false;
     };
-    Result r = assemble(sources, resolver, opt);
-    std::fputs(r.diagnosticsText().c_str(), stderr);
-    if (!r.ok) return 1;
+    Result r;
+    if (!sources.empty()) {
+        r = assemble(sources, resolver, opt);
+        std::fputs(r.diagnosticsText().c_str(), stderr);
+        if (!r.ok) return 1;
+    }
+    if (!eepromPath.empty()) {                                          // the burned EEPROM: these bytes are what the decoders fetch
+        if (eepromMapPath.empty()) {
+            const size_t dot = eepromPath.rfind(".bin");
+            eepromMapPath = (dot != std::string::npos && dot + 4 == eepromPath.size() ? eepromPath.substr(0, dot) : eepromPath) + ".json";
+        }
+        std::string bin, t, err;
+        if (!readFile(eepromPath, bin)) { std::fprintf(stderr, "asmsim: cannot read %s\n", eepromPath.c_str()); return 2; }
+        if (!readFile(eepromMapPath, t) || !loadEepromMapJson(t, cfg.eepromMap, err)) { std::fprintf(stderr, "asmsim: the EEPROM map %s: %s\n", eepromMapPath.c_str(), err.empty() ? "cannot be read" : err.c_str()); return 2; }
+        cfg.eepromImage.assign(bin.begin(), bin.end());
+        if (sources.empty()) {                                          // no source: the images are what the EEPROM holds
+            if (!domainImagesFromEeprom(cfg.eepromImage, cfg.eepromMap, r.main, r.peri, err)) { std::fprintf(stderr, "asmsim: %s\n", err.c_str()); return 2; }
+            r.ok = true;
+        }
+    }
 
     cfg.profile = opt.profile;
     if (!envPath.empty() && !readFile(envPath, cfg.env)) { std::fprintf(stderr, "asmsim: cannot read %s\n", envPath.c_str()); return 2; }
@@ -166,6 +192,22 @@ int main(int argc, char** argv) {
         }
     }
     if (dump) std::fputs(s.dumpState().c_str(), stdout);
+    if (decoded) {                                                      // what the decoders make of the bytes they fetch, compared with the source
+        int differ = 0;
+        for (Domain d : {Domain::Main, Domain::Peri}) {
+            const std::vector<sim::DecodedLine> lines = s.decodedProgram(d);
+            if (lines.empty()) continue;
+            std::printf("%s (decoded from the EEPROM):\n", domainName(d));
+            for (const sim::DecodedLine& L : lines) {
+                std::string bytes;
+                char b[8];
+                for (uint8_t x : L.bytes) { std::snprintf(b, sizeof b, "%02X ", x); bytes += b; }
+                std::printf("  %s %03X  @%04X  %-9s %-46s %s\n", L.matches ? "  " : "!!", L.pc, L.eepromAddr, bytes.c_str(), L.text.c_str(), L.source.empty() ? "" : ("; " + L.source).c_str());
+                if (!L.matches) { differ++; std::printf("        the assembler produced: %s\n", L.expected.c_str()); }
+            }
+        }
+        std::printf("%d instruction(s) differ from what the assembler produced\n", differ);
+    }
     if (vsink) vsink->finish(s.now());
     bool io = true;
     if (!tracePath.empty()) io &= writeText(tracePath, trace);

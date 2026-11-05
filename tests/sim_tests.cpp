@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "asmcore/sim.h"
+#include "asmcore/eeprom.h"
 #include "sim/impl.h"
 
 using namespace asmcore;
@@ -296,6 +297,155 @@ static void t_timing() {
         l.stopOnIdle = false;
         f.sim->run(l);
         check(ev(*f.sim, "frame_end_evt") == 1, "frame_end_evt is latched at the frame boundary");
+    }
+}
+
+// The decoders fetch from the I2C EEPROM (fetch.source = eeprom, the default): what is burned there is what runs.
+static void t_eeprom() {
+    section("the EEPROM the decoders fetch from: its image, its regions, its registers, the EEPROM on the I2C bus");
+    const std::string prog = std::string(kDefs) + ".devmap 1, I2C, 0x50, ROM\n.main\ns: MOV CONST(0x1234, 2) -> MAIN_SCRATCHPAD[0..1]\nh: JMP h\n"
+                             ".peri\np: EXEC_XFER READ dev=1, len=2, ptr=0, ext=[0x00, 0x00]\nq: JMP q\n";
+    Result r = assemble1(prog);
+    check(r.ok, "(the program assembles)", diags(r));
+    if (!r.ok) return;
+    Profile pf;
+    std::vector<uint8_t> eep;
+    EepromMap map;
+    std::string err;
+    check(buildEeprom(r, pf, eep, map, err), "the image of both programs fits the EEPROM", err);
+    check(map.region[ER_MAIN_CODE].addr == 0 && map.region[ER_MAIN_DESC].addr == map.region[ER_MAIN_CODE].size && map.region[ER_PERI_DEVMAP].size > 0,
+          "the six regions follow one another when the profile gives no address");
+    {   // the map file and the image give back the logical images byte for byte
+        EepromMap m2;
+        check(loadEepromMapJson(map.json(), m2, err) && m2.region[ER_PERI_DESC].addr == map.region[ER_PERI_DESC].addr && m2.layout[1] == map.layout[1], "the map file reads back", err);
+        DomainImage mi, pi;
+        check(domainImagesFromEeprom(eep, m2, mi, pi, err) && mi.bytes == r.main.bytes && pi.bytes == r.peri.bytes && mi.layout == r.main.layout, "the EEPROM image holds the two logical images exactly", err);
+        const std::string hex = intelHex(eep);
+        check(hex.compare(0, 9, ":10000000") == 0 && hex.find(":00000001FF") != std::string::npos, "Intel HEX: data records from address 0, then the end record");
+    }
+    {   // given addresses; regions that would overlap or not fit are refused
+        Profile p2;
+        p2.eepromAddr[ER_MAIN_DESC] = 0x1000; p2.eepromAddr[ER_PERI_CODE] = 0x2000;
+        std::vector<uint8_t> e2;
+        EepromMap m2;
+        check(buildEeprom(r, p2, e2, m2, err) && m2.region[ER_MAIN_DESC].addr == 0x1000 && m2.region[ER_MAIN_CONST].addr == 0x1000 + m2.region[ER_MAIN_DESC].size && m2.region[ER_PERI_CODE].addr == 0x2000,
+              "eeprom_main_desc_addr / eeprom_peri_code_addr: those regions start there, the next ones follow them", err);
+        p2.eepromAddr[ER_MAIN_CONST] = 0x1000;
+        check(!buildEeprom(r, p2, e2, m2, err) && err.find("overlap") != std::string::npos, "two regions at the same place: refused", err);
+        Profile p3;
+        p3.eepromCapacity = 16;
+        check(!buildEeprom(r, p3, e2, m2, err) && err.find("does not fit") != std::string::npos, "a program larger than the EEPROM: refused", err);
+    }
+    auto runWith = [&](const std::vector<uint8_t>& image, const SimParams* p, const std::string& env = "") {
+        SimConfig c;
+        c.eepromImage = image;
+        c.eepromMap = map;
+        c.env = env;
+        if (p) c.params = *p;
+        auto sim = std::make_unique<Simulator>(r, c);
+        RunLimits l; l.maxCycles = 40000; l.stopOnIdle = false;
+        sim->run(l);
+        return sim;
+    };
+    {
+        auto sim = runWith(eep, nullptr);
+        check(ev(*sim, "scratch[0..1]") == 0x1234, "run from the EEPROM image: the MOV fetched its descriptor and its constant there", std::to_string(ev(*sim, "scratch[0..1]")));
+        check(ev(*sim, "main_const_addr") == (int64_t)map.region[ER_MAIN_CONST].addr && ev(*sim, "peri_desc_addr") == (int64_t)map.region[ER_PERI_DESC].addr, "the region registers start at the addresses of the map");
+        check(ev(*sim, "rx[0]") == eep[0] && ev(*sim, "rx[1]") == eep[1], "EXEC_XFER READ from the EEPROM's I2C address reads its bytes (here the first two code bytes)");
+    }
+    {   // a wrong byte in the EEPROM is a wrong program -- unless the decoders do not fetch from it
+        std::vector<uint8_t> bad = eep;
+        for (uint32_t i = 0; i < map.region[ER_MAIN_CONST].size; i++) bad[map.region[ER_MAIN_CONST].addr + i] = 0x99;
+        auto sim = runWith(bad, nullptr);
+        check(ev(*sim, "scratch[0..1]") == 0x9999, "the const pool changed in the EEPROM: the MOV takes the bytes that are burned there", std::to_string(ev(*sim, "scratch[0..1]")));
+        SimParams sram;
+        sram.set("fetch.source", "sram", err);
+        auto old = runWith(bad, &sram);
+        check(ev(*old, "scratch[0..1]") == 0x1234, "fetch.source = sram: the assembled image directly, the EEPROM does not matter");
+    }
+    {   // the registers decide where the regions are: pointed elsewhere, the decoder reads something else
+        const std::string env = "[inject]\nat 0 = signal main_const_addr=" + std::to_string(map.region[ER_MAIN_CODE].addr) + "\n";
+        auto sim = runWith(eep, nullptr, env);
+        const int64_t want = (int64_t)eep[map.region[ER_MAIN_CODE].addr] | ((int64_t)eep[map.region[ER_MAIN_CODE].addr + 1] << 8);
+        check(ev(*sim, "scratch[0..1]") == want, "main_const_addr pointed at the code: the constant is read from there (the code bytes)", std::to_string(ev(*sim, "scratch[0..1]")) + " vs " + std::to_string(want));
+    }
+    {   // an EXEC_XFER WRITE to the EEPROM changes what the decoder fetches afterwards
+        const std::string w = std::string(kDefs) + ".devmap 1, I2C, 0x50, ROM\n.main\nh: JMP h\n.peri\np: EXEC_XFER WRITE dev=1, addr=0x0100, addrlen=2, data=0x5A\nq: JMP q\n";
+        Result rw = assemble1(w);
+        std::vector<uint8_t> ew;
+        EepromMap mw;
+        buildEeprom(rw, pf, ew, mw, err);
+        SimConfig c;
+        c.eepromImage = ew;
+        c.eepromMap = mw;
+        Simulator sim(rw, c);
+        const Snapshot before = sim.snapshot();
+        check(sim.eepromByte(0x100) == 0xFF && sim.eepromSize() == mw.capacity, "the whole EEPROM is there, erased (0xFF) where nothing is burned");
+        RunLimits l; l.maxCycles = 20000; l.stopOnIdle = false;
+        sim.run(l);
+        check(ev(sim, "peri.error") == 0 && sim.eepromByte(0x100) == 0x5A, "EXEC_XFER WRITE to the EEPROM: acknowledged, and the byte is written");
+        sim.restore(before);
+        check(sim.eepromByte(0x100) == 0xFF, "a snapshot from before the write has the EEPROM as it was (each snapshot keeps its own EEPROM)");
+    }
+    {   // what the decoder makes of the EEPROM: the program as it is burned, line by line, each compared with what the assembler produced
+        SimConfig c;
+        c.eepromImage = eep;
+        c.eepromMap = map;
+        Simulator sim(r, c);
+        const std::vector<DecodedLine> lines = sim.decodedProgram(Domain::Main);
+        bool allMatch = !lines.empty();
+        for (const DecodedLine& L : lines) allMatch = allMatch && L.matches && L.valid && !L.source.empty();
+        check(allMatch && lines[0].text.compare(0, 3, "MOV") == 0 && lines[0].eepromAddr == map.region[ER_MAIN_CODE].addr, "the burned program decodes to what was written, line for line", lines.empty() ? "" : lines[0].text);
+        check(lines.size() >= 2 && lines[1].text == "JMP h" && lines[1].source.compare(0, 3, "JMP") == 0, "a branch shows its target by the label's name");
+        const std::vector<DecodedLine> peri = sim.decodedProgram(Domain::Peri);
+        check(!peri.empty() && peri[0].text.compare(0, 9, "EXEC_XFER") == 0 && peri[0].eepromAddr == map.region[ER_PERI_CODE].addr, "Peri too, from its own region", peri.empty() ? "" : peri[0].text);
+    }
+    {   // a wrong descriptor, a wrong constant: the decoder's line is not the assembler's, and the run says so where it executes it
+        std::vector<uint8_t> bad = eep;
+        bad[map.region[ER_MAIN_CONST].addr] ^= 0xFF;
+        SimConfig c;
+        c.eepromImage = bad;
+        c.eepromMap = map;
+        Simulator sim(r, c);
+        const DecodedLine L = sim.decodedAt(Domain::Main, 0);
+        check(!L.matches && L.text != L.expected && L.text.find("; const CB 12") != std::string::npos && L.expected.find("; const 34 12") != std::string::npos,
+              "a changed constant: the decoder's line shows the constant it fetched (CB 12, not 34 12) and does not match", L.text);
+        struct Issues : EventSink { std::vector<std::string> notes; void onEvent(const Event& e) override { if (e.type == EventType::Issue && !e.text.empty()) notes.push_back(e.text); } };
+        auto is = std::make_shared<Issues>();
+        sim.addSink(is);
+        RunLimits l; l.maxCycles = 100; l.stopOnIdle = false;
+        sim.run(l);
+        check(!is->notes.empty() && is->notes[0].find("fetched from the EEPROM: MOV") == 0, "executing it, the instruction event says what was really fetched", is->notes.empty() ? "" : is->notes[0]);
+        std::vector<uint8_t> bad2 = eep;
+        bad2[map.region[ER_MAIN_DESC].addr] ^= 0x01;                       // the first byte of the first MOV descriptor
+        c.eepromImage = bad2;
+        Simulator s2(r, c);
+        const DecodedLine L2 = s2.decodedAt(Domain::Main, 0);
+        check(!L2.matches && L2.text != L2.expected, "a changed descriptor: the decoder reads another instruction (" + L2.text + " instead of " + L2.expected + ")");
+    }
+    {   // the binary alone (no source): the same run
+        DomainImage mi, pi;
+        domainImagesFromEeprom(eep, map, mi, pi, err);
+        Result bin;
+        bin.ok = true;
+        bin.main = mi;
+        bin.peri = pi;
+        SimConfig c;
+        c.eepromImage = eep;
+        c.eepromMap = map;
+        Simulator sim(bin, c);
+        RunLimits l; l.maxCycles = 40000; l.stopOnIdle = false;
+        sim.run(l);
+        check(sim.ok() && ev(sim, "scratch[0..1]") == 0x1234 && ev(sim, "rx[0]") == eep[0], "the binary alone, without its source, runs the same");
+        struct Texts : EventSink { std::vector<std::string> t; void onEvent(const Event& e) override { if (e.type == EventType::Issue && e.domain == 0) t.push_back(e.what); } };
+        Simulator s2(bin, c);
+        auto tx = std::make_shared<Texts>();
+        s2.addSink(tx);
+        RunLimits l2; l2.maxCycles = 50; l2.stopOnIdle = false;
+        s2.run(l2);
+        check(!tx->t.empty() && tx->t[0].find("; const 34 12") != std::string::npos, "without the source the instruction events carry what the decoder made of the bytes", tx->t.empty() ? "" : tx->t[0]);
+        const DecodedLine L = s2.decodedAt(Domain::Main, 0);
+        check(L.source.empty() && L.matches, "...and there is no source line to compare with");
     }
 }
 
@@ -1302,6 +1452,7 @@ int main() {
     t_slot();
     t_same_cycle();
     t_timing();
+    t_eeprom();
     t_peri_units();
     t_main_units();
     t_debug();

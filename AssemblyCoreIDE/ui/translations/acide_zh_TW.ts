@@ -922,6 +922,71 @@ Drag it to change the order; double-click the end of it to write a comment</sour
     </message>
 </context>
 <context>
+    <name>DecoderPanel</name>
+    <message>
+        <source>Dom</source>
+        <translation>域</translation>
+    </message>
+    <message>
+        <source>PC</source>
+        <translation>PC</translation>
+    </message>
+    <message>
+        <source>EEPROM</source>
+        <translation>EEPROM</translation>
+    </message>
+    <message>
+        <source>Bytes</source>
+        <translation>位元組</translation>
+    </message>
+    <message>
+        <source>Decoded from the EEPROM</source>
+        <translation>從 EEPROM 解出的指令</translation>
+    </message>
+    <message>
+        <source>Source</source>
+        <translation>原始碼</translation>
+    </message>
+    <message>
+        <source>Start debugging to see what the decoders fetch.</source>
+        <translation>開始除錯後，這裡會顯示 Decoder 從 EEPROM 取到並解出的指令。</translation>
+    </message>
+    <message>
+        <source>EEPROM: the image of the build</source>
+        <translation>EEPROM：本次建置產生的映像</translation>
+    </message>
+    <message>
+        <source>EEPROM: %1 (a burned image)</source>
+        <translation>EEPROM：%1（燒錄檔）</translation>
+    </message>
+    <message>
+        <source>The decoders read the assembled image directly (fetch.source = sram), not the EEPROM.</source>
+        <translation>Decoder 直接讀組譯後的映像（fetch.source = sram），不是從 EEPROM 讀。</translation>
+    </message>
+    <message>
+        <source>Main code at 0x%1, descriptor tables at 0x%2, const pool at 0x%3 · Peri code at 0x%4, tables at 0x%5, DeviceMap at 0x%6</source>
+        <translation>Main 程式碼 0x%1、描述表 0x%2、Const Pool 0x%3 · Peri 程式碼 0x%4、描述表 0x%5、DeviceMap 0x%6</translation>
+    </message>
+    <message>
+        <source>%1 instructions: every one is what the assembler produced.</source>
+        <translation>共 %1 條指令：全部和組譯器產生的相同。</translation>
+    </message>
+    <message>
+        <source>%1 instructions: %2 are NOT what the assembler produced (marked red)%3.</source>
+        <translation>共 %1 條指令：其中 %2 條和組譯器產生的不同（標成紅色）%3。</translation>
+    </message>
+    <message>
+        <source>, %1 cannot be decoded</source>
+        <translation>，%1 條無法解碼</translation>
+    </message>
+    <message>
+        <source>Fetched from the EEPROM:  %1
+The assembler produced:  %2</source>
+        <translation>從 EEPROM 取到：%1
+組譯器產生的：%2</translation>
+    </message>
+</context>
+<context>
     <name>EventModel</name>
     <message>
         <source>Cycle</source>
@@ -1637,6 +1702,10 @@ Double click on the time line: wind the simulator back to that cycle (what is la
     <message>
         <source>Auto Debug</source>
         <translation>自動除錯</translation>
+    </message>
+    <message>
+        <source>Decoder</source>
+        <translation>Decoder 解碼</translation>
     </message>
 </context>
 <context>
@@ -3572,6 +3641,38 @@ An IDE for the Sensor Micro-Sequencer ISA, built on the AssemblyCore assembler.<
     <message>
         <source>Step Peri</source>
         <translation>單步 Peri</translation>
+    </message>
+    <message>
+        <source>Debug from an EEPROM Image...</source>
+        <translation>從 EEPROM 映像除錯…</translation>
+    </message>
+    <message>
+        <source>The decoders fetch every instruction from a burned EEPROM image (PREFIX.eeprom.bin with its .eeprom.json); the Decoder panel compares what they decode with the source</source>
+        <translation>Decoder 從一份燒錄好的 EEPROM 映像（PREFIX.eeprom.bin 與旁邊的 .eeprom.json）取每一條指令；Decoder 解碼面板會把解出的指令和原始碼比對</translation>
+    </message>
+    <message>
+        <source>Debug from an EEPROM image</source>
+        <translation>從 EEPROM 映像除錯</translation>
+    </message>
+    <message>
+        <source>EEPROM images (*.eeprom.bin);;All files (*)</source>
+        <translation>EEPROM 映像 (*.eeprom.bin);;所有檔案 (*)</translation>
+    </message>
+    <message>
+        <source>EEPROM image</source>
+        <translation>EEPROM 映像</translation>
+    </message>
+    <message>
+        <source>The decoders fetch from %1</source>
+        <translation>Decoder 從 %1 取指令</translation>
+    </message>
+    <message>
+        <source>Debug from the Build&apos;s EEPROM</source>
+        <translation>使用建置產生的 EEPROM 除錯</translation>
+    </message>
+    <message>
+        <source>The decoders fetch from the EEPROM image of the newest build (from the next start)</source>
+        <translation>Decoder 改從最新建置產生的 EEPROM 映像取指令（下次開始除錯時生效）</translation>
     </message>
 </context>
 <context>

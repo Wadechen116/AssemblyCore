@@ -46,6 +46,7 @@ SnapshotPtr buildNow(const BuildInput& in, const asmcore::lang::Language& langua
     for (auto& s : in.sources) snap->sourcePaths.push_back(s.name);
     snap->sources = in.sources;
     snap->result = asmcore::assemble(in.sources, res, opt);
+    snap->profile = opt.profile;
     snap->index = asmcore::Index::build(in.sources, language, res);
     snap->map.reset(new asmcore::SourceMap(snap->result));
     for (auto& d : snap->result.diags) snap->diagsByFile[d.loc.file].push_back(d);

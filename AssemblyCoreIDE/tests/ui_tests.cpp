@@ -36,6 +36,7 @@
 #include "block_editor.h"
 #include "isa_top_view.h"
 #include "sim_panels.h"
+#include "asmcore/eeprom.h"
 #include "block_link.h"
 #include "document_tab.h"
 #include "asmcore/blocks.h"
@@ -504,12 +505,12 @@ private slots:
         QVERIFY(text.find("event_count = 6\n") != std::string::npos && text.rfind("big_endian = true\n") == text.size() - 18);
         // confirming a group
         auto* sum = d->findChild<QLabel*>("profSummary");
-        QVERIFY(sum && sum->text().startsWith("9 group(s)"));
+        QVERIFY(sum && sum->text().startsWith("10 group(s)"));
         auto* confirm = d->findChild<QCheckBox*>("profConfirm_alu");
         QVERIFY(confirm && !confirm->isChecked());
         confirm->setChecked(true);
         QVERIFY(f.ws.find("/w/t.profile")->text.find("confirmed = alu\n") != std::string::npos);
-        QVERIFY2(sum->text().startsWith("8 group(s)"), qPrintable(sum->text()));
+        QVERIFY2(sum->text().startsWith("9 group(s)"), qPrintable(sum->text()));
         confirm->setChecked(false);
         QVERIFY(f.ws.find("/w/t.profile")->text.find("confirmed") == std::string::npos);
         // the unsaved profile is what the next build uses
@@ -716,6 +717,44 @@ private slots:
         QCOMPARE(r.w->tabs()->count(), before);
         chip->click();
         QVERIFY(r.w->tabs()->count() == before + 1);
+    }
+
+    void theDecoderPanelShowsWhatIsFetchedFromTheEeprom() {
+        Rig r(kProg);
+        std::string why;
+        QVERIFY(r.f.dbg.start(why));
+        auto* table = r.find<QTableWidget>("decoder", "decoderTable");
+        auto* summary = r.find<QLabel>("decoder", "decoderSummary");
+        QVERIFY(table && summary);
+        r.w->dock("decoder")->show();
+        QVERIFY(r.until([&] { return table->rowCount() == 4; }));
+        QVERIFY2(table->item(0, 5)->text() == "EXEC_CSR WRITE8 0x120, 0x01" && table->item(0, 6)->text().startsWith("EXEC_CSR WRITE8 C, 1"), qPrintable(table->item(0, 5)->text() + " / " + table->item(0, 6)->text()));
+        QVERIFY(table->item(3, 5)->text() == "JMP h" && table->item(0, 3)->text() == "0000");
+        QVERIFY2(summary->text().contains("every one is what the assembler produced") && summary->text().contains("the image of the build"), qPrintable(summary->text()));
+        QVERIFY(r.until([&] { return table->item(0, 0)->text().startsWith("M"); }));          // Main is at pc 0
+        // a burned image with one wrong byte: the decoder fetches another instruction there, and the panel says so
+        std::vector<uint8_t> eep;
+        asmcore::EepromMap map;
+        QVERIFY(asmcore::buildEeprom(r.f.ctx.snapshot->result, asmcore::Profile(), eep, map, why));
+        eep[map.region[asmcore::ER_MAIN_DESC].addr + 2] ^= 0x01;                               // the CSR descriptor (the three writes share it: the BR table comes first)
+        r.f.fs->write("/w/burned.eeprom.bin", std::string(eep.begin(), eep.end()));
+        r.f.fs->write("/w/burned.eeprom.json", map.json());
+        QVERIFY2(r.f.dbg.useEepromImage("/w/burned.eeprom.bin", why), why.c_str());
+        r.f.dbg.stop();
+        QVERIFY(r.f.dbg.start(why));
+        QVERIFY(r.until([&] { return summary->text().contains("NOT what the assembler produced"); }));
+        QVERIFY(summary->text().contains("burned.eeprom.bin"));
+        QStringList red;
+        for (int i = 0; i < table->rowCount(); i++) if (table->item(i, 5)->background().style() != Qt::NoBrush) red << QString::number(i);
+        QVERIFY2(red == QStringList({"0", "1", "2"}), qPrintable(red.join(",")));                   // the three CSR writes, not the JMP
+        QVERIFY2(table->item(1, 5)->toolTip().contains("The assembler produced:  EXEC_CSR WRITE8 0x120, 0x02") && table->item(1, 5)->text() != "EXEC_CSR WRITE8 0x120, 0x02",
+                 qPrintable(table->item(1, 5)->toolTip()));
+        r.w->dock("decoder")->setFloating(true);
+        r.w->dock("decoder")->resize(1000, 300);
+        QApplication::processEvents();
+        r.w->dock("decoder")->widget()->grab().save(outDirFree() + "/decoder_panel.png");
+        r.f.dbg.useBuildEeprom();
+        r.f.dbg.stop();
     }
 
     void theBoxesOfTheDiagramSetTheirOwnParameters() {

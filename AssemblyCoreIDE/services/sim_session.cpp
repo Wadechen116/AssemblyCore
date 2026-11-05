@@ -88,6 +88,9 @@ struct SimSession::Worker {
         }
         for (auto& c : csrNames) v->csrs.push_back({c.first, sim->csr(c.second)});
         v->breakpoints = sim->breakpoints();
+        for (int i = 0; i < 2; i++) v->decoded[i] = sim->decodedProgram(i == 0 ? Domain::Main : Domain::Peri);
+        for (int i = 0; i < asmcore::ER_COUNT; i++) v->regionAddr[i] = (uint32_t)sim->signal(asmcore::eepromRegisterName(i));
+        v->fromEeprom = sim->params().get("fetch.source") == 0;
         for (const std::string& e : watchExprs) {
             WatchValue w;
             w.expr = e;
@@ -190,7 +193,7 @@ struct SimSession::Worker {
         return s;
     }
 
-    void doLoad(SnapshotPtr program, const std::string& env, const Profile& profile, const SimParams& params) {
+    void doLoad(SnapshotPtr program, const std::string& env, const Profile& profile, const SimParams& params, std::shared_ptr<const std::pair<std::vector<uint8_t>, asmcore::EepromMap>> eeprom) {
         sim.reset();
         sink.reset();
         ring.clear();
@@ -203,6 +206,7 @@ struct SimSession::Worker {
         cfg.profile = profile;
         cfg.env = env;
         cfg.params = params;
+        if (eeprom) { cfg.eepromImage = eeprom->first; cfg.eepromMap = eeprom->second; }
         if (!program || !program->result.ok) {
             failed = true;
             SimSession* o = owner;
@@ -363,11 +367,11 @@ void SimSession::loop() {
 }
 
 // ---- owner-thread API ---------------------------------------------------------------------------------------------------------------
-void SimSession::load(SnapshotPtr program, const std::string& env, const Profile& profile, const SimParams& params) {
+void SimSession::load(SnapshotPtr program, const std::string& env, const Profile& profile, const SimParams& params, std::shared_ptr<const std::pair<std::vector<uint8_t>, asmcore::EepromMap>> eeprom) {
     program_ = program;
     view_.reset();
     state_ = SimState::Paused;
-    post([program, env, profile, params](Worker& w) { w.doLoad(program, env, profile, params); });
+    post([program, env, profile, params, eeprom](Worker& w) { w.doLoad(program, env, profile, params, eeprom); });
 }
 
 void SimSession::unload() {

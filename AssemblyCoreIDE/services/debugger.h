@@ -47,6 +47,11 @@ public:
     // Starts debugging the newest build. Reads the environment file and the profile of the project. False (with `why`) if there is nothing
     // good to debug. The simulator starts asynchronously: wait for SimSession::loaded.
     bool start(std::string& why);
+    // The EEPROM the decoders fetch from: by default the one the build would burn; or a burned image (PREFIX.eeprom.bin with its .eeprom.json next to
+    // it -- e.g. read back from the board). The source still names things and is compared with what is fetched. Takes effect at the next start.
+    bool useEepromImage(const std::string& path, std::string& why);
+    void useBuildEeprom() { eeprom_.reset(); eepromPath_.clear(); }
+    const std::string& eepromImagePath() const { return eepromPath_; }
     // What a simulator for the newest build is made of: the program, the environment file text and the profile of the project (the parameters are
     // simParams().params()). False with `why` if there is nothing good to simulate. Used by start() and by the comparison runs.
     bool inputs(SnapshotPtr& program, std::string& env, asmcore::Profile& profile, std::string& why);
@@ -124,6 +129,8 @@ private:
     void onUpdate(const SimUpdate& u);
 
     SimParamsStore params_;
+    std::shared_ptr<const std::pair<std::vector<uint8_t>, asmcore::EepromMap>> eeprom_;
+    std::string eepromPath_;
     SimSession& session_;
     Workspace& ws_;
     Settings* settings_;

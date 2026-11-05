@@ -86,6 +86,11 @@ std::vector<ParamDef> build() {
     choice("sim.unmapped_csr", "Scheduling", {"ram", "fault"}, 0, "an EXEC_CSR to an address the environment does not define: behaves as RAM, or faults", "", true);
     choice("sim.fault_stops", "Scheduling", {"domain", "all"}, 0, "a fault stops only its own sequencer, or both", "", true);
 
+    // ---- where the decoders fetch from
+    choice("fetch.source", "Program store", {"eeprom", "sram"}, 0,
+           "where the two decoders read the code, the descriptor tables, the const pool and the DeviceMap. eeprom (the hardware): the I2C EEPROM, at the addresses its six region registers (main_code_addr ... peri_devmap_addr) hold now -- a wrong address or a wrong byte in the EEPROM is a wrong instruction, and an EXEC_XFER write to the EEPROM changes what is fetched. sram: the assembled images directly (the earlier model)",
+           "", true);
+
     // ---- the two decoders
     add("main.fetch_cycles", "Decoders", "ISA cycles", 0, 0, 1000, "extra cycles the Main decoder spends on every instruction (descriptor fetch and decode; the program SRAM runs at 2 x the ISA clock)", "N back-to-back one-cycle instructions: (total / N) - 1");
     add("peri.fetch_cycles", "Decoders", "ISA cycles", 0, 0, 1000, "the same for the Peri decoder", "N back-to-back BR instructions: (total / N) - 1");

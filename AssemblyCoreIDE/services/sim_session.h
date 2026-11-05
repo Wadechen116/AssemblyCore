@@ -58,6 +58,10 @@ struct SimView {
     std::vector<asmcore::sim::CallFrame> stack[2];              // innermost first
     std::vector<asmcore::sim::Breakpoint> breakpoints;
     std::vector<WatchValue> watches;                           // the expression list set with setWatchExprs
+    // what the decoders make of the program they fetch (from the EEPROM through the region registers): every instruction of each domain
+    std::vector<asmcore::sim::DecodedLine> decoded[2];
+    uint32_t regionAddr[asmcore::ER_COUNT] = {0, 0, 0, 0, 0, 0};       // the region registers now (main_code_addr ... peri_devmap_addr)
+    bool fromEeprom = true;                                    // fetch.source = eeprom
     asmcore::Domain domainOf(int i) const { return i == 0 ? asmcore::Domain::Main : asmcore::Domain::Peri; }
 };
 using ViewPtr = std::shared_ptr<const SimView>;
@@ -101,7 +105,9 @@ public:
 
     // ---- owner-thread API (all asynchronous)
     // Starts a simulator for a built program. The program snapshot stays referenced: it is what the pcs of every view refer to.
-    void load(SnapshotPtr program, const std::string& environmentText, const asmcore::Profile& profile, const asmcore::SimParams& params = asmcore::SimParams());
+    // `eeprom` (with its map): the burned EEPROM the decoders fetch from; null = the one the build would burn
+    void load(SnapshotPtr program, const std::string& environmentText, const asmcore::Profile& profile, const asmcore::SimParams& params = asmcore::SimParams(),
+              std::shared_ptr<const std::pair<std::vector<uint8_t>, asmcore::EepromMap>> eeprom = nullptr);
     void unload();
     void run(const RunSpec& spec = RunSpec());
     void pause();

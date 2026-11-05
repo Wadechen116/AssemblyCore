@@ -8,6 +8,7 @@
 #include <sstream>
 
 #include "asmcore/asmcore.h"
+#include "asmcore/eeprom.h"
 #include "asmcore/diagnostics.h"
 #include "asmcore/profile_info.h"
 
@@ -48,6 +49,7 @@ void usage() {
         "  --werror             warnings fail the build\n"
         "  --dataflow M         off | warn (default) | error   the data-flow check (docs/ASM_SYNTAX.md, W5xx)\n"
         "  --no-warn CODE       drop a warning code, e.g. W502 (repeatable)\n"
+        "  --eeprom             also write the EEPROM image (see below)\n"
         "  --print-profile      print the effective profile and exit\n"
         "  --profile-gaps       list what the effective profile still leaves unconfirmed (planning values) and exit\n"
         "  --explain CODE       what a diagnostic code means and how to fix it (e.g. E202, W514), with its spec v31 name\n"
@@ -58,7 +60,10 @@ void usage() {
         "without its layout.json: keep them together.\n"
         "--artifacts adds: PREFIX.sram.hex (the 32-bit words of the one shared program SRAM), PREFIX.boot.json (boot load plan), PREFIX.memory.json\n"
         "(placement proof), PREFIX.sections.json, PREFIX.descriptors.json, PREFIX.services.json, PREFIX.events.json, PREFIX.validation.json,\n"
-        "PREFIX.manifest.json.   Exit status: 0 ok, 1 assembly errors, 2 usage / I/O error.");
+        "PREFIX.manifest.json.\n"
+        "--eeprom adds what is burned into the I2C EEPROM the decoders fetch from: PREFIX.eeprom.bin (the image), PREFIX.eeprom.hex (Intel HEX for a\n"
+        "programmer) and PREFIX.eeprom.json (where each of the six regions starts; asmsim --eeprom and asmdis --eeprom read it). The addresses are the\n"
+        "profile's eeprom_*_addr.   Exit status: 0 ok, 1 assembly errors, 2 usage / I/O error.");
 }
 
 }  // namespace
@@ -68,7 +73,7 @@ int main(int argc, char** argv) {
     std::vector<std::string> inputs, incDirs;
     std::string prefix, profilePath;
     bool profileGaps = false;
-    bool list = false, map = false, dbg = false, hex = false, printProfile = false, artifacts = false;
+    bool list = false, map = false, dbg = false, hex = false, printProfile = false, artifacts = false, eeprom = false;
     for (int i = 1; i < argc; i++) {
         std::string a = argv[i];
         auto need = [&](const char* what) -> const char* {
@@ -89,6 +94,7 @@ int main(int argc, char** argv) {
         else if (a == "--map") map = true;
         else if (a == "--dbg") dbg = true;
         else if (a == "--hex") hex = true;
+        else if (a == "--eeprom") eeprom = true;
         else if (a == "--artifacts") artifacts = true;
         else if (a == "--wcet") opt.wcetQueries.push_back(need("--wcet"));
         else if (a == "--pad-tables") opt.padTables = true;
@@ -189,6 +195,18 @@ int main(int argc, char** argv) {
     if (artifacts) {
         const std::vector<asmcore::ProfileGap> gaps = asmcore::profileGaps(opt.profile);
         if (!gaps.empty()) std::printf("note: %zu profile group(s) are unconfirmed planning values, so the images and timing are planning-only (asmc --profile-gaps)\n", gaps.size());
+    }
+    if (eeprom) {
+        std::vector<uint8_t> image;
+        asmcore::EepromMap emap;
+        std::string err;
+        if (!asmcore::buildEeprom(r, opt.profile, image, emap, err)) { std::fprintf(stderr, "asmc: EEPROM image: %s\n", err.c_str()); return 1; }
+        io &= writeFile(prefix + ".eeprom.bin", image.data(), image.size());
+        io &= writeText(prefix + ".eeprom.hex", asmcore::intelHex(image));
+        io &= writeText(prefix + ".eeprom.json", emap.json());
+        std::printf("EEPROM: %zu bytes -> %s.eeprom.bin (", image.size(), prefix.c_str());
+        for (int i = 0; i < asmcore::ER_COUNT; i++) std::printf("%s%s @0x%04X %u", i ? ", " : "", asmcore::eepromRegionName(i), emap.region[i].addr, emap.region[i].size);
+        std::printf(")\n");
     }
     if (list) io &= writeText(prefix + ".lst", r.listing());
     if (map) io &= writeText(prefix + ".map", r.map());

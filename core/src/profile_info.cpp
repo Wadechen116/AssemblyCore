@@ -68,6 +68,13 @@ std::vector<ProfileKeyInfo> buildKeys() {
     I("main_capacity_bytes", "placement", 1, 1 << 26, "Logical bytes reserved for the Main image (its window in the SRAM).");
     I("peri_capacity_bytes", "placement", 1, 1 << 26, "Logical bytes reserved for the Peri image.");
     I("boot_pad_byte", "placement", 0, 255, "Value of the padding between sections and in the last word of an image.");
+    // the I2C EEPROM the decoders fetch from
+    I("eeprom_capacity", "eeprom", 1, 1 << 24, "Bytes of the I2C EEPROM that holds the code, the descriptor tables, the const pool and the DeviceMap.");
+    I("eeprom_i2c_address", "eeprom", 0, 127, "7-bit I2C address of the EEPROM.");
+    I("eeprom_address_bytes", "eeprom", 1, 3, "Bytes of the memory address sent in an EEPROM transaction (2 for 32 Kbit and up).");
+    I("eeprom_erased", "eeprom", 0, 255, "What an erased (unused) EEPROM byte reads as.");
+    for (const char* r : {"main_code", "main_desc", "main_const", "peri_code", "peri_desc", "peri_devmap"})
+        I((std::string("eeprom_") + r + "_addr").c_str(), "eeprom", -1, 1 << 24, "EEPROM start address of this region (the register of the same name holds it at run time); -1 = right after the region before it.");
     // layout
     I("layout_offset_bits", "layout", 8, 32, "Width of each ImageLayout sideband latch; every section offset must fit.");
     static const char* const alignNames[] = {"main_move", "main_branch", "main_csr1", "main_csrm", "main_alu", "main_const", "peri_xfer1", "peri_xferm", "peri_pub", "peri_branch", "peri_csr1", "peri_devmap"};
@@ -137,6 +144,7 @@ const std::vector<ProfileGroup>& profileGroups() {
         {"pc_width", "Program counter and code size", "How far the code may grow and how wide the program counter is. The spec leaves the PC width and any narrower code limit to the target; ordinary branches still reach only bytes 0..255.", true},
         {"same_region", "Optional hardware features", "Whether a non-overlapping MOV inside one region is allowed, and whether CSR read-back bytes carry a valid bit. The v31 spec does not decide either; the RTL tests do.", true},
         {"placement", "Program SRAM placement", "Where the Main and Peri images sit in the one shared SRAM and how much room each has. The spec shows a toy layout only; the real depth, base addresses and capacities are RTL parameters.", true},
+        {"eeprom", "I2C EEPROM (program store)", "The EEPROM the decoders fetch the code, the descriptor tables, the const pool and the DeviceMap from: its size, I2C address, address width and where each region starts. Planning values until the board and the RTL give them.", true},
         {"layout", "Image layout and alignment", "How wide the sideband offset latches are and how sections are aligned. Not stated by the spec; wrong values make the hardware read the wrong table.", true},
         {"descriptor_endian", "Descriptor byte order", "In which byte order multi-byte descriptors are stored. v31 says to concatenate 'in the existing byte order' and leaves the serialization to the target; the SRAM lane mapping alone does not settle it.", true},
         {"device_map", "DeviceMap entry packing", "Which bits of a DeviceMap entry hold the bus type and the I2C address, and how many bytes an entry takes. The spec gives only the bit widths.", true},

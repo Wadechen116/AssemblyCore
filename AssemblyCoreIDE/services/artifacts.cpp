@@ -19,6 +19,19 @@ std::vector<std::string> writeArtifacts(IFileSystem& fs, const std::string& pref
         put(base + ".layout.json", r.layoutJson(d));
         if (opt.hex) put(base + ".hex", r.intelHex(d));
     }
+    if (opt.eeprom) {
+        std::vector<uint8_t> image;
+        asmcore::EepromMap map;
+        std::string why;
+        const asmcore::Profile defaults;
+        if (asmcore::buildEeprom(r, opt.profile ? *opt.profile : defaults, image, map, why)) {
+            put(prefix + ".eeprom.bin", std::string(image.begin(), image.end()));
+            put(prefix + ".eeprom.hex", asmcore::intelHex(image));
+            put(prefix + ".eeprom.json", map.json());
+        } else if (error.empty()) {
+            error = prefix + ".eeprom.bin (" + why + ")";
+        }
+    }
     if (opt.listing) put(prefix + ".lst", r.listing());
     if (opt.map) put(prefix + ".map", r.map());
     if (opt.debug) put(prefix + ".dbg.json", r.debugJson());

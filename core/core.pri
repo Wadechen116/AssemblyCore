@@ -26,6 +26,7 @@ CORE_SOURCES = \
     $$ASMCORE_DIR/src/image_view.cpp \
     $$ASMCORE_DIR/src/disasm.cpp \
     $$ASMCORE_DIR/src/sim_params.cpp \
+    $$ASMCORE_DIR/src/eeprom.cpp \
     $$ASMCORE_DIR/src/sim/ini.cpp \
     $$ASMCORE_DIR/src/sim/sexpr.cpp \
     $$ASMCORE_DIR/src/sim/impl.cpp \
@@ -35,5 +36,6 @@ CORE_SOURCES = \
     $$ASMCORE_DIR/src/sim/main_core.cpp \
     $$ASMCORE_DIR/src/sim/peri_core.cpp \
     $$ASMCORE_DIR/src/sim/debug.cpp \
+    $$ASMCORE_DIR/src/sim/decode.cpp \
     $$ASMCORE_DIR/src/sim/scenario.cpp
 CONFIG += c++17

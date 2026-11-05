@@ -846,6 +846,7 @@ void MainWindow::onSnapshot(SnapshotPtr s) {
             std::string err;
             ArtifactOptions ao;
             ao.sources = s->sources;
+            ao.profile = &s->profile;
             auto files = writeArtifacts(*ctx_.workspace.fileSystem(), s->prefix, s->result, ao, err);
             for (auto& f : files) ctx_.log.fire(tr("  wrote %1").arg(fromStd(f)));
             if (!err.empty()) ctx_.log.fire(tr("  cannot write %1").arg(fromStd(err)));
@@ -987,6 +988,27 @@ void MainWindow::createDebugActions() {
             d->show();
             d->raise();
             if (auto* run = d->widget() ? d->widget()->findChild<QPushButton*>("autoDebugFix") : nullptr) run->click();
+        });
+        // what the decoders fetch: the EEPROM the build would burn (the default), or a burned image (e.g. read back from the board)
+        QAction* fromImage = dbg->addAction(tr("Debug from an EEPROM Image..."));
+        fromImage->setObjectName("debugFromEepromAction");
+        fromImage->setToolTip(tr("The decoders fetch every instruction from a burned EEPROM image (PREFIX.eeprom.bin with its .eeprom.json); the Decoder panel compares what they decode with the source"));
+        connect(fromImage, &QAction::triggered, this, [this] {
+            const std::string base = ctx_.workspace.hasProject() ? ctx_.workspace.project().absolute(ctx_.workspace.project().outputDir) : std::string();
+            const QString f = QFileDialog::getOpenFileName(this, tr("Debug from an EEPROM image"), fromStd(base), tr("EEPROM images (*.eeprom.bin);;All files (*)"));
+            if (f.isEmpty()) return;
+            std::string why;
+            if (!ctx_.debugger.useEepromImage(toStd(f), why)) { QMessageBox::warning(this, tr("EEPROM image"), fromStd(why)); return; }
+            statusBar()->showMessage(tr("The decoders fetch from %1").arg(QFileInfo(f).fileName()), 6000);
+            if (QDockWidget* d = dock("decoder")) { d->show(); d->raise(); }
+            if (ctx_.debugger.active()) ctx_.debugger.stop();
+            if (QAction* start = debugAction("start")) start->trigger();
+        });
+        QAction* fromBuild = dbg->addAction(tr("Debug from the Build's EEPROM"));
+        fromBuild->setObjectName("debugFromBuildEepromAction");
+        connect(fromBuild, &QAction::triggered, this, [this] {
+            ctx_.debugger.useBuildEeprom();
+            statusBar()->showMessage(tr("The decoders fetch from the EEPROM image of the newest build (from the next start)"), 6000);
         });
         tb->addSeparator();
         tb->addAction(sim);

@@ -3,9 +3,12 @@
 Main 與 Peri 兩個 sequencer 的行為模型，加上可設定的外部環境（CSR、I2C 裝置、影像時序）。核心只用標準 C++17。
 它吃組譯器的輸出（`asmcore::Result`：映像檔加除錯資訊），所以組譯與模擬在同一個程序內完成，不必先存檔再讀回。
 
+**Decoder 從 EEPROM 取指令**（預設 `fetch.source = eeprom`）：模擬器把組譯結果排成一份 EEPROM 映像（或直接用 `--eeprom` 給的燒錄檔），兩個 Decoder 經由六個區域位址暫存器從 EEPROM 讀 opcode、描述子、常數再執行——執行的是燒錄的 byte，不是原始碼。`--decoded` 列出 Decoder 解出的程式並和原始碼比對。詳見 [EEPROM.md](EEPROM.md)。
+
 ```
-asmsim [--env FILE] [--scenario FILE | --cycles N --until EXPR] [--trace F] [--events F] [--vcd F] [--dump]
-       [--call-model inline|softret] [--profile FILE] [-I DIR]  file.asm ...
+asmsim [--env FILE] [--scenario FILE | --cycles N --until EXPR] [--trace F] [--events F] [--vcd F] [--dump] [--decoded]
+       [--call-model inline|softret] [--profile FILE] [-I DIR] [--eeprom PREFIX.eeprom.bin]  file.asm ...
+asmsim --eeprom PREFIX.eeprom.bin [options]          (only the burned binary, no source)
 asmsim examples/imu_gyro.asm --env examples/imu_env.cfg --scenario examples/imu_gyro.scn --vcd run.vcd
 ```
 

@@ -98,6 +98,8 @@ struct State {
     std::vector<EventRecord> evTail;
     int64_t evOpen[2] = {-1, -1};
     size_t injNext = 0;                                // the next [inject] line of the environment (Impl::injSorted) still to come
+    // the I2C EEPROM the decoders fetch from: shared between snapshots, copied only when something writes to it (an EXEC_XFER write)
+    std::shared_ptr<const std::vector<uint8_t>> eeprom;
     std::vector<int64_t> sig;                          // stored signals
     std::map<uint32_t, uint8_t> csr;                   // stored CSR bytes
     std::vector<std::vector<int64_t>> dev;             // per-device state
@@ -213,6 +215,20 @@ struct Simulator::Impl : public ExprBinder, public ExprEnv, public ActionContext
     // the [inject] lines in time order (fixed after the environment is read): the State keeps only how far it has got, so a snapshot does not copy them all.
     // They take part in the timed queue as if they had all been scheduled at reset with sequence numbers from injSeqBase (that is where they were before).
     std::vector<std::pair<Cycle, std::string>> injSorted;
+    // the EEPROM (eeprom.h): its map, its bytes at reset, the signals holding the six region addresses; fetchEeprom = parameter fetch.source
+    EepromMap emap;
+    std::vector<uint8_t> eepromReset;
+    int regionSig[ER_COUNT] = {-1, -1, -1, -1, -1, -1};
+    bool fetchEeprom = false;
+    std::string eepromError;                           // why there is no EEPROM (it did not fit ...): fetch.source = eeprom is then a configuration error
+    void syncFetch();                                  // point the two images at the EEPROM through the registers (or back at the plain bytes)
+    // the decoder's view (decode.cpp): one instruction from the bytes as fetched, compared with the assembler's image; cached per fetch state
+    DecodedLine decode(int domain, uint32_t pc) const;
+    void annotateIssue(Event& e) const;
+    std::map<uint32_t, std::string> labelAt[2];        // pc -> label name (from the assembler's symbols)
+    mutable std::map<uint32_t, DecodedLine> decodeCache[2];
+    mutable std::vector<uint64_t> decodeKey;           // what the cache is valid for: the EEPROM buffer, the region registers, the fetch source
+    bool eepromDevice(const XferInFlight& x, I2cReply& r);      // EXEC_XFER to the EEPROM's address: true if it answered
     uint64_t injSeqBase = 0;
     bool injectIsNext() const;                         // the next timed thing is an [inject] line (not st.q.front())
     bool timedPending() const { return !st.q.empty() || st.injNext < injSorted.size(); }
@@ -317,6 +333,7 @@ struct Simulator::Impl : public ExprBinder, public ExprEnv, public ActionContext
         Event e;
         e.t = st.now;
         build(e);
+        if (e.type == EventType::Issue) annotateIssue(e);
         for (auto& s : sinks) s->onEvent(e);
     }
     void emitNote(const std::string& text);

@@ -335,13 +335,13 @@ static void t_profile_info() {
     std::vector<ProfileGap> gaps = profileGaps(Profile());
     std::set<std::string> gapNames;
     for (auto& g : gaps) gapNames.insert(g.group);
-    check(gaps.size() == 9 && gapNames.count("alu") && gapNames.count("placement") && gapNames.count("descriptor_endian") && gapNames.count("latency"), "a default profile leaves 9 groups unconfirmed (ALU numbers, byte order, placement, latency ...)");
+    check(gaps.size() == 10 && gapNames.count("alu") && gapNames.count("placement") && gapNames.count("descriptor_endian") && gapNames.count("latency") && gapNames.count("eeprom"), "a default profile leaves 10 groups unconfirmed (ALU numbers, byte order, placement, the EEPROM, latency ...)");
     bool alu13 = false;
     for (auto& g : gaps) if (g.group == "alu" && g.keys.size() == 13 && !g.why.empty()) alu13 = true;
     check(alu13, "each gap says why it matters and which keys it covers");
     Profile conf;
     errs.clear();
-    check(conf.load("confirmed = alu, placement\n", errs) && conf.confirmed.size() == 2 && profileGaps(conf).size() == 7, "'confirmed = alu, placement' removes those two gaps", errs.empty() ? "" : errs[0]);
+    check(conf.load("confirmed = alu, placement\n", errs) && conf.confirmed.size() == 2 && profileGaps(conf).size() == 8, "'confirmed = alu, placement' removes those two gaps", errs.empty() ? "" : errs[0]);
     check(conf.dump().find("confirmed = alu, placement") != std::string::npos, "...and survives dump");
     Profile unk;
     errs.clear();

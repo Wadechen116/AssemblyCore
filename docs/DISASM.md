@@ -26,6 +26,10 @@ asmdis --peri --annotate --labels names.txt -o peri.asm imu.peri.bin
 | `--annotate` | 每行加上位址與原始位元組的註解 |
 | `--check` | 把輸出再組譯一次並與輸入映像檔比對 |
 
+## 從 EEPROM 燒錄檔反組譯
+
+`asmdis --main|--peri --eeprom PREFIX.eeprom.bin [--eeprom-map PREFIX.eeprom.json]`：從 `asmc --eeprom` 寫出的燒錄檔，依對照表裡各區域的位址取出該 domain 的程式碼、描述表與 Const Pool／DeviceMap，再反組譯；`--check` 會再組譯一次比對。見 [EEPROM.md](EEPROM.md)。
+
 ## 它怎麼做
 
 1. **版面**：依旁路 ImageLayout（layout.json）找出各描述子表、常數池／DeviceMap（`image_view.*`，與模擬器共用）。版面不合理（表格跑出映像檔外、

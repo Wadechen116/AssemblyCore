@@ -265,6 +265,7 @@ void Simulator::Impl::opMainAlu(OpCtx& oc) {
 void Simulator::Impl::stepMain() {
     MainState& m = st.m;
     const uint32_t pc = m.pc;
+    syncFetch();                                                                  // fetch through the region registers as they are now
     if (!fetchOk(Domain::Main, pc)) return;
     const uint8_t b = (uint8_t)img[0].u8(pc);
     OpCtx oc;

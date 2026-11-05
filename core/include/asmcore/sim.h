@@ -15,6 +15,7 @@
 //
 // See docs/SIM.md for the environment file format and for every place where the spec was silent and a choice was made.
 #include "asmcore/sim_params.h"
+#include "asmcore/eeprom.h"
 #include <cstdint>
 #include <functional>
 #include <map>
@@ -117,6 +118,10 @@ struct SimConfig {
     Profile profile;              // layout assumptions (offset width, byte order) and latencies
     std::string env;              // environment file text (docs/SIM.md); may be empty
     SimParams params;             // hardware parameters (sim_params.h): these win over the environment file's sections and its [params]
+    // The burned EEPROM the decoders fetch from (eeprom.h). Empty: the simulator makes it from the assembler result and the profile's
+    // eeprom_* addresses, as asmc --eeprom would. Given: exactly these bytes (asmsim --eeprom: a binary without its source).
+    std::vector<uint8_t> eepromImage;
+    EepromMap eepromMap;
 };
 
 // ---- faults, stops, breakpoints --------------------------------------------------------------------------------------------
@@ -164,6 +169,20 @@ struct Breakpoint {
     bool enabled = true;
     bool oneShot = false;
     uint64_t hits = 0;
+};
+// One instruction as the decoder sees it.
+struct DecodedLine {
+    Domain domain = Domain::Main;
+    uint32_t pc = 0;
+    uint32_t length = 1;              // bytes of code (the opcode and its inline bytes)
+    uint32_t eepromAddr = 0;          // where the opcode byte was fetched (= pc with fetch.source = sram)
+    std::vector<uint8_t> bytes;       // the code bytes as fetched
+    std::string text;                 // the instruction the decoder made of them (assembler syntax; labels by name when known)
+    bool valid = true;                // false: not a legal encoding (`problem` says why)
+    std::string problem;
+    std::string source;               // the line of the program at that pc ("" when only a binary was given)
+    std::string expected;             // what the assembler's image decodes to at that pc ("" without it)
+    bool matches = true;              // the fetched bytes (code, descriptors, constants) are the assembler's: what runs is what was written
 };
 struct CallFrame {
     std::string proc;
@@ -224,6 +243,14 @@ public:
     bool inHandler(Domain d) const;                         // handler_active
     uint64_t pendingEvents(Domain d) const;                 // bit i = event i is pending
     std::vector<EventRecord> eventLog() const;              // every event so far, oldest first
+    // What the decoder makes of the bytes it fetches (from the EEPROM through the region registers, or the image with fetch.source = sram):
+    // the instruction at `pc`, and the whole code of a domain. Each line says whether it is what the assembler produced for that place.
+    DecodedLine decodedAt(Domain d, uint32_t pc) const;
+    std::vector<DecodedLine> decodedProgram(Domain d) const;
+    // The I2C EEPROM the decoders fetch from, as it is now (an EXEC_XFER write changes it). 0 / 0xFF outside it.
+    size_t eepromSize() const;
+    uint8_t eepromByte(uint32_t addr) const;
+    const EepromMap& eepromMap() const;
     // Regions: scratch, csrbuf, opa, opb, out, status, rx, slot, meta, const
     int regionSize(const std::string& region) const;        // bytes, or -1 for an unknown region (const depends on the program)
     std::vector<uint8_t> readRegion(const std::string& region, int off, int len) const;

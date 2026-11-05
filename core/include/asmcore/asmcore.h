@@ -72,6 +72,10 @@ struct Profile {
     int mainPcWidth = 8, periPcWidth = 8;                    // architectural PC width in bits; the code of a domain is at most 2^width bytes
     int bootPadByte = 0;                                     // fills the last word of an image and the gaps between sections (never executed)
     int layoutOffsetBits = 16;                               // width of each ImageLayout sideband field (spec: profile / boot interface)
+    // The I2C EEPROM the decoders fetch from (include/asmcore/eeprom.h): its size, I2C address, the bytes of a memory address, the erased value,
+    // and the start address of each of the six regions (main code / desc / const, peri code / desc / devmap; -1 = after the region before it).
+    int eepromCapacity = 65536, eepromDevAddr = 0x50, eepromAddrBytes = 2, eepromFill = 0xFF;
+    int eepromAddr[6] = {-1, -1, -1, -1, -1, -1};
     int sectionAlign[PS_COUNT] = {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1};   // bytes; -1 = the width of the section's entries
     int deviceMapEntryBytes = 1;                             // DEVICE_MAP_ENTRY_BYTES
     int deviceMapBusShift = 7, deviceMapAddrShift = 0;       // bit positions inside an entry (bus_type 1 bit, i2c_addr_7b 7 bits)

@@ -9,6 +9,7 @@
 
 #include "asmcore/asmcore.h"
 #include "asmcore/disasm.h"
+#include "asmcore/eeprom.h"
 #include "asmcore/sram.h"
 
 using namespace asmcore;
@@ -34,6 +35,9 @@ void usage() {
         "                       image.bin. Since spec v31 the layout is NOT inside the image, so it is required.\n"
         "  --sram FILE          instead of image.bin: read the logical image back from the SRAM word file (PREFIX.sram.hex) through the\n"
         "                       profile's image base word (an independent check of the word packing); needs --length\n"
+        "  --eeprom FILE        instead of image.bin: the EEPROM image asmc --eeprom wrote (PREFIX.eeprom.bin): the domain's code, descriptor\n"
+        "                       tables and const pool / DeviceMap are read from the regions of its map file (what the decoder fetches)\n"
+        "  --eeprom-map FILE    the map of the EEPROM image (default: PREFIX.eeprom.json next to it); holds the region addresses and the ImageLayout\n"
         "  --length N           logical image size in bytes (with --sram; default: the end of the last section of the layout file)\n"
         "  --events FILE        PREFIX.events.json of asmc --artifacts: the event vectors of this domain become labels and '.vector' lines\n"
         "  --profile FILE       the profile the image was assembled with (byte order, DeviceMap packing, ALU codes, SRAM image bases)\n"
@@ -52,7 +56,7 @@ int main(int argc, char** argv) {
     bool haveDomain = false, annotate = false, check = false, longJumps = false;
     Domain dom = Domain::Main;
     Profile pf;
-    std::string eventsPath, profilePath, labelsPath, outPath, input, prefix = "L_", layoutPath, sramPath;
+    std::string eventsPath, profilePath, labelsPath, outPath, input, prefix = "L_", layoutPath, sramPath, eepromPath, eepromMapPath;
     long long lengthArg = 0;
     long long codeSize = 0;
     for (int i = 1; i < argc; i++) {
@@ -68,6 +72,8 @@ int main(int argc, char** argv) {
         else if (a == "--layout") layoutPath = need();
         else if (a == "--events") eventsPath = need();
         else if (a == "--sram") sramPath = need();
+        else if (a == "--eeprom") eepromPath = need();
+        else if (a == "--eeprom-map") eepromMapPath = need();
         else if (a == "--length") lengthArg = std::atoll(need().c_str());
         else if (a == "--code-size") codeSize = std::atoll(need().c_str());
         else if (a == "--labels") labelsPath = need();
@@ -79,7 +85,7 @@ int main(int argc, char** argv) {
         else if (!a.empty() && a[0] == '-') { std::fprintf(stderr, "asmdis: unknown option %s\n", a.c_str()); return 2; }
         else input = a;
     }
-    if (!haveDomain || (input.empty() && sramPath.empty())) { usage(); return 2; }
+    if (!haveDomain || (input.empty() && sramPath.empty() && eepromPath.empty())) { usage(); return 2; }
     if (!profilePath.empty()) {
         std::string t;
         std::vector<std::string> errs;
@@ -88,12 +94,28 @@ int main(int argc, char** argv) {
     DomainImage im;
     im.domain = dom;
     im.present = true;
+    if (!eepromPath.empty()) {                                              // the burned EEPROM: the regions of its map give this domain's logical image
+        if (eepromMapPath.empty()) {
+            const size_t dot = eepromPath.rfind(".bin");
+            eepromMapPath = (dot != std::string::npos && dot + 4 == eepromPath.size() ? eepromPath.substr(0, dot) : eepromPath) + ".json";
+        }
+        std::vector<uint8_t> eep;
+        std::string t, err;
+        EepromMap emap;
+        if (!readBin(eepromPath, eep)) { std::fprintf(stderr, "asmdis: cannot read %s\n", eepromPath.c_str()); return 2; }
+        if (!readText(eepromMapPath, t) || !loadEepromMapJson(t, emap, err)) { std::fprintf(stderr, "asmdis: the EEPROM map %s: %s\n", eepromMapPath.c_str(), err.empty() ? "cannot be read" : err.c_str()); return 2; }
+        DomainImage mi, pi;
+        if (!domainImagesFromEeprom(eep, emap, mi, pi, err)) { std::fprintf(stderr, "asmdis: %s\n", err.c_str()); return 2; }
+        im = dom == Domain::Main ? mi : pi;
+        if (!im.present) { std::fprintf(stderr, "asmdis: the EEPROM image holds no %s program\n", domainName(dom)); return 2; }
+        layoutPath = "(from the EEPROM map)";
+    }
     // ImageLayout is sideband: it comes from the layout file the assembler wrote next to the image
     if (layoutPath.empty() && !input.empty()) {
         size_t dot = input.rfind(".bin");
         layoutPath = (dot != std::string::npos && dot + 4 == input.size() ? input.substr(0, dot) : input) + ".layout.json";
     }
-    {
+    if (eepromPath.empty()) {
         std::string t, err;
         if (layoutPath.empty() || !readText(layoutPath, t)) {
             std::fprintf(stderr, "asmdis: the ImageLayout file %s cannot be read.\n  Since spec v31 the layout is not part of the image: asmc writes it next to the image as PREFIX.%s.layout.json.\n"
@@ -120,7 +142,7 @@ int main(int argc, char** argv) {
         if (!len) for (const SectionInfo& s : im.sections) len = std::max(len, s.offset + s.size);
         if (!len) { std::fprintf(stderr, "asmdis: --sram needs --length (the layout file has no section list)\n"); return 2; }
         if (!imageFromSram(sram, pf, dom, len, im.bytes)) { std::fprintf(stderr, "asmdis: %s does not hold all %u bytes of the %s image at the profile's image base word %d (wrong --profile?)\n", sramPath.c_str(), len, domainName(dom), dom == Domain::Main ? pf.mainImageBaseWord : pf.periImageBaseWord); return 2; }
-    } else if (!readBin(input, im.bytes)) { std::fprintf(stderr, "asmdis: cannot read %s\n", input.c_str()); return 2; }
+    } else if (eepromPath.empty() && !readBin(input, im.bytes)) { std::fprintf(stderr, "asmdis: cannot read %s\n", input.c_str()); return 2; }
 
     std::map<uint32_t, std::string> names;
     if (!labelsPath.empty()) {
