@@ -5,9 +5,10 @@
 //
 // Format (UTF-8 text; '#' starts a comment; words separated by spaces, "quoted text" may hold spaces):
 //   canvas  W H
-//   box     ID X Y W H KIND "Title" [domain=main|peri] [target=PANEL] [help="text"]
+//   box     ID X Y W H KIND "Title" [domain=main|peri] [target=PANEL] [help="text"] [params="key key ..."]
 //             KIND: code decoder data alu flags timer shared device (the colour)
 //             target: the panel a click opens (memory csrs signals state watch events), or "code" = the line the sequencer is at (decoder boxes)
+//             params: the simulator parameters (sim_params.h) of this part of the hardware: the right button on the box sets them
 //   row     BOX "Label" SOURCE...
 //             SOURCE: pc main|peri | instr main|peri | count main|peri | fault main|peri | cycle
 //                     region NAME A..B     (bytes of scratch csrbuf rx slot meta opa opb out status const, as hex)
@@ -43,6 +44,7 @@ struct IsaBox {
     double x = 0, y = 0, w = 0, h = 0;
     int domain = -1;                      // -1 none, 0 main, 1 peri
     std::vector<IsaRow> rows;
+    std::vector<std::string> params;      // the simulator parameters of this block of the hardware (set with the right button)
 };
 
 struct IsaWire {

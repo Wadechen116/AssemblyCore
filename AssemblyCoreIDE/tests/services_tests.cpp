@@ -16,6 +16,8 @@
 #include "auto_fix.h"
 #include "exec_values.h"
 #include "isa_layout.h"
+#include "instr_params.h"
+#include "asmcore/sim_params.h"
 #include "trace_ring.h"
 #include "sim_compare.h"
 #include "sim_params_store.h"
@@ -1283,6 +1285,56 @@ static void t_isa_layout() {
     check(isaValue(L.boxes[0].rows[0].src, nullptr, at) == "-" && isaValue(L.box("main_code")->rows[1].src, nullptr, at) == "tables + pool", "without a view every value is -, static text stays");
 }
 
+// Where each simulator parameter is set: a box of the ISA Top diagram (right button), an instruction (the right button on a block), or the overall ones.
+// Every parameter has at least one place; every key named there is a parameter.
+static void t_param_places() {
+    std::printf("\n== where the parameters are set (ISA Top boxes, instructions, overall)\n");
+    const IsaLayout L = parseIsaLayout(defaultIsaLayoutText());
+    check(L.errors.empty(), "the default diagram reads without errors", L.errors.empty() ? "" : L.errors[0]);
+    std::set<std::string> boxes, instr, global(globalParamKeys().begin(), globalParamKeys().end()), unknown;
+    int boxesWith = 0;
+    for (const IsaBox& b : L.boxes) {
+        if (!b.params.empty()) boxesWith++;
+        for (const std::string& k : b.params) { boxes.insert(k); if (!asmcore::findParam(k)) unknown.insert(b.id + ":" + k); }
+    }
+    const char* lines[] = {"MOV CONST(1, 1) -> MAIN_SCRATCHPAD[0..0]", "MOV PERI_RESULT_SLOT[0..3] -> MAIN_SCRATCHPAD[0..3]", "ALU ADD unsigned", "ALU MUL unsigned",
+                           "EXEC_CSR WRITE8 A, 1", "EXEC_CSR WRITE_SP A, len=2, ptr=0", "EXEC_PUB service=1, src=0, len=2", "EXEC_XFER READ dev=0, addr=0x10, addrlen=1, ptr=0",
+                           "BR.COND PERI_RESULT_VALID, x, safe", "BR.IF_TIMER_DONE d", "JMP x", "CALL p", "RET", "BR.ERET", "CASCADE_BEGIN 0", "CASCADE_END 0"};
+    for (int d = 0; d < 2; d++)
+        for (const char* l : lines) {
+            const InstrParams p = instructionParams(l, d);
+            for (const std::string& k : p.own) { instr.insert(k); if (!asmcore::findParam(k)) unknown.insert(std::string(l) + ":" + k); }
+            for (const std::string& k : p.related) { instr.insert(k); if (!asmcore::findParam(k)) unknown.insert(std::string(l) + ":" + k); }
+        }
+    for (const std::string& k : global) if (!asmcore::findParam(k)) unknown.insert("global:" + k);
+    std::string bad;
+    for (const std::string& u : unknown) bad += u + " ";
+    check(unknown.empty(), "every key a box, an instruction or the overall list names is a parameter", bad);
+    std::string missing;
+    int total = 0, onlyInstr = 0, onlyBox = 0, both = 0;
+    for (const asmcore::ParamDef& d : asmcore::paramCatalog()) {
+        total++;
+        const bool b = boxes.count(d.key) != 0, i = instr.count(d.key) != 0, g = global.count(d.key) != 0;
+        if (!b && !i && !g) missing += d.key + " ";
+        if (i && !b) onlyInstr++;
+        if (b && !i) onlyBox++;
+        if (b && i) both++;
+    }
+    check(missing.empty(), "every parameter can be set somewhere (a box, a block or the overall ones)", missing);
+    std::printf("        %d parameters: on the blocks %zu (only there %d), in %d boxes of the diagram %zu (only there %d), in both %d, overall %zu\n",
+                total, instr.size(), onlyInstr, boxesWith, boxes.size(), onlyBox, both, global.size());
+    // the instruction of a line, the rest of the line
+    const InstrParams mv = instructionParams("loop:  MOV CONST(1, 1) -> MAIN_SCRATCHPAD[0..0]   ; a comment", 0);
+    check(mv.own == std::vector<std::string>{"latency.mov_setup", "latency.mov_byte"} && mv.mnemonics == std::vector<std::string>{"MOV"}, "a label in front and a comment after: MOV, its setup and per-byte cycles");
+    check(instructionParams("EXEC_CSR WRITE8 A, 1", 1).own == std::vector<std::string>{"latency.csr_access", "csr.access_peri"}, "a Peri EXEC_CSR: the access as Peri's decoder sees it");
+    check(instructionParams(".csr A = 0x50", 0).empty() && instructionParams("; only a comment", 0).empty() && instructionParams("x:", 0).empty(), "a directive, a comment, a lone label: nothing");
+    const InstrParams br = instructionParams("BR.COND MAIN_TIMER_DONE, go", 0), jmp = instructionParams("JMP go", 0);
+    auto hasKey = [](const std::vector<std::string>& v, const char* k) { return std::find(v.begin(), v.end(), k) != v.end(); };
+    check(hasKey(br.related, "flag.sample_delay_main") && !hasKey(jmp.related, "flag.sample_delay_main"), "a conditional branch also shows what decides what it sees (the Status Flag); JMP does not");
+    const InstrParams two = instructionParams(std::vector<std::string>{"MOV CONST(1, 1) -> MAIN_SCRATCHPAD[0..0]", "ALU ADD unsigned", "MOV CONST(2, 1) -> MAIN_SCRATCHPAD[1..1]"}, 0);
+    check(two.mnemonics == std::vector<std::string>{"MOV", "ALU"} && two.own.size() == 3, "the lines of one block: merged, once each");
+}
+
 static void t_exec_values() {
     std::printf("\nWhat an instruction just did\n");
     SimView v;
@@ -1540,6 +1592,7 @@ int main() {
     t_auto_debug();
     t_auto_fix();
     t_isa_layout();
+    t_param_places();
     t_exec_values();
     t_trace_ring();
     t_trace_links();

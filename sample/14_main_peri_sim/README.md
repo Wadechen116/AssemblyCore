@@ -9,7 +9,7 @@
 
 ## 怎麼玩
 1. 開專案 `14_main_peri_sim.acproj`（專案樹雙擊）。它已登記 `simparams = main_peri.simparams`。
-2. `Ctrl+Shift+M` 開**模擬器頁面**：左邊參數、右邊 Main／Peri 兩條時間軸。
+2. `Ctrl+Shift+M` 開**模擬器頁面**：上面是 ISA Top 架構圖，下面是 Main／Peri 兩條時間軸。參數在方塊或積木上按右鍵「設定參數…」，或用 ISA Top 標題列的「所有參數…」。
 3. 改參數看差異（基準軌道是初始值跑出的）。這份參數下（兩個 Timer 都數 13.5 MHz，即 27 MHz 除 2，每個 tick 2 個 ISA 週期）：Peri 在第 6686 週期發佈，Main 在 6708 取走，**在第二個畫面的消隱視窗（7000～7900）的 7015 提交**。
    - `clock.timer_hz` 改 6750000（每 tick 4 個 ISA 週期）：兩個 Timer 一起慢一倍，發佈延到 7884，越過了 7000 的消隱視窗，提交延到下一個畫面的 11015。
    - `flag.arbiter_policy`（初始值 `main_first`：同一週期 Main 先）改 `none`：Main 與 Peri 的 BR 不再搶同一個 Status Flag 單元，發佈早 1 週期（6685），取用早 2 週期（6706）。

@@ -1,11 +1,16 @@
 // The simulator's parameter panel and the execution view: change a hardware parameter a little and see where, and how much, the two sequencers move.
 //   * ParamsPanel: every parameter of asmcore/sim_params.h in groups, edited in place; where a value comes from (planning / measured / confirmed); the
-//     .simparams file of the project (load, save).
+//     .simparams file of the project (load, save). It lives in the "All parameters" window (AllParamsDialog), not on the page.
+//   * ParamSetDialog: a few parameters in a small window: the right button on a box of the ISA Top diagram (its hardware parameters) or on a block
+//     (its instruction's cycle time and what else changes it).
 //   * ExecutionPanel: the program runs in a simulator of its own (sim_compare.h); Main and Peri are two lanes on a cycle axis, the run of the INITIAL values (or a
 //     saved run) lies under them as a ghost lane, a strip shows how far each lane has drifted, a table lists what moved. Zoom, pan, click an instruction to see its line.
 #include <QApplication>
 #include <QCheckBox>
 #include <QComboBox>
+#include <QDialog>
+#include <QGridLayout>
+#include <QPointer>
 #include <QCoreApplication>
 #include <QFileDialog>
 #include <QFileInfo>
@@ -39,6 +44,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <map>
 
 #include "app_context.h"
 #include "document_tab.h"
@@ -1347,7 +1353,7 @@ public:
         rowsLay_->addStretch(1);
         area->setWidget(rows_);
         lay->addWidget(area, 1);
-        auto* foot = new QLabel(tr("\xE2\x86\x92 shows it in the Simulator page  \xC2\xB7  \xE2\x98\x85 pins it here  \xC2\xB7  \xE2\x86\xBA back to the initial value"));
+        auto* foot = new QLabel(tr("\xE2\x86\x92 shows it in the All parameters window  \xC2\xB7  \xE2\x98\x85 pins it here  \xC2\xB7  \xE2\x86\xBA back to the initial value"));
         foot->setEnabled(false);
         lay->addWidget(foot);
         resize(520, 360);
@@ -1418,7 +1424,7 @@ private:
             auto* go = new QToolButton;
             go->setAutoRaise(true);
             go->setText(QString::fromUtf8("\xE2\x86\x92"));
-            go->setToolTip(tr("Show it in the Simulator page"));
+            go->setToolTip(tr("Show it in the All parameters window"));
             h->addWidget(name);
             h->addWidget(ed);
             h->addWidget(unit, 1);
@@ -1458,6 +1464,187 @@ private:
     ConnectionBag conns_;
 };
 
+// ---- a few parameters, in a small window of their own -----------------------------------------------------------------------------------------
+// What the right button on a box of the ISA Top diagram ("Set parameters...") and on a block of the block editor opens: the parameters of that part of the
+// hardware / of that instruction, each with its editor, unit, initial value and a button back to it. Changes take effect at once (also while running).
+// In a dialog Enter presses the default button; here Enter belongs to the search box and the value editors (it edits the first match, it takes a value),
+// so no button is a default one -- else Enter in the search box would press "Load..." and open a file dialog.
+void noDefaultButtons(QWidget* w) {
+    for (QPushButton* b : w->findChildren<QPushButton*>()) { b->setAutoDefault(false); b->setDefault(false); }
+}
+
+class ParamSetDialog : public QDialog {
+    Q_DECLARE_TR_FUNCTIONS(ParamSetDialog)
+public:
+    ParamSetDialog(AppContext& ctx, QWidget* parent, const QString& title, const std::vector<std::string>& own, const std::vector<std::string>& related,
+                   const QString& ownLabel, const QString& relatedLabel)
+        : QDialog(parent, Qt::Tool), ctx_(ctx), store_(ctx.debugger.simParams()) {
+        setObjectName("paramSetDialog");
+        setAttribute(Qt::WA_DeleteOnClose);
+        setWindowTitle(title);
+        auto* lay = new QVBoxLayout(this);
+        lay->setContentsMargins(8, 8, 8, 8);
+        auto* head = new QLabel("<b>" + title.toHtmlEscaped() + "</b>");
+        head->setObjectName("paramSetTitle");
+        lay->addWidget(head);
+        auto* grid = new QGridLayout;
+        grid->setHorizontalSpacing(8);
+        grid->setVerticalSpacing(3);
+        int row = 0;
+        auto section = [&](const QString& text, const std::vector<std::string>& keys) {
+            std::vector<const ParamDef*> defs;
+            for (const std::string& k : keys) if (const ParamDef* d = asmcore::findParam(k)) defs.push_back(d);
+            if (defs.empty()) return;
+            if (!text.isEmpty()) {
+                auto* l = new QLabel(text);
+                QFont f = l->font();
+                f.setBold(true);
+                l->setFont(f);
+                l->setContentsMargins(0, row ? 8 : 0, 0, 0);
+                grid->addWidget(l, row++, 0, 1, 5);
+            }
+            for (const ParamDef* d : defs) addRow(grid, row++, *d);
+        };
+        section(ownLabel, own);
+        section(relatedLabel, related);
+        if (rows_.empty()) {
+            auto* none = new QLabel(tr("No parameter belongs to this."));
+            none->setEnabled(false);
+            grid->addWidget(none, row++, 0, 1, 5);
+        }
+        lay->addLayout(grid);
+        help_ = new QLabel;
+        help_->setObjectName("paramSetHelp");
+        help_->setWordWrap(true);
+        help_->setMinimumHeight(48);
+        help_->setMaximumWidth(560);
+        help_->setAlignment(Qt::AlignTop | Qt::AlignLeft);
+        help_->setText(tr("Point at a parameter to see what it does and how to measure it."));
+        help_->setEnabled(false);
+        lay->addWidget(help_);
+        auto* foot = new QHBoxLayout;
+        auto* all = new QPushButton(tr("All parameters..."));
+        all->setObjectName("paramSetAll");
+        all->setToolTip(tr("Every parameter: search, load and save the parameter file, status and note, restart with them"));
+        auto* close = new QPushButton(tr("Close"));
+        close->setObjectName("paramSetClose");
+        foot->addWidget(all);
+        foot->addStretch(1);
+        foot->addWidget(close);
+        lay->addLayout(foot);
+        const std::string first = rows_.empty() ? std::string() : rows_.front().key;
+        connect(all, &QPushButton::clicked, this, [this, first] { showAllParams(ctx_, parentWidget(), first); });
+        connect(close, &QPushButton::clicked, this, [this] { this->close(); });
+        noDefaultButtons(this);
+        conns_.add(store_.changed, [this] { sync(); });
+        sync();
+    }
+    void showAt(const QPoint& globalPos) {
+        adjustSize();
+        QPoint at = globalPos;
+        if (QScreen* sc = QGuiApplication::screenAt(at)) {
+            const QRect a = sc->availableGeometry();
+            at.setX(std::max(a.left(), std::min(at.x(), a.right() - width())));
+            at.setY(std::max(a.top(), std::min(at.y(), a.bottom() - height())));
+        }
+        move(at);
+        show();
+        raise();
+        activateWindow();
+        if (!rows_.empty()) rows_.front().editor->setFocus();
+    }
+    std::vector<std::string> keys() const { std::vector<std::string> v; for (const Row& r : rows_) v.push_back(r.key); return v; }
+
+protected:
+    bool eventFilter(QObject* o, QEvent* e) override {
+        if (e->type() == QEvent::Enter || e->type() == QEvent::FocusIn)
+            for (const Row& r : rows_) if (o == r.editor || o == r.name) { showHelp(r.key); break; }
+        return QDialog::eventFilter(o, e);
+    }
+
+private:
+    struct Row { std::string key; QWidget* editor; QLabel* name; QLabel* initial; QToolButton* reset; };
+    void addRow(QGridLayout* grid, int row, const ParamDef& d) {
+        auto* name = new QLabel(fromStd(d.key));
+        name->setToolTip(fromStd(d.help + (d.measure.empty() ? std::string() : "\nmeasure: " + d.measure)));
+        QFont bold = name->font();
+        bold.setBold(true);
+        name->setMinimumWidth(QFontMetrics(bold).horizontalAdvance(fromStd(d.key)) + 8);        // room for the bold of a changed value
+        QWidget* ed = valueEditor(store_, d, this);
+        ed->setObjectName(QString("paramSet:") + fromStd(d.key));
+        ed->setMinimumWidth(110);
+        auto* unit = new QLabel(fromStd(d.unit));
+        unit->setEnabled(false);
+        auto* initial = new QLabel(tr("initial %1").arg(fromStd(SimParams().text(d.key))));
+        initial->setEnabled(false);
+        auto* reset = new QToolButton;
+        reset->setAutoRaise(true);
+        reset->setText(QString::fromUtf8("\xE2\x86\xBA"));
+        reset->setToolTip(tr("Back to the initial value"));
+        grid->addWidget(name, row, 0);
+        grid->addWidget(ed, row, 1);
+        grid->addWidget(unit, row, 2);
+        grid->addWidget(initial, row, 3);
+        grid->addWidget(reset, row, 4);
+        const std::string key = d.key;
+        connect(reset, &QToolButton::clicked, this, [this, key] { store_.clear(key); });
+        name->installEventFilter(this);
+        ed->installEventFilter(this);
+        rows_.push_back({key, ed, name, initial, reset});
+    }
+    void showHelp(const std::string& key) {
+        const ParamDef* d = asmcore::findParam(key);
+        if (!d) return;
+        QString range;
+        if (d->kind == ParamDef::Enum) { for (const std::string& o : d->options) range += (range.isEmpty() ? "" : " | ") + fromStd(o); }
+        else if (d->kind == ParamDef::Bool) range = "true | false";
+        else range = QString("%1 .. %2").arg(d->lo).arg(d->hi);
+        QString t = "<b>" + fromStd(d->key).toHtmlEscaped() + "</b>  (" + range.toHtmlEscaped() + (d->unit.empty() ? QString() : ", " + fromStd(d->unit).toHtmlEscaped()) + ")<br>" + fromStd(d->help).toHtmlEscaped();
+        if (!d->measure.empty()) t += "<br><i>" + tr("on the FPGA:") + "</i> " + fromStd(d->measure).toHtmlEscaped();
+        help_->setEnabled(true);
+        help_->setText(t);
+    }
+    void sync() {
+        for (Row& r : rows_) {
+            syncEditor(r.editor, store_, r.key);
+            const bool changed = !store_.params().atDefault(r.key);
+            QFont f = r.name->font();
+            f.setBold(changed);
+            r.name->setFont(f);
+            r.name->setStyleSheet(changed ? "color: #e08a00;" : QString());
+            r.reset->setEnabled(store_.params().isSet(r.key));
+        }
+    }
+    AppContext& ctx_;
+    SimParamsStore& store_;
+    std::vector<Row> rows_;
+    QLabel* help_;
+    ConnectionBag conns_;
+};
+
+// ---- every parameter, in a window of its own -----------------------------------------------------------------------------------------------------
+// The full table (what was the left part of the Simulator page): search, the parameter file, status and note, restart with these parameters. One per window.
+class AllParamsDialog : public QDialog {
+    Q_DECLARE_TR_FUNCTIONS(AllParamsDialog)
+public:
+    AllParamsDialog(AppContext& ctx, QWidget* parent) : QDialog(parent, Qt::Window) {
+        setObjectName("allParamsDialog");
+        setWindowTitle(tr("Simulator parameters"));
+        auto* lay = new QVBoxLayout(this);
+        lay->setContentsMargins(4, 4, 4, 4);
+        panel_ = new ParamsPanel(ctx);
+        lay->addWidget(panel_);
+        noDefaultButtons(this);
+        resize(760, 620);
+    }
+    ParamsPanel* panel() const { return panel_; }
+
+private:
+    ParamsPanel* panel_;
+};
+
+std::map<AppContext*, QPointer<AllParamsDialog>>& allParamsDialogs() { static std::map<AppContext*, QPointer<AllParamsDialog>> m; return m; }
+
 // ---- the simulator page ---------------------------------------------------------------------------------------------------------------------
 class SimulatorTab : public QWidget, public DocumentTab {
     Q_DECLARE_TR_FUNCTIONS(SimulatorTab)
@@ -1466,9 +1653,8 @@ public:
         setObjectName("simulatorTab");
         auto* lay = new QVBoxLayout(this);
         lay->setContentsMargins(0, 0, 0, 0);
-        auto* split = new QSplitter(Qt::Horizontal);
-        split->setObjectName("simulatorSplit");
-        params_ = new ParamsPanel(ctx);
+        // the whole page for the diagram and the time line: the parameters are set where they belong (the right button on a box of the diagram, on a block),
+        // and all of them in the "All parameters" window (the button above the diagram)
         right_ = new QSplitter(Qt::Vertical);
         right_->setObjectName("simulatorRight");
         right_->addWidget(createIsaTopPanel(ctx));                         // the ISA Top diagram, live ...
@@ -1476,12 +1662,7 @@ public:
         right_->setStretchFactor(0, 3);
         right_->setStretchFactor(1, 2);
         right_->setSizes({420, 300});
-        split->addWidget(params_);
-        split->addWidget(right_);
-        split->setStretchFactor(0, 2);
-        split->setStretchFactor(1, 3);
-        split->setSizes({470, 760});
-        lay->addWidget(split);
+        lay->addWidget(right_);
     }
     // DocumentTab: one page per window. The buffer of the parameter file (if the values belong to one) is what makes the tab show "unsaved".
     std::string tabPath() const override { return "simulator:"; }
@@ -1491,12 +1672,11 @@ public:
         return p.empty() ? std::vector<std::string>() : std::vector<std::string>{p};
     }
     QWidget* widget() override { return this; }
-    void showParameter(const std::string& key) { params_->showParameter(key); }
-    void focusSearch() { params_->focusSearch(); }
+    void showParameter(const std::string& key) { showAllParams(ctx_, window(), key); }
+    void focusSearch() { showAllParams(ctx_, window(), std::string(), true); }
 
 private:
     AppContext& ctx_;
-    ParamsPanel* params_;
     QSplitter* right_;
 };
 
@@ -1515,6 +1695,32 @@ void focusParameterSearch(QWidget* tab) {
 void showQuickParams(AppContext& ctx, QWidget* anchor, std::function<void(const std::string&)> showInTab) {
     auto* q = new QuickParams(ctx, std::move(showInTab));
     q->popupUnder(anchor);
+}
+
+QWidget* showParamSet(AppContext& ctx, QWidget* parent, const QString& title, const std::vector<std::string>& own, const std::vector<std::string>& related,
+                      const QString& ownLabel, const QString& relatedLabel, const QPoint& globalPos) {
+    auto* d = new ParamSetDialog(ctx, parent, title, own, related, ownLabel, relatedLabel);
+    d->showAt(globalPos);
+    return d;
+}
+
+QWidget* showAllParams(AppContext& ctx, QWidget* parent, const std::string& key, bool focusSearch) {
+    QPointer<AllParamsDialog>& d = allParamsDialogs()[&ctx];
+    if (!d) {
+        QWidget* owner = parent ? parent->window() : nullptr;
+        d = new AllParamsDialog(ctx, owner);
+    }
+    d->show();
+    d->raise();
+    d->activateWindow();
+    if (!key.empty()) d->panel()->showParameter(key);
+    else if (focusSearch) d->panel()->focusSearch();
+    return d;
+}
+
+QWidget* allParamsWindow(AppContext& ctx) {
+    auto it = allParamsDialogs().find(&ctx);
+    return it == allParamsDialogs().end() ? nullptr : it->second.data();
 }
 
 QString simParamsSummary(AppContext& ctx) {

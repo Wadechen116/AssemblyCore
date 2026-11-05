@@ -39,6 +39,8 @@ public:
     QWidget* canvas() const;
     void feed(const SimUpdate& u);                            // what Debugger::updated delivers
     void refreshValues();                                     // read every row again from the simulator's current state
+    // the parameters of a box (its params) in a small window near globalPos; "" = the overall ones (instr_params.h: globalParamKeys)
+    void editParams(const std::string& boxId, const QPoint& globalPos);
 
 protected:
     void resizeEvent(QResizeEvent* e) override;

@@ -16,6 +16,7 @@ set(ACIDE_SERVICE_SOURCES
   ${CMAKE_CURRENT_LIST_DIR}/services/auto_fix.cpp
   ${CMAKE_CURRENT_LIST_DIR}/services/exec_values.cpp
   ${CMAKE_CURRENT_LIST_DIR}/services/isa_layout.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/services/instr_params.cpp
   ${CMAKE_CURRENT_LIST_DIR}/services/sim_compare.cpp
   ${CMAKE_CURRENT_LIST_DIR}/services/trace_ring.cpp
   ${CMAKE_CURRENT_LIST_DIR}/services/blocks/block_theme.cpp

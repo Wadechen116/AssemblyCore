@@ -1,4 +1,6 @@
 #include "block_editor.h"
+
+#include "sim_panels.h"
 #include "exec_values.h"
 
 #include <functional>
@@ -804,6 +806,9 @@ void BlockEditor::showContextMenu(const QPointF& scenePos, const QPoint& globalP
         if (scene_->editTargetAt(scenePos, et) && !et.flag) add(tr("Edit..."), [this, et] { beginFieldEdit(et); });
         BlockScene::CommentTarget ct;
         if (scene_->commentTargetOf(blockId, ct)) add(ct.text.empty() ? tr("Add a comment...") : tr("Edit the comment..."), [this, ct] { beginCommentEdit(ct); });
+        const QPoint at = globalPos;
+        QAction* params = add(tr("Set parameters..."), [this, blockId, at] { editInstructionParams(blockId, at); }, !instructionParamsOf(blockId).empty());
+        params->setObjectName("blockSetParams");
         menu.addSeparator();
     }
     add(tr("Cu&t"), [this] { cut(); }, any, QKeySequence::Cut);
@@ -831,6 +836,41 @@ void BlockEditor::showContextMenu(const QPointF& scenePos, const QPoint& globalP
         add(tr("Show everything"), [this] { view_->fitAll(); });
     }
     menu.exec(globalPos);
+}
+
+// The instructions a block makes (its lines of the generated text; a component: the instruction it is part of) and the parameters that belong to them.
+InstrParams BlockEditor::instructionParamsOf(const std::string& blockId, std::string* title) const {
+    std::string id = blockId;
+    const blocks::BlockBox* box = nullptr;
+    const blocks::StackLayout* st = scene_->layout().stackOf(id, &box);
+    if (!st || !box) return InstrParams();
+    const asmcore::blocks::Generated& g = session_.generated();
+    std::vector<int> lines = g.linesOf(id);
+    while (lines.empty() && box && box->parent >= 0) {                                   // a component, or a block that makes no line of its own: what holds it
+        box = &st->blocks[(size_t)box->parent];
+        id = box->id;
+        lines = g.linesOf(id);
+    }
+    if (title) *title = box ? box->title : std::string();
+    std::vector<std::string> text;
+    std::vector<std::string> all;
+    {
+        std::string cur;
+        for (char c : g.text) { if (c == '\n') { all.push_back(cur); cur.clear(); } else if (c != '\r') cur += c; }
+        all.push_back(cur);
+    }
+    for (int l : lines) if (l >= 1 && (size_t)l <= all.size()) text.push_back(all[(size_t)l - 1]);
+    return instructionParams(text, st->domain == "peri" ? 1 : 0);
+}
+
+void BlockEditor::editInstructionParams(const std::string& blockId, const QPoint& globalPos) {
+    std::string title;
+    const InstrParams p = instructionParamsOf(blockId, &title);
+    if (p.empty()) return;
+    QString names;
+    for (const std::string& m : p.mnemonics) names += (names.isEmpty() ? "" : ", ") + QString::fromStdString(m);
+    showParamSet(ctx_, this, tr("%1: instruction parameters").arg(QString::fromUtf8(title.c_str())), p.own, p.related,
+                 tr("Cycle time (%1)").arg(names), tr("Related (the hardware around it, the decoder)"), globalPos);
 }
 
 // The names that fit a part: the choices of its field, else the symbols of the kind its socket takes (CSRs, services, devices, numbers, labels, procedures).

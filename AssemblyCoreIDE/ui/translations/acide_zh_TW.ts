@@ -2,6 +2,13 @@
 <!DOCTYPE TS>
 <TS version="2.1" language="zh_TW" sourcelanguage="en_US">
 <context>
+    <name>AllParamsDialog</name>
+    <message>
+        <source>Simulator parameters</source>
+        <translation>模擬器參數</translation>
+    </message>
+</context>
+<context>
     <name>AutoDebugPanel</name>
     <message>
         <source>Find and fix</source>
@@ -1239,6 +1246,42 @@ Double click on the time line: wind the simulator back to that cycle (what is la
         <source>The whole width of the diagram in the view, readable; the rest scrolls</source>
         <translation>圖的整個寬度放進視窗，字比較看得清楚；其餘部分用捲動</translation>
     </message>
+    <message>
+        <source>Set parameters...</source>
+        <translation>設定參數…</translation>
+    </message>
+    <message>
+        <source>Show the line it is at</source>
+        <translation>顯示它正在執行的那一行</translation>
+    </message>
+    <message>
+        <source>Open its panel</source>
+        <translation>開啟它的面板</translation>
+    </message>
+    <message>
+        <source>Overall parameters (clock, pace, scheduling)...</source>
+        <translation>整體參數（時脈、速度、排程）…</translation>
+    </message>
+    <message>
+        <source>All parameters...</source>
+        <translation>所有參數…</translation>
+    </message>
+    <message>
+        <source>Overall parameters</source>
+        <translation>整體參數</translation>
+    </message>
+    <message>
+        <source>%1: parameters</source>
+        <translation>%1：參數</translation>
+    </message>
+    <message>
+        <source>Every simulator parameter: search, the parameter file, restart with them. The parameters of one part: the right button on its box (a box with ⚙ has some)</source>
+        <translation>所有模擬器參數：搜尋、參數檔、用這些參數重新開始。某個區塊自己的參數：在該方塊上按右鍵（標有 ⚙ 的方塊才有參數）</translation>
+    </message>
+    <message>
+        <source>Right button: Set parameters... (parameters: %1)</source>
+        <translation>按右鍵：設定參數…（共 %1 個參數）</translation>
+    </message>
 </context>
 <context>
     <name>ListingPanel</name>
@@ -1319,6 +1362,41 @@ Double click on the time line: wind the simulator back to that cycle (what is la
     <message>
         <source>WCET queries</source>
         <translation>WCET 查詢</translation>
+    </message>
+</context>
+<context>
+    <name>ParamSetDialog</name>
+    <message>
+        <source>No parameter belongs to this.</source>
+        <translation>這裡沒有可設定的參數。</translation>
+    </message>
+    <message>
+        <source>Point at a parameter to see what it does and how to measure it.</source>
+        <translation>把滑鼠移到參數上，可以看到它的作用與在 FPGA 上的量法。</translation>
+    </message>
+    <message>
+        <source>All parameters...</source>
+        <translation>所有參數…</translation>
+    </message>
+    <message>
+        <source>Every parameter: search, load and save the parameter file, status and note, restart with them</source>
+        <translation>所有參數：搜尋、載入與儲存參數檔、狀態與備註、用這些參數重新開始</translation>
+    </message>
+    <message>
+        <source>Close</source>
+        <translation>關閉</translation>
+    </message>
+    <message>
+        <source>initial %1</source>
+        <translation>初始值 %1</translation>
+    </message>
+    <message>
+        <source>Back to the initial value</source>
+        <translation>回到初始值</translation>
+    </message>
+    <message>
+        <source>on the FPGA:</source>
+        <translation>在 FPGA 上：</translation>
     </message>
 </context>
 <context>
@@ -1568,10 +1646,6 @@ Double click on the time line: wind the simulator back to that cycle (what is la
         <translation>搜尋參數（名稱、群組、功能說明）</translation>
     </message>
     <message>
-        <source>→ shows it in the Simulator page  ·  ★ pins it here  ·  ↺ back to the initial value</source>
-        <translation>→ 到模擬器頁面看它  ·  ★ 釘選在這裡  ·  ↺ 還原為初始值</translation>
-    </message>
-    <message>
         <source>Nothing is pinned: search above, or pin a parameter with ★.</source>
         <translation>沒有釘選任何參數：在上面搜尋，或用 ★ 釘選一個參數。</translation>
     </message>
@@ -1596,12 +1670,16 @@ Double click on the time line: wind the simulator back to that cycle (what is la
         <translation>還原為初始值</translation>
     </message>
     <message>
-        <source>Show it in the Simulator page</source>
-        <translation>在模擬器頁面顯示</translation>
-    </message>
-    <message>
         <source>  (not used yet)</source>
         <translation>（尚未被模擬器使用）</translation>
+    </message>
+    <message>
+        <source>→ shows it in the All parameters window  ·  ★ pins it here  ·  ↺ back to the initial value</source>
+        <translation>→ 在「所有參數」視窗中顯示  ·  ★ 固定在這裡  ·  ↺ 回到初始值</translation>
+    </message>
+    <message>
+        <source>Show it in the All parameters window</source>
+        <translation>在「所有參數」視窗中顯示</translation>
     </message>
 </context>
 <context>
@@ -2028,6 +2106,22 @@ Double click on the time line: wind the simulator back to that cycle (what is la
     <message>
         <source>Heat: how often each block ran</source>
         <translation>熱度：每個積木執行了幾次</translation>
+    </message>
+    <message>
+        <source>Set parameters...</source>
+        <translation>設定參數…</translation>
+    </message>
+    <message>
+        <source>%1: instruction parameters</source>
+        <translation>%1：指令參數</translation>
+    </message>
+    <message>
+        <source>Cycle time (%1)</source>
+        <translation>指令週期（%1）</translation>
+    </message>
+    <message>
+        <source>Related (the hardware around it, the decoder)</source>
+        <translation>相關參數（周邊硬體、解碼器）</translation>
     </message>
 </context>
 <context>

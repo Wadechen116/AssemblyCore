@@ -1,5 +1,11 @@
 #include "isa_top_view.h"
 
+#include <QContextMenuEvent>
+#include <QMenu>
+
+#include "instr_params.h"
+#include "sim_panels.h"
+
 #include <algorithm>
 #include <fstream>
 #include <sstream>
@@ -139,7 +145,17 @@ protected:
             QFont tf = ui_;
             tf.setBold(true);
             p.setFont(tf);
-            p.drawText(QRectF(b.x + 8, b.y, b.w - 16, 24), Qt::AlignLeft | Qt::AlignVCenter, QFontMetrics(tf).elidedText(QString::fromUtf8(b.title.c_str()), Qt::ElideRight, (int)b.w - 16 - (stepTag ? 64 : 0)));
+            const int gear = b.params.empty() ? 0 : 18;                                    // a box with parameters (the right button sets them): a gear, amber when one is changed
+            p.drawText(QRectF(b.x + 8, b.y, b.w - 16, 24), Qt::AlignLeft | Qt::AlignVCenter, QFontMetrics(tf).elidedText(QString::fromUtf8(b.title.c_str()), Qt::ElideRight, (int)b.w - 16 - gear - (stepTag ? 64 : 0)));
+            if (gear) {
+                bool changed = false;
+                for (const std::string& k : b.params) if (!v_.ctx_.debugger.simParams().params().atDefault(k)) changed = true;
+                QFont gf = ui_;
+                gf.setPixelSize(13);
+                p.setFont(gf);
+                p.setPen(changed ? QColor("#ffcf3f") : QColor(255, 255, 255, 150));
+                p.drawText(QRectF(b.x + b.w - 8 - gear - (stepTag ? 64 : 0), b.y, gear, 24), Qt::AlignCenter, QString::fromUtf8("\xE2\x9A\x99"));
+            }
             // rows
             for (size_t ri = 0; ri < b.rows.size(); ri++) {
                 const double y = b.y + 28 + 20 * (double)ri;
@@ -205,11 +221,44 @@ protected:
         else if (e->type() == QEvent::MouseButtonDblClick) v_.fit();
     }
     void mouseDoubleClickEvent(QMouseEvent* e) override { if (!boxAtPoint(e->pos())) v_.fit(); }
+    // the right button: a box -> its parameters (and what a click does); the empty canvas -> the parameters of no box, every parameter
+    void contextMenuEvent(QContextMenuEvent* e) override {
+        QMenu m(this);
+        m.setObjectName("isaTopMenu");
+        const IsaBox* b = boxAtPoint(e->pos());
+        const QPoint at = e->globalPos();
+        if (b) {
+            const std::string id = b->id;
+            QAction* set = m.addAction(QCoreApplication::translate("IsaTopView", "Set parameters..."));
+            set->setObjectName("isaSetParams");
+            set->setEnabled(!b->params.empty());
+            QObject::connect(set, &QAction::triggered, this, [this, id, at] { v_.editParams(id, at); });
+            if (!b->target.empty()) {
+                QAction* open = m.addAction(b->target == "code" ? QCoreApplication::translate("IsaTopView", "Show the line it is at") : QCoreApplication::translate("IsaTopView", "Open its panel"));
+                QObject::connect(open, &QAction::triggered, this, [this, id] { if (const IsaBox* x = v_.layout_.box(id)) v_.activate(*x); });
+            }
+            m.addSeparator();
+        }
+        QAction* global = m.addAction(QCoreApplication::translate("IsaTopView", "Overall parameters (clock, pace, scheduling)..."));
+        global->setObjectName("isaGlobalParams");
+        QObject::connect(global, &QAction::triggered, this, [this, at] { v_.editParams(std::string(), at); });
+        QAction* all = m.addAction(QCoreApplication::translate("IsaTopView", "All parameters..."));
+        QObject::connect(all, &QAction::triggered, this, [this] { showAllParams(v_.ctx_, this); });
+        m.exec(at);
+        e->accept();
+    }
     bool event(QEvent* e) override {
         if (e->type() == QEvent::ToolTip) {
             const auto* he = static_cast<QHelpEvent*>(e);
             const IsaBox* b = boxAtPoint(he->pos());
-            if (b && !b->help.empty()) QToolTip::showText(he->globalPos(), QString::fromUtf8(b->help.c_str()), this);
+            if (b && (!b->help.empty() || !b->params.empty())) {
+                QString t = QString::fromUtf8(b->help.c_str());
+                if (!b->params.empty()) {
+                    const QString more = QCoreApplication::translate("IsaTopView", "Right button: Set parameters... (parameters: %1)").arg((int)b->params.size());
+                    t += t.isEmpty() ? more : "\n" + more;
+                }
+                QToolTip::showText(he->globalPos(), t, this);
+            }
             else QToolTip::hideText();
             return true;
         }
@@ -257,6 +306,7 @@ IsaTopView::IsaTopView(AppContext& ctx, QWidget* parent) : QScrollArea(parent), 
     connect(&timer_, &QTimer::timeout, this, [this] { tick(); });
     conns_.add(ctx.debugger.updated, [this](const SimUpdate& u) { feed(u); });
     conns_.add(ctx.debugger.focusChanged, [this](asmcore::Domain) { canvas_->update(); });
+    conns_.add(ctx.debugger.simParams().changed, [this] { canvas_->update(); });            // the gear of a box turns amber when one of its parameters is changed
     refreshValues();
     rescale();
 }
@@ -413,6 +463,16 @@ QRect IsaTopView::boxRect(const std::string& id) const {
     return QRect();
 }
 
+void IsaTopView::editParams(const std::string& boxId, const QPoint& globalPos) {
+    if (boxId.empty()) {
+        showParamSet(ctx_, this, QCoreApplication::translate("IsaTopView", "Overall parameters"), globalParamKeys(), {}, QString(), QString(), globalPos);
+        return;
+    }
+    const IsaBox* b = layout_.box(boxId);
+    if (!b) return;
+    showParamSet(ctx_, this, QCoreApplication::translate("IsaTopView", "%1: parameters").arg(QString::fromUtf8(b->title.c_str())), b->params, {}, QString(), QString(), globalPos);
+}
+
 void IsaTopView::activate(const IsaBox& b) {
     if (b.target.empty()) return;
     if (b.target == "code") {
@@ -450,6 +510,11 @@ QWidget* createIsaTopPanel(AppContext& ctx) {
     auto* wide = new QPushButton(QCoreApplication::translate("IsaTopView", "Fit width"));
     wide->setObjectName("isaTopFitWidth");
     wide->setToolTip(QCoreApplication::translate("IsaTopView", "The whole width of the diagram in the view, readable; the rest scrolls"));
+    auto* params = new QPushButton(QCoreApplication::translate("IsaTopView", "All parameters..."));
+    params->setObjectName("isaTopAllParams");
+    params->setToolTip(QCoreApplication::translate("IsaTopView", "Every simulator parameter: search, the parameter file, restart with them. The parameters of one part: the right button on its box (a box with \xE2\x9A\x99 has some)"));
+    top->addWidget(params);
+    top->addSpacing(12);
     top->addWidget(wide);
     top->addWidget(fit);
     top->addWidget(one);
@@ -459,6 +524,7 @@ QWidget* createIsaTopPanel(AppContext& ctx) {
     QObject::connect(fit, &QPushButton::clicked, view, [view] { view->fit(); });
     QObject::connect(wide, &QPushButton::clicked, view, [view] { view->fitWidth(); });
     QObject::connect(one, &QPushButton::clicked, view, [view] { view->setZoom(1.0); });
+    QObject::connect(params, &QPushButton::clicked, view, [&ctx, view] { showAllParams(ctx, view); });
     return page;
 }
 

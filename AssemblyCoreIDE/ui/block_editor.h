@@ -9,6 +9,7 @@
 #include <QWidget>
 
 #include "app_context.h"
+#include "instr_params.h"
 #include "block_scene.h"
 #include "block_view.h"
 #include "blocks/block_session.h"
@@ -98,6 +99,10 @@ public:
     void tidy();                                                          // every stack gets a place; nothing overlaps; the program is unchanged
     void undo() { if (scene_->dragging()) scene_->cancelDrag(); else session_.undo(); }       // (the Edit menu calls these)
     void redo() { session_.redo(); }
+
+    // "Set parameters..." on a block: the parameters of the instructions it makes (a component: of the instruction it is part of)
+    InstrParams instructionParamsOf(const std::string& blockId, std::string* title = nullptr) const;
+    void editInstructionParams(const std::string& blockId, const QPoint& globalPos);
 
 protected:
     bool eventFilter(QObject* o, QEvent* e) override;         // a click on the canvas closes an open editor, keeping what was typed
