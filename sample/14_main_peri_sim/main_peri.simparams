@@ -3,4 +3,4 @@
 i2ch.overhead = 4
 i2ch.overhead.note = placeholder, to be measured
 frame.wcet_pgl = 120
-frame.wcet_pgl.note = placeholder: the commit needs 120 cycles before the blanking window ends
+frame.wcet_pgl.note = placeholder: the true bound at 400 kHz is 17,634 cycles (longer than the 14,362-cycle window), see README

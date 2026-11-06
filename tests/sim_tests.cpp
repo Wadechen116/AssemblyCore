@@ -528,6 +528,9 @@ static void t_fetch_timing() {
         RunLimits l; l.maxCycles = 200000; l.stopOnIdle = false;
         sim.run(l);
         check(w->main >= 1 && ev(sim, "rx[5]") == 6, "Peri's EXEC_XFER has the bus: Main's next read waits for the transfer to end", std::to_string(w->main));
+        const DecodedLine xl = sim.decodedAt(Domain::Peri, 0);
+        check(xl.fetchBytes == std::vector<uint32_t>({2, 2, 1}) && xl.fetchCycles == txn(2) + txn(2) + txn(1),
+              "EXEC_XFER reads its opcode with the address byte, its descriptor AND its DeviceMap entry (about 10,334 cycles)", std::to_string(xl.fetchCycles));
     }
 }
 

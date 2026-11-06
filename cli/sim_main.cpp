@@ -61,7 +61,7 @@ void usage() {
         "  --events FILE        every event as CSV\n"
         "  --vcd FILE           value-change dump (GTKWave)\n"
         "  --dump               print the final state\n"
-        "  --decoded            print what the decoders make of the program they fetch (EEPROM address, bytes, instruction, source line);\n"
+        "  --decoded            print what the decoders make of the program they fetch (EEPROM address, bytes, instruction, fetch cycles, source);\n"
         "                       a line that is not what the assembler produced is marked !!\n"
         "Exit status: 0 ok, 1 assembly error / failed scenario / fault, 2 usage or I/O error.");
 }
@@ -197,12 +197,12 @@ int main(int argc, char** argv) {
         for (Domain d : {Domain::Main, Domain::Peri}) {
             const std::vector<sim::DecodedLine> lines = s.decodedProgram(d);
             if (lines.empty()) continue;
-            std::printf("%s (decoded from the EEPROM):\n", domainName(d));
+            std::printf("%s (decoded from the EEPROM; the number is the cycles of reading it over the I2C bus):\n", domainName(d));
             for (const sim::DecodedLine& L : lines) {
                 std::string bytes;
                 char b[8];
                 for (uint8_t x : L.bytes) { std::snprintf(b, sizeof b, "%02X ", x); bytes += b; }
-                std::printf("  %s %03X  @%04X  %-9s %-46s %s\n", L.matches ? "  " : "!!", L.pc, L.eepromAddr, bytes.c_str(), L.text.c_str(), L.source.empty() ? "" : ("; " + L.source).c_str());
+                std::printf("  %s %03X  @%04X  %-9s %-46s %7llu  %s\n", L.matches ? "  " : "!!", L.pc, L.eepromAddr, bytes.c_str(), L.text.c_str(), (unsigned long long)L.fetchCycles, L.source.empty() ? "" : ("; " + L.source).c_str());
                 if (!L.matches) { differ++; std::printf("        the assembler produced: %s\n", L.expected.c_str()); }
             }
         }

@@ -33,6 +33,13 @@ take:                                       ; consume: X_hi X_lo Y_hi Y_lo Z_hi 
     MOV PERI_RESULT_SLOT[0..5]  -> MAIN_SCRATCHPAD[0..5]
     MOV MAIN_SCRATCHPAD[1..1]   -> MAIN_SCRATCHPAD[8..8]      ; swap the two bytes of raw_x (the sensor sends the high byte first)
     MOV MAIN_SCRATCHPAD[0..0]   -> MAIN_SCRATCHPAD[9..9]
+    ; compute the corrected value NOW, before waiting for the blanking window: every instruction is read from the I2C EEPROM first
+    ; (thousands of cycles each), so only the final write may be left for the window (14,362 cycles)
+    MOV MAIN_SCRATCHPAD[8..9]   -> ALU_OPA                     ; raw_x
+    MOV MAIN_CONST_POOL[@GYRO_BIAS] -> MAIN_SCRATCHPAD[16..17]
+    MOV MAIN_SCRATCHPAD[16..17] -> ALU_OPB                     ; bias_x
+    ALU SUB signed
+    MOV ALU_OUT[0..1]           -> MAIN_SCRATCHPAD[10..11]     ; corrected_x, ready for the commit
     EXEC_CSR WRITE8 MAIN_TPER, 40                              ; Main's own timer: settle for 40 ticks before the commit
     EXEC_CSR WRITE8 MAIN_TPER_H, 0
     EXEC_CSR SET8   MAIN_CTRL, 1                               ; start it (bit 0)
@@ -44,12 +51,7 @@ window:                                     ; the Frame Timing: only in the blan
     BR.COND PGL_COMMIT_ELIGIBLE, commit
     JMP     window
 
-commit:
-    MOV MAIN_SCRATCHPAD[8..9]   -> ALU_OPA                     ; raw_x
-    MOV MAIN_CONST_POOL[@GYRO_BIAS] -> MAIN_SCRATCHPAD[16..17]
-    MOV MAIN_SCRATCHPAD[16..17] -> ALU_OPB                     ; bias_x
-    ALU SUB signed
-    MOV ALU_OUT[0..1]           -> MAIN_SCRATCHPAD[10..11]     ; corrected_x
+commit:                                     ; inside the window: only the write itself (its EEPROM fetch + execution must fit: frame.wcet_pgl)
     EXEC_CSR WRITE_SP GYRO_X_CORR_L, len=2, ptr=10             ; the result: CSR 0x120 / 0x121
     JMP     start
 

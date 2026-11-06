@@ -98,6 +98,11 @@ DecodedLine Simulator::Impl::decode(int d, uint32_t pc) const {
     for (uint32_t i = 0; i < L.length; i++) L.bytes.push_back((uint8_t)iv.u8(pc + i));
     L.fetchBytes.push_back(L.length);                                     // the code bytes (opcode and inline bytes)
     for (const auto& e : reads.entries) L.fetchBytes.push_back((uint32_t)(e.first % 1000));      // each descriptor / DeviceMap entry
+    if (d == 1 && (iv.u8(pc) >> 6) == 3) {                                // EXEC_XFER: the hardware also reads its DeviceMap entry (the disassembler does not need it)
+        bool have = false;
+        for (const auto& e : reads.entries) have = have || e.first / 1000 == PT_DEVMAP;
+        if (!have) L.fetchBytes.push_back((uint32_t)pf.deviceMapEntryBytes);
+    }
     {
         uint32_t c0 = 0, c1 = 0;
         if (d == 0 && constRange(L.text, c0, c1) && c1 >= c0) L.fetchBytes.push_back(c1 - c0 + 1);     // the constants
