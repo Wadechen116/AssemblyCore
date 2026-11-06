@@ -1,0 +1,15 @@
+# What each image of this folder must give (check_samples.py checks it; make_images.py makes the images).
+#   disasm:  asmdis --eeprom IMAGE --check      ok = it is a program of the specification and assembles to the identical image
+#   verify:  asmsim ../14_main_peri_sim/main_peri.asm -I ../common --verify-eeprom IMAGE      ok = it is example 14, byte for byte
+#   expect:  text the asmdis output must contain
+# image               disasm  verify  expect
+good                  ok      ok      identical image
+good_no_names         ok      ok      L_0000
+bad_reserved_bits     fail    fail    D201
+bad_table_index       fail    fail    outside its table
+bad_branch_target     fail    fail    D203
+bad_runs_off_end      fail    fail    E303
+bad_unreachable       fail    fail    W402
+bad_constant          ok      fail    identical image
+bad_map               fail    fail    D201
+bad_truncated         fail    fail    E302

@@ -12,6 +12,8 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QPlainTextEdit>
+#include <QTextBlock>
+#include <QTextCursor>
 #include <QPointer>
 #include <QPushButton>
 #include <QTabWidget>
@@ -51,7 +53,14 @@ public:
         tabs_->addTab(disasmPage(), tr("Disassemble an image"));
         lay->addWidget(tabs_);
         for (QPushButton* b : findChildren<QPushButton*>()) { b->setAutoDefault(false); b->setDefault(false); }    // (Enter belongs to the path boxes)
-        conns_.add(ctx.snapshotChanged, [this](SnapshotPtr) { refreshBuild(); });
+        conns_.add(ctx.snapshotChanged, [this](SnapshotPtr) {
+            refreshBuild();
+            // an action waiting for the build it asked for (the sources had changed): now with the new program
+            const Pending p = pending_;
+            pending_ = Pending::None;
+            if (p == Pending::Write) writeImage();
+            else if (p == Pending::Verify) verify();
+        });
         refreshBuild();
         resize(900, 600);
     }
@@ -140,8 +149,20 @@ private:
         }
         write_->setEnabled(true);
     }
+    // The program is out of date (or not built): build it first and come back when it is done (the action waits in pending_). True if it has to wait.
+    enum class Pending { None, Write, Verify };
+    bool buildFirst(Pending what, QLabel* status) {
+        const SnapshotPtr s = ctx_.snapshot;
+        if (s && s->revision == ctx_.workspace.revision()) return false;
+        pending_ = what;
+        status->setStyleSheet(QString());
+        status->setText(tr("The sources changed since the last build: building the program first..."));
+        ctx_.requestBuild.fire();
+        return true;
+    }
     void writeImage() {
-        if (image_.empty()) return;
+        if (pending_ == Pending::None && buildFirst(Pending::Write, written_)) return;
+        if (image_.empty()) { written_->setText(buildInfo_->text()); return; }
         std::string bin = toStd(outPath_->text().trimmed());
         if (bin.empty()) return;
         if (bin.size() < 11 || bin.compare(bin.size() - 11, 11, ".eeprom.bin") != 0) bin += ".eeprom.bin";
@@ -153,6 +174,7 @@ private:
         put(bin, std::string(image_.begin(), image_.end()));
         put(base + ".hex", asmcore::intelHex(image_));
         put(base + ".json", map_.json());
+        if (ctx_.snapshot) put(base + ".sym", asmcore::eepromSymbols(ctx_.snapshot->result).json());     // the names (keep it apart to pass the image on without them)
         written_->setText((ok ? tr("Written:") : tr("Could not write every file:")) + "\n" + done.join("\n"));
         for (const QString& f : done) ctx_.log.fire(tr("  wrote %1").arg(f));
     }
@@ -203,6 +225,7 @@ private:
     void verify() {
         diffs_->setRowCount(0);
         verdict_->setStyleSheet(QString());
+        if (pending_ == Pending::None && buildFirst(Pending::Verify, verdict_)) return;
         const SnapshotPtr s = ctx_.snapshot;
         if (!s || !s->result.ok) { verdict_->setText(tr("Build the program first: the image is compared with it.")); return; }
         const std::string path = toStd(verifyPath_->text().trimmed());
@@ -264,11 +287,22 @@ private:
         run->setObjectName("eepromDisassemble");
         annotate_ = new QCheckBox(tr("addresses and bytes as comments"));
         annotate_->setObjectName("eepromAnnotate");
+        useNames_ = new QCheckBox(tr("names from the symbol file"));
+        useNames_->setObjectName("eepromUseNames");
+        useNames_->setChecked(true);
+        useNames_->setToolTip(tr("PREFIX.eeprom.sym next to the image: labels, CSRs, services, devices (and the const pool symbols as comments)"));
+        strict_ = new QCheckBox(tr("strict (a warning fails it too)"));
+        strict_->setObjectName("eepromStrict");
         row->addWidget(disasmPath_, 1);
         row->addWidget(browse);
-        row->addWidget(annotate_);
         row->addWidget(run);
         l->addLayout(row);
+        auto* opts = new QHBoxLayout;
+        opts->addWidget(useNames_);
+        opts->addWidget(annotate_);
+        opts->addWidget(strict_);
+        opts->addStretch(1);
+        l->addLayout(opts);
         disasmInfo_ = new QLabel;
         disasmInfo_->setObjectName("eepromDisasmInfo");
         disasmInfo_->setWordWrap(true);
@@ -279,7 +313,25 @@ private:
         source_->setReadOnly(true);
         source_->setFont(editorFont(ctx_.settings));
         source_->setLineWrapMode(QPlainTextEdit::NoWrap);
-        l->addWidget(source_, 1);
+        l->addWidget(source_, 3);
+        // what the checks found: the decoder (bytes that are no legal encoding), the specification (the assembler's rules), the identity (the same image again)
+        checks_ = new QTableWidget(0, 4);
+        checks_->setObjectName("eepromChecks");
+        checks_->setHorizontalHeaderLabels({tr("Check"), tr("Code"), tr("Line"), tr("What")});
+        checks_->horizontalHeader()->setStretchLastSection(true);
+        checks_->verticalHeader()->hide();
+        checks_->setEditTriggers(QAbstractItemView::NoEditTriggers);
+        checks_->setSelectionBehavior(QAbstractItemView::SelectRows);
+        l->addWidget(checks_, 1);
+        connect(checks_, &QTableWidget::cellClicked, this, [this](int r, int) {        // to the line of the disassembly it is about
+            auto* it = checks_->item(r, 2);
+            const int line = it ? it->data(Qt::UserRole).toInt() : 0;
+            if (line <= 0) return;
+            QTextCursor c(source_->document()->findBlockByNumber(line - 1));
+            source_->setTextCursor(c);
+            source_->centerCursor();
+            source_->setFocus();
+        });
         auto* buttons = new QHBoxLayout;
         save_ = new QPushButton(tr("Save as .asm and open it..."));
         save_->setObjectName("eepromSaveAsm");
@@ -290,7 +342,7 @@ private:
         connect(browse, &QPushButton::clicked, this, [this] { browseImage(disasmPath_); });
         connect(run, &QPushButton::clicked, this, [this] { disassemble(); });
         connect(disasmPath_, &QLineEdit::returnPressed, this, [this] { disassemble(); });
-        connect(annotate_, &QCheckBox::toggled, this, [this] { if (!source_->toPlainText().isEmpty()) disassemble(); });
+        for (QCheckBox* c : {annotate_, useNames_, strict_}) connect(c, &QCheckBox::toggled, this, [this] { if (!source_->toPlainText().isEmpty()) disassemble(); });
         connect(save_, &QPushButton::clicked, this, [this] {
             QString f = QFileDialog::getSaveFileName(this, tr("Save the disassembly"), fromStd(mapPathOf(toStd(disasmPath_->text().trimmed()))).replace(".eeprom.json", ".disasm.asm"), tr("Assembler source (*.asm)"));
             if (f.isEmpty()) return;
@@ -313,9 +365,11 @@ public:
 private:
     void disassemble() {
         source_->clear();
+        checks_->setRowCount(0);
         save_->setEnabled(false);
+        disasmInfo_->setStyleSheet(QString());
         const std::string path = toStd(disasmPath_->text().trimmed());
-        std::string bin, mapText, why;
+        std::string bin, mapText, symText, why;
         auto* fs = ctx_.workspace.fileSystem().get();
         if (path.empty() || !fs->read(path, bin)) { disasmInfo_->setText(tr("Cannot read %1").arg(fromStd(path))); return; }
         asmcore::EepromMap map;
@@ -324,19 +378,55 @@ private:
                                      .arg(fromStd(mapPathOf(path)), why.empty() ? QString() : " (" + fromStd(why) + ")"));
             return;
         }
-        asmcore::Result r;
-        r.ok = true;
+        const std::string symPath = mapPathOf(path).substr(0, mapPathOf(path).size() - 5) + ".sym";
+        asmcore::EepromSymbols syms;
+        bool haveSyms = false;
+        QString namesNote;
+        if (useNames_->isChecked() && fs->read(symPath, symText)) {
+            haveSyms = asmcore::loadEepromSymbolsJson(symText, syms, why);
+            namesNote = haveSyms ? tr("Names from %1.").arg(QFileInfo(fromStd(symPath)).fileName()) : tr("The symbol file cannot be read (%1): numbers and L_xxxx labels.").arg(fromStd(why));
+        } else {
+            namesNote = useNames_->isChecked() ? tr("No symbol file (%1): numbers and L_xxxx labels.").arg(QFileInfo(fromStd(symPath)).fileName()) : tr("Without names: numbers and L_xxxx labels.");
+        }
+        const asmcore::Profile pf = ctx_.snapshot ? ctx_.snapshot->profile : asmcore::Profile();
         const std::vector<uint8_t> image(bin.begin(), bin.end());
-        if (!asmcore::domainImagesFromEeprom(image, map, r.main, r.peri, why)) { disasmInfo_->setText(fromStd(why)); return; }
-        asmcore::Profile pf = ctx_.snapshot ? ctx_.snapshot->profile : asmcore::Profile();
-        std::vector<asmcore::DisasmIssue> issues;
-        const std::string text = asmcore::disassembleResult(r, pf, &issues, annotate_->isChecked());
-        source_->setPlainText(fromStd("; disassembled from " + path + "\n" + text));
-        QString info = tr("Main: %1 bytes of code at %2 \xC2\xB7 Peri: %3 bytes of code at %4").arg(map.codeSize[0]).arg(hex4(map.region[asmcore::ER_MAIN_CODE].addr))
-                           .arg(map.codeSize[1]).arg(hex4(map.region[asmcore::ER_PERI_CODE].addr));
-        if (issues.empty()) info += "\n" + tr("Every instruction decoded cleanly.");
-        else for (const asmcore::DisasmIssue& i : issues) info += "\n" + fromStd(i.code + " @" + std::to_string(i.pc) + ": " + i.msg);
-        disasmInfo_->setText(info);
+        asmcore::EepromDisasmCheck c;
+        if (!asmcore::checkEepromDisassembly(image, map, pf, haveSyms ? &syms : nullptr, annotate_->isChecked(), c, why)) { disasmInfo_->setText(fromStd(why)); return; }
+        const std::string head = "; disassembled from " + path + "\n";
+        source_->setPlainText(fromStd(head + c.source));
+        // the findings: decode, specification, identity
+        const bool strict = strict_->isChecked();
+        int r = 0;
+        auto row = [&](const QString& check, const QString& code, int line, const QString& what, bool bad) {
+            checks_->setRowCount(r + 1);
+            checks_->setItem(r, 0, new QTableWidgetItem(check));
+            checks_->setItem(r, 1, new QTableWidgetItem(code));
+            auto* li = new QTableWidgetItem(line > 0 ? QString::number(line) : QString());
+            li->setData(Qt::UserRole, line);
+            checks_->setItem(r, 2, li);
+            checks_->setItem(r, 3, new QTableWidgetItem(what));
+            if (bad) for (int k = 0; k < 4; k++) checks_->item(r, k)->setBackground(QColor(208, 64, 64, 70));
+            r++;
+        };
+        const int lineOffset = 1;                                                   // (the "disassembled from" line in front of the text)
+        for (const asmcore::DisasmIssue& i : c.decodeIssues)                      // (a decoder finding names the pc it is about; it has no line of the text)
+            row(i.fatal ? tr("decode error") : tr("decode remark"), fromStd(i.code), 0, tr("pc %1: %2").arg(i.pc).arg(fromStd(i.msg)), i.fatal || strict);
+        for (const asmcore::Diagnostic& d : c.specDiags) {
+            const bool err = d.sev == asmcore::Diagnostic::Error;
+            row(err ? tr("spec error") : d.sev == asmcore::Diagnostic::Warning ? tr("spec warning") : tr("spec note"), fromStd(d.code), d.loc.line > 0 ? d.loc.line + lineOffset : 0, fromStd(d.msg),
+                err || (strict && d.sev == asmcore::Diagnostic::Warning));
+        }
+        if (c.assembles && !c.identical)
+            row(tr("identity"), QString(), 0, tr("It assembles to ANOTHER image: %1 byte(s) differ, the first in %2 at %3").arg(c.differentBytes).arg(fromStd(asmcore::eepromRegionName(c.differentRegion))).arg(hex4(c.firstDifference)), true);
+        checks_->resizeColumnsToContents();
+        const bool ok = c.ok(strict);
+        QString verdict = ok ? tr("\xE2\x9C\x94 A program of the specification: every byte decodes, the assembler finds no error%1, and it assembles to the identical image.").arg(strict ? tr(" and no warning") : QString())
+                             : tr("\xE2\x9C\x98 NOT a correct program: %1 decode error(s), %2 spec error(s), %3 warning(s)%4.").arg(c.fatalDecode()).arg(c.errors()).arg(c.warnings())
+                                   .arg(!c.assembles ? tr(", it does not assemble") : !c.identical ? tr(", it assembles to another image") : QString());
+        verdict += "\n" + tr("Main: %1 bytes of code at %2 \xC2\xB7 Peri: %3 bytes of code at %4 \xC2\xB7 %5").arg(map.codeSize[0]).arg(hex4(map.region[asmcore::ER_MAIN_CODE].addr))
+                               .arg(map.codeSize[1]).arg(hex4(map.region[asmcore::ER_PERI_CODE].addr)).arg(namesNote);
+        disasmInfo_->setText(verdict);
+        disasmInfo_->setStyleSheet(ok ? "color: #2e9d4f;" : "color: #d04040;");
         save_->setEnabled(true);
     }
 
@@ -356,6 +446,9 @@ private:
     QPlainTextEdit* source_;
     std::vector<uint8_t> image_;
     asmcore::EepromMap map_;
+    Pending pending_ = Pending::None;
+    QCheckBox *useNames_, *strict_;
+    QTableWidget* checks_;
     ConnectionBag conns_;
 };
 

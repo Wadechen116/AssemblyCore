@@ -776,7 +776,7 @@ private slots:
         QVERIFY2(tool->findChild<QLabel*>("eepromBuildInfo")->text().contains("I2C address 0x50"), qPrintable(tool->findChild<QLabel*>("eepromBuildInfo")->text()));
         tool->findChild<QLineEdit*>("eepromOutPath")->setText("/w/out/t.eeprom.bin");
         tool->findChild<QPushButton*>("eepromWrite")->click();
-        QVERIFY(r.f.fs->exists("/w/out/t.eeprom.bin") && r.f.fs->exists("/w/out/t.eeprom.hex") && r.f.fs->exists("/w/out/t.eeprom.json"));
+        QVERIFY(r.f.fs->exists("/w/out/t.eeprom.bin") && r.f.fs->exists("/w/out/t.eeprom.hex") && r.f.fs->exists("/w/out/t.eeprom.json") && r.f.fs->exists("/w/out/t.eeprom.sym"));
         QVERIFY(tool->findChild<QLabel*>("eepromWritten")->text().contains("/w/out/t.eeprom.json"));
         // 2. verify: the image just written is what the program burns
         auto* tabs = tool->findChild<QTabWidget*>("eepromTabs");
@@ -813,12 +813,35 @@ private slots:
         tool->findChild<QLineEdit*>("eepromDisasmPath")->setText("/w/out/t.eeprom.bin");
         tool->findChild<QPushButton*>("eepromDisassemble")->click();
         const QString text = tool->findChild<QPlainTextEdit*>("eepromSource")->toPlainText();
-        QVERIFY2(text.contains(".main") && text.contains("EXEC_CSR WRITE8 0x120, 0x01") && text.contains("EXEC_CSR WRITE8 0x120, 0x03"), qPrintable(text));
-        QVERIFY(tool->findChild<QLabel*>("eepromDisasmInfo")->text().contains("Every instruction decoded cleanly"));
+        // the names came back from t.eeprom.sym: the CSR, the labels
+        QVERIFY2(text.contains(".csr C = 0x120") && text.contains("EXEC_CSR WRITE8 C, 0x01") && text.contains("start:") && text.contains("JMP h"), qPrintable(text));
+        auto* info = tool->findChild<QLabel*>("eepromDisasmInfo");
+        QVERIFY2(info->text().contains("A program of the specification") && info->text().contains("t.eeprom.sym"), qPrintable(info->text()));
+        // without the names: numbers and L_xxxx
+        tool->findChild<QCheckBox*>("eepromUseNames")->setChecked(false);
+        QVERIFY(tool->findChild<QPlainTextEdit*>("eepromSource")->toPlainText().contains("EXEC_CSR WRITE8 0x120, 0x01") && tool->findChild<QPlainTextEdit*>("eepromSource")->toPlainText().contains("L_0006"));
+        tool->findChild<QCheckBox*>("eepromUseNames")->setChecked(true);
+        // a burned image that is not a program of the specification: the checks say so (the last JMP became an ALU: E303)
+        {
+            std::string offEnd;
+            QVERIFY(r.f.fs->read("/w/out/t.eeprom.bin", offEnd));
+            offEnd[map.region[asmcore::ER_MAIN_CODE].addr + 6] = '\xC0';                     // JMP h -> ALU
+            r.f.fs->write("/w/out/off.eeprom.bin", offEnd);
+            r.f.fs->write("/w/out/off.eeprom.json", json);
+            tool->findChild<QLineEdit*>("eepromDisasmPath")->setText("/w/out/off.eeprom.bin");
+            tool->findChild<QPushButton*>("eepromDisassemble")->click();
+            auto* checks = tool->findChild<QTableWidget*>("eepromChecks");
+            bool e303 = false;
+            for (int i = 0; i < checks->rowCount(); i++) e303 = e303 || checks->item(i, 1)->text() == "E303";
+            QVERIFY2(e303 && info->text().contains("NOT a correct program"), qPrintable(info->text()));
+            tool->grab().save(outDirFree() + "/eeprom_disassemble_bad.png");
+            tool->findChild<QLineEdit*>("eepromDisasmPath")->setText("/w/out/t.eeprom.bin");
+            tool->findChild<QPushButton*>("eepromDisassemble")->click();
+        }
         tool->grab().save(outDirFree() + "/eeprom_disassemble.png");
         QVERIFY(acide::saveEepromDisassembly(r.f.ctx, "/w/out/t.disasm.asm"));
         std::string saved;
-        QVERIFY(r.f.fs->read("/w/out/t.disasm.asm", saved) && saved.find("EXEC_CSR WRITE8 0x120, 0x02") != std::string::npos);
+        QVERIFY(r.f.fs->read("/w/out/t.disasm.asm", saved) && saved.find("EXEC_CSR WRITE8 C, 0x02") != std::string::npos);
         QVERIFY(r.until([&] { return r.w->currentEditor() && r.w->currentEditor()->path() == "/w/out/t.disasm.asm"; }));
         // the disassembly assembles back to the same image
         asmcore::Options o;
@@ -830,6 +853,15 @@ private slots:
         QVERIFY(r.f.fs->read("/w/out/t.eeprom.bin", original));
         QVERIFY2(back.ok && asmcore::buildEeprom(back, asmcore::Profile(), eep2, map2, why) && std::string(eep2.begin(), eep2.end()) == original,
                  qPrintable(QString::fromStdString(back.diagnosticsText())));
+        // 1-B: the sources change -> Verify builds the program first, then compares (with the new program)
+        r.w->openFile("/w/main.asm");
+        r.f.ws.setText("/w/main.asm", ".csr C = 0x120\n.main\nstart: EXEC_CSR WRITE8 C, 7\n    EXEC_CSR WRITE8 C, 2\n    EXEC_CSR WRITE8 C, 3\nh: JMP h\n");
+        r.w->findChild<QAction*>("eepromVerifyAction")->trigger();
+        vpath->setText("/w/out/t.eeprom.bin");
+        tool->findChild<QPushButton*>("eepromVerify")->click();
+        QVERIFY2(verdict->text().contains("building the program first"), qPrintable(verdict->text()));
+        QVERIFY(r.until([&] { return verdict->text().contains("NOT what the program burns"); }, 8000));          // the old image against the new program
+        QVERIFY(r.f.ctx.snapshot && r.f.ctx.snapshot->revision == r.f.ws.revision());
         tool->close();
     }
 

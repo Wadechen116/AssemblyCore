@@ -3,7 +3,8 @@
 
 For each */*.acproj:  assemble (every call model in `sample_models`, default inline), check the expected outcome (`sample_expect = ok|fail`,
 `sample_errors = E101 ...` must all be reported), run every `scenario`, and for good projects disassemble the images again
-(asmdis --check: the text must assemble to the identical image).
+(asmdis --check: the text must assemble to the identical image), and the EEPROM image of both domains with its names (asmdis --eeprom --check:
+through the assembler's rules to the identical image). Then every */images.txt: burned images with the outcome each must have.
 
 usage: check_samples.py [--bin-dir DIR]      (DIR holds asmc, asmsim, asmdis; default ../build)
 """
@@ -90,7 +91,7 @@ for proj in projects:
     expect = p.get("sample_expect", "ok")
     for model in models:
         prefix = os.path.join(tmp, name + "_" + model)
-        cmd = [exe("asmc"), "--call-model", model, "--artifacts"] + common + p["source"] + ["-o", arg(prefix, d)]
+        cmd = [exe("asmc"), "--call-model", model, "--artifacts", "--eeprom"] + common + p["source"] + ["-o", arg(prefix, d)]
         rc, out = run(cmd, d)
         if expect == "fail":
             codes = {w.rstrip(":") for w in out.replace("error ", " error ").split() if len(w) >= 4 and w[0] == "E" and w[1:4].isdigit()}
@@ -110,6 +111,13 @@ for proj in projects:
                 cmd += ["--profile", p["profile"]]
             rc2, out2 = run(cmd, d)
             report(rc2 == 0 and "check: OK" in out2, "%s: %s image -> asmdis -> same image" % (model, dom), out2)
+        # the EEPROM image: both domains back to source with their names, through the assembler (every rule of the specification), to the same image
+        eep = prefix + ".eeprom.bin"
+        cmd = [exe("asmdis"), "--eeprom", arg(eep, d), "--check"]
+        if p.get("profile"):
+            cmd += ["--profile", p["profile"]]
+        rc4, out4 = run(cmd, d)
+        report(rc4 == 0 and "check: OK" in out4 and "identical image" in out4, "%s: EEPROM image -> asmdis (with names) -> spec check -> same image" % model, out4)
         for scn in p["scenario"]:
             cmd = [exe("asmsim"), "--call-model", model] + common + p["source"]
             if p.get("environment"):
@@ -117,5 +125,23 @@ for proj in projects:
             cmd += ["--scenario", scn]
             rc3, out3 = run([c for c in cmd if c != "--wcet" and not (":" in c and c in p["wcet"])], d)
             report(rc3 == 0 and "scenario: PASS" in out3, "%s: scenario %s" % (model, scn), out3)
+# burned EEPROM images with the outcome each must have (*/images.txt)
+for listing in sorted(glob.glob(os.path.join(here, "[0-9]*", "images.txt"))):
+    d = os.path.dirname(listing)
+    print("\n" + os.path.basename(d) + " (EEPROM images)")
+    for line in open(listing, encoding="utf-8"):
+        w = line.split("#")[0].split()
+        if len(w) < 3:
+            continue
+        img, want_dis, want_ver = w[0], w[1], w[2]
+        expect = " ".join(w[3:])
+        image = img + ".eeprom.bin"
+        if not os.path.exists(os.path.join(d, image)):
+            report(False, "%s: the image exists (run make_images.py)" % img)
+            continue
+        rc, out = run([exe("asmdis"), "--eeprom", arg(os.path.join(d, image), d), "--check"], d)
+        report((rc == 0) == (want_dis == "ok") and (not expect or expect in out), "%s: disassembly check %s%s" % (img, want_dis, (", says '%s'" % expect) if expect else ""), out)
+        rc, out = run([exe("asmsim"), "main_peri.asm", "-I", "../common", "--verify-eeprom", arg(os.path.join(d, image), os.path.join(here, "14_main_peri_sim"))], os.path.join(here, "14_main_peri_sim"))
+        report((rc == 0) == (want_ver == "ok"), "%s: verify against example 14 %s" % (img, want_ver), out)
 print("\n%s  %d failure(s)" % ("FAILED" if fails else "OK    ", fails))
 sys.exit(1 if fails else 0)

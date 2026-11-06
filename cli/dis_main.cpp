@@ -30,6 +30,7 @@ bool readText(const std::string& p, std::string& out) {
 void usage() {
     std::puts(
         "usage: asmdis --main|--peri [options] image.bin\n"
+        "       asmdis --eeprom PREFIX.eeprom.bin [--check] [--strict] [-o FILE]     both domains of a burned EEPROM image, with its names\n"
         "  --main | --peri      which domain the image belongs to (required)\n"
         "  --layout FILE        the ImageLayout of the image (PREFIX.main.layout.json written by asmc). Default: image.layout.json next to\n"
         "                       image.bin. Since spec v31 the layout is NOT inside the image, so it is required.\n"
@@ -38,6 +39,11 @@ void usage() {
         "  --eeprom FILE        instead of image.bin: the EEPROM image asmc --eeprom wrote (PREFIX.eeprom.bin): the domain's code, descriptor\n"
         "                       tables and const pool / DeviceMap are read from the regions of its map file (what the decoder fetches)\n"
         "  --eeprom-map FILE    the map of the EEPROM image (default: PREFIX.eeprom.json next to it); holds the region addresses and the ImageLayout\n"
+        "  --eeprom-sym FILE    the names (default: PREFIX.eeprom.sym next to it, if there is one): labels, CSRs, services, devices\n"
+        "  --no-names           do not use the symbol file (L_xxxx labels and numbers)\n"
+        "  --strict             with --eeprom and --check: a warning (a data-flow rule, an unreachable instruction) fails the check too\n"
+        "  With --eeprom and no --main/--peri both domains are written as one source, and --check runs it through the assembler (every rule of\n"
+        "  the specification and the profile) and compares the image it makes with the burned one, region by region.\n"
         "  --length N           logical image size in bytes (with --sram; default: the end of the last section of the layout file)\n"
         "  --events FILE        PREFIX.events.json of asmc --artifacts: the event vectors of this domain become labels and '.vector' lines\n"
         "  --profile FILE       the profile the image was assembled with (byte order, DeviceMap packing, ALU codes, SRAM image bases)\n"
@@ -56,7 +62,8 @@ int main(int argc, char** argv) {
     bool haveDomain = false, annotate = false, check = false, longJumps = false;
     Domain dom = Domain::Main;
     Profile pf;
-    std::string eventsPath, profilePath, labelsPath, outPath, input, prefix = "L_", layoutPath, sramPath, eepromPath, eepromMapPath;
+    std::string eventsPath, profilePath, labelsPath, outPath, input, prefix = "L_", layoutPath, sramPath, eepromPath, eepromMapPath, eepromSymPath;
+    bool noNames = false, strict = false;
     long long lengthArg = 0;
     long long codeSize = 0;
     for (int i = 1; i < argc; i++) {
@@ -74,6 +81,9 @@ int main(int argc, char** argv) {
         else if (a == "--sram") sramPath = need();
         else if (a == "--eeprom") eepromPath = need();
         else if (a == "--eeprom-map") eepromMapPath = need();
+        else if (a == "--eeprom-sym") eepromSymPath = need();
+        else if (a == "--no-names") noNames = true;
+        else if (a == "--strict") strict = true;
         else if (a == "--length") lengthArg = std::atoll(need().c_str());
         else if (a == "--code-size") codeSize = std::atoll(need().c_str());
         else if (a == "--labels") labelsPath = need();
@@ -85,11 +95,47 @@ int main(int argc, char** argv) {
         else if (!a.empty() && a[0] == '-') { std::fprintf(stderr, "asmdis: unknown option %s\n", a.c_str()); return 2; }
         else input = a;
     }
-    if (!haveDomain || (input.empty() && sramPath.empty() && eepromPath.empty())) { usage(); return 2; }
+    if ((!haveDomain && eepromPath.empty()) || (input.empty() && sramPath.empty() && eepromPath.empty())) { usage(); return 2; }
     if (!profilePath.empty()) {
         std::string t;
         std::vector<std::string> errs;
         if (!readText(profilePath, t) || !pf.load(t, errs)) { std::fprintf(stderr, "asmdis: cannot use profile %s\n", profilePath.c_str()); return 2; }
+    }
+    if (!eepromPath.empty() && !haveDomain) {                               // the whole burned image: both domains, its names, checked against the specification
+        if (!profilePath.empty()) {
+            std::string t;
+            std::vector<std::string> errs;
+            if (!readText(profilePath, t) || !pf.load(t, errs)) { std::fprintf(stderr, "asmdis: cannot use profile %s\n", profilePath.c_str()); return 2; }
+        }
+        const size_t dot = eepromPath.rfind(".bin");
+        const std::string base = dot != std::string::npos && dot + 4 == eepromPath.size() ? eepromPath.substr(0, dot) : eepromPath;
+        if (eepromMapPath.empty()) eepromMapPath = base + ".json";
+        if (eepromSymPath.empty()) eepromSymPath = base + ".sym";
+        std::vector<uint8_t> eep;
+        std::string t, err;
+        EepromMap emap;
+        if (!readBin(eepromPath, eep)) { std::fprintf(stderr, "asmdis: cannot read %s\n", eepromPath.c_str()); return 2; }
+        if (!readText(eepromMapPath, t) || !loadEepromMapJson(t, emap, err)) { std::fprintf(stderr, "asmdis: the EEPROM map %s: %s\n", eepromMapPath.c_str(), err.empty() ? "cannot be read" : err.c_str()); return 2; }
+        EepromSymbols syms;
+        bool haveSyms = false;
+        if (!noNames && readText(eepromSymPath, t)) {
+            if (loadEepromSymbolsJson(t, syms, err)) haveSyms = true;
+            else std::fprintf(stderr, "asmdis: %s: %s (the names are left out)\n", eepromSymPath.c_str(), err.c_str());
+        }
+        EepromDisasmCheck c;
+        if (!checkEepromDisassembly(eep, emap, pf, haveSyms ? &syms : nullptr, annotate, c, err)) { std::fprintf(stderr, "asmdis: %s\n", err.c_str()); return 2; }
+        const std::string text = "; disassembled from " + eepromPath + (haveSyms ? ", names from " + eepromSymPath : std::string(" (no symbol file: L_xxxx labels)")) + "\n" + c.source;
+        if (!outPath.empty()) { std::ofstream o(outPath, std::ios::binary); o << text; if (!o) { std::fprintf(stderr, "asmdis: cannot write %s\n", outPath.c_str()); return 2; } }
+        else std::fputs(text.c_str(), stdout);
+        for (const DisasmIssue& i : c.decodeIssues) std::fprintf(stderr, "%s %s @%u: %s\n", i.fatal ? "decode error" : "decode remark", i.code.c_str(), i.pc, i.msg.c_str());
+        if (!check) return c.fatalDecode() ? 1 : 0;
+        for (const Diagnostic& d : c.specDiags)
+            std::fprintf(stderr, "spec %s %s line %d: %s\n", d.sev == Diagnostic::Error ? "error" : d.sev == Diagnostic::Warning ? "warning" : "note", d.code.c_str(), d.loc.line, d.msg.c_str());
+        if (c.assembles && !c.identical)
+            std::fprintf(stderr, "check: DIFFERENT - it assembles to another image: %zu byte(s) differ, the first in %s at 0x%04X\n", c.differentBytes, eepromRegionName(c.differentRegion), c.firstDifference);
+        std::fprintf(stderr, "check: %s - %d decode error(s), %d spec error(s), %d warning(s), %s\n", c.ok(strict) ? "OK" : "FAILED", c.fatalDecode(), c.errors(), c.warnings(),
+                     !c.assembles ? "it does not assemble" : c.identical ? "it assembles to the identical image" : "it assembles to a DIFFERENT image");
+        return c.ok(strict) ? 0 : 1;
     }
     DomainImage im;
     im.domain = dom;

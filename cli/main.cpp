@@ -62,7 +62,8 @@ void usage() {
         "(placement proof), PREFIX.sections.json, PREFIX.descriptors.json, PREFIX.services.json, PREFIX.events.json, PREFIX.validation.json,\n"
         "PREFIX.manifest.json.\n"
         "--eeprom adds what is burned into the I2C EEPROM the decoders fetch from: PREFIX.eeprom.bin (the image), PREFIX.eeprom.hex (Intel HEX for a\n"
-        "programmer) and PREFIX.eeprom.json (where each of the six regions starts; asmsim --eeprom and asmdis --eeprom read it). The addresses are the\n"
+        "programmer), PREFIX.eeprom.json (where each of the six regions starts; asmsim --eeprom and asmdis --eeprom read it) and PREFIX.eeprom.sym (the\n"
+        "names: labels, CSRs, services, devices -- asmdis --eeprom gives them back to the disassembly). The addresses are the\n"
         "profile's eeprom_*_addr.   Exit status: 0 ok, 1 assembly errors, 2 usage / I/O error.");
 }
 
@@ -204,6 +205,7 @@ int main(int argc, char** argv) {
         io &= writeFile(prefix + ".eeprom.bin", image.data(), image.size());
         io &= writeText(prefix + ".eeprom.hex", asmcore::intelHex(image));
         io &= writeText(prefix + ".eeprom.json", emap.json());
+        io &= writeText(prefix + ".eeprom.sym", asmcore::eepromSymbols(r).json());          // the names (kept apart: the image can be passed on without them)
         std::printf("EEPROM: %zu bytes -> %s.eeprom.bin (", image.size(), prefix.c_str());
         for (int i = 0; i < asmcore::ER_COUNT; i++) std::printf("%s%s @0x%04X %u", i ? ", " : "", asmcore::eepromRegionName(i), emap.region[i].addr, emap.region[i].size);
         std::printf(")\n");

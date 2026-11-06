@@ -13,6 +13,7 @@
 //
 // The addresses come from the profile (eeprom_*_addr; -1 = placed after the region before it). Standard C++17, no file access.
 #include <cstdint>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -54,6 +55,21 @@ bool loadEepromMapJson(const std::string& text, EepromMap& map, std::string& err
 bool buildEeprom(const Result& r, const Profile& pf, std::vector<uint8_t>& image, EepromMap& map, std::string& error);
 // Back from an EEPROM image to the two logical images (the disassembler's and the simulator's input): what a decoder sees through the regions.
 bool domainImagesFromEeprom(const std::vector<uint8_t>& image, const EepromMap& map, DomainImage& main, DomainImage& peri, std::string& error);
+// The names of the program (PREFIX.eeprom.sym, written next to the image): the image holds only bytes, so a disassembly of the image alone has
+// L_xxxx labels and numbers. With the symbol file the disassembly gets the names back: labels, CSRs, services, DeviceMap devices (and the
+// const pool symbols as comments). Kept apart from the map so that an image can be passed on without the names.
+struct EepromSymbols {
+    std::map<uint32_t, std::string> labels[2];        // [0] Main, [1] Peri: pc -> label
+    std::map<uint32_t, std::string> csrs;             // CSR address -> name
+    std::map<int64_t, std::string> services;          // service id -> name
+    std::map<int64_t, std::string> devices;           // DeviceMap index -> name
+    std::map<uint32_t, std::string> consts;           // MAIN_CONST_POOL offset -> name
+    bool empty() const { return labels[0].empty() && labels[1].empty() && csrs.empty() && services.empty() && devices.empty() && consts.empty(); }
+    std::string json() const;
+};
+EepromSymbols eepromSymbols(const Result& r);
+bool loadEepromSymbolsJson(const std::string& text, EepromSymbols& out, std::string& error);
+
 // Intel HEX of the image (what EEPROM programmers take), 16 data bytes a record, with an extended linear address record above 64 KiB.
 std::string intelHex(const std::vector<uint8_t>& image);
 

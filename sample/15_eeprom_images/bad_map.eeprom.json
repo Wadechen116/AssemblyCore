@@ -1,0 +1,82 @@
+{
+ "format": "asmcore-eeprom-1",
+ "profile": "planning-default",
+ "capacity": 65536,
+ "i2c_address": 80,
+ "address_bytes": 2,
+ "erased": 255,
+ "regions": [
+  {
+   "name": "main.code",
+   "register": "main_code_addr",
+   "address": 0,
+   "logical_start": 0,
+   "bytes": 32
+  },
+  {
+   "name": "main.desc",
+   "register": "main_desc_addr",
+   "address": 32,
+   "logical_start": 32,
+   "bytes": 70
+  },
+  {
+   "name": "main.const",
+   "register": "main_const_addr",
+   "address": 102,
+   "logical_start": 102,
+   "bytes": 4
+  },
+  {
+   "name": "peri.code",
+   "register": "peri_code_addr",
+   "address": 108,
+   "logical_start": 0,
+   "bytes": 16
+  },
+  {
+   "name": "peri.desc",
+   "register": "peri_desc_addr",
+   "address": 122,
+   "logical_start": 16,
+   "bytes": 16
+  },
+  {
+   "name": "peri.devmap",
+   "register": "peri_devmap_addr",
+   "address": 138,
+   "logical_start": 32,
+   "bytes": 1
+  }
+ ],
+ "domains": [
+  {
+   "domain": "main",
+   "present": true,
+   "code_bytes": 31,
+   "logical_image_bytes": 106,
+   "image_layout": [
+    32,
+    76,
+    92,
+    98,
+    100,
+    102
+   ]
+  },
+  {
+   "domain": "peri",
+   "present": true,
+   "code_bytes": 16,
+   "logical_image_bytes": 33,
+   "image_layout": [
+    16,
+    16,
+    18,
+    20,
+    26,
+    32
+   ]
+  }
+ ]
+}

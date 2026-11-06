@@ -48,13 +48,24 @@ Peri 的 `EXEC_XFER` 讀寫 EEPROM 的 I2C 位址（預設 0x50）時，讀到�
 ## 5. 命令列
 
 ```bash
-asmc prog.asm --eeprom                                # 另外寫出 prog.eeprom.bin / .eeprom.hex / .eeprom.json
-asmdis --main --eeprom prog.eeprom.bin               # 從燒錄檔反組譯（--check 再組譯一次比對）
+asmc prog.asm --eeprom                                # 另外寫出 prog.eeprom.bin / .eeprom.hex / .eeprom.json / .eeprom.sym
+asmdis --eeprom prog.eeprom.bin --check              # 兩個 domain 一起反組譯（有 .eeprom.sym 就還原名稱），並做規格檢查與往返比對
+asmdis --main --eeprom prog.eeprom.bin               # 只反組譯一個 domain
 asmsim prog.asm --eeprom prog.eeprom.bin --decoded   # 用燒錄檔執行，原始碼只用來對照；--decoded 列出解碼結果
 asmsim --eeprom prog.eeprom.bin --cycles 100000      # 只有燒錄檔、沒有原始碼也能跑
 ```
 
-驗證燒錄檔（不執行，不一致時結束碼為 1，可放進燒錄前後的檢查腳本）：
+**反組譯檢查**（`asmdis --eeprom FILE --check`，「這是一個符合規格的程式嗎？」）：
+
+1. **解碼**：每個 byte 都是合法的指令編碼（保留位元、表格索引、跳躍目標落在指令開頭…），錯誤以 D 開頭的代碼列出。
+2. **規格**：反組譯的結果交給組譯器，套用本專案文件定義的所有規則（`docs/ASM_SYNTAX.md` 的 E… 錯誤與 W… 警告、profile 的限制、資料流檢查）。
+3. **往返一致**：再組譯，必須和燒錄檔在每個區域逐 byte 相同（以燒錄檔對照表的區域位址排）。
+
+解碼錯誤、規格錯誤、往返不一致都算失敗（結束碼 1）；`--strict` 時警告也算失敗。
+
+**名稱**：建置時另外寫出 `PREFIX.eeprom.sym`（標籤、CSR、服務、DeviceMap 裝置、Const Pool 符號）。和對照表分開，要把燒錄檔交給別人時可以不附。反組譯時旁邊有它就還原：標籤用原名、`EXEC_CSR WRITE8 GYRO_X_CORR_L, …` 並在開頭產生 `.csr GYRO_X_CORR_L = 0x120`、`EXEC_PUB service=SID_…` 與 `.service`、`EXEC_XFER dev=DEV_IMU` 與 `.devmap …, DEV_IMU`，Const Pool 的符號以註解標出（`; GYRO_BIAS`）。`equ` 數值常數不還原（同一個值可能有好幾個名稱）。還原後仍會組回同一份燒錄檔。
+
+**驗證燒錄檔**（「這是我寫的那個程式嗎？」；不執行，不一致時結束碼為 1，可放進燒錄前後的檢查腳本）：
 
 ```bash
 asmsim prog.asm --verify-eeprom prog.eeprom.bin
@@ -68,8 +79,9 @@ asmsim prog.asm --verify-eeprom prog.eeprom.bin
 
 - **Build → 產生／驗證／反組譯 EEPROM 燒錄檔…**：開啟「EEPROM」視窗，三頁：
   - **產生燒錄檔**：列出最新建置的六個區域（位址暫存器、起始位址、大小、結束位址）、用掉多少 EEPROM；選擇輸出位置後寫出 `.eeprom.bin`／`.hex`／`.json`。原始碼在建置後有修改時會提醒先重新建置。
-  - **驗證燒錄檔**：選一份燒錄檔，和最新建置的程式比對（同命令列的 `--verify-eeprom`）。上方顯示通過／不通過；表格先列不一致的指令（應該是／燒錄檔裡是／原始碼），再列不同的 byte。雙擊指令那一行跳到原始碼。
-  - **反組譯燒錄檔**：選一份燒錄檔（旁邊要有 `.eeprom.json`），反推出 Main 和 Peri 的組合語言顯示在視窗裡，可選擇加上位址與 byte 註解；「另存為 .asm 並開啟」存檔後在編輯器打開。反組譯的結果再組譯，會得到同一份燒錄檔。
+  - **驗證燒錄檔**：選一份燒錄檔，和最新建置的程式比對（同命令列的 `--verify-eeprom`）。上方顯示通過／不通過；表格先列不一致的指令（應該是／燒錄檔裡是／原始碼），再列不同的 byte。雙擊指令那一行跳到原始碼。**原始碼在上次建置後有修改時，會先自動建置再比對**（產生燒錄檔也一樣）。
+  - **反組譯燒錄檔**：選一份燒錄檔（旁邊要有 `.eeprom.json`），反推出 Main 和 Peri 的組合語言顯示在視窗裡，並做上面的三項反組譯檢查：上方顯示 ✔／✘，下方列出每一項結果，點規格錯誤那一行跳到文字的那一行。可勾選「使用符號檔的名稱」「加上位址與 byte 註解」「嚴格（警告也算失敗）」；「另存為 .asm 並開啟」存檔後在編輯器打開。
+- 測試用的燒錄檔（一份正確、8 份故意放錯）：`sample/15_eeprom_images`，說明見該資料夾的 README。
 - **建置**：成功時除了 `.bin`，也寫出 `.eeprom.bin`／`.eeprom.hex`／`.eeprom.json`（照專案 profile 的 `eeprom_*` 位址），可直接燒錄。
 - **除錯**：預設就是 Decoder 從 EEPROM 取指令（本次建置產生的映像）。
 - **Debug → 從 EEPROM 映像除錯…**：選一份燒錄檔（例如從實際晶片讀回的），Decoder 改從那份 byte 取指令，原始碼只用來對照。**Debug → 使用建置產生的 EEPROM 除錯** 換回來。

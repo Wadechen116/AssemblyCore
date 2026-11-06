@@ -195,3 +195,71 @@ std::string intelHex(const std::vector<uint8_t>& image) {
 }
 
 }  // namespace asmcore
+
+namespace asmcore {
+
+EepromSymbols eepromSymbols(const Result& r) {
+    EepromSymbols s;
+    for (const SymbolInfo& x : r.symbols) {
+        if (x.kind == "label") {
+            const size_t colon = x.name.find(':');
+            if (colon == std::string::npos) continue;
+            const int d = x.name.compare(0, 5, "peri:") == 0 ? 1 : 0;
+            if (!s.labels[d].count((uint32_t)x.value)) s.labels[d][(uint32_t)x.value] = x.name.substr(colon + 1);
+        } else if (x.kind == "csr") {
+            if (!s.csrs.count((uint32_t)x.value)) s.csrs[(uint32_t)x.value] = x.name;
+        } else if (x.kind == "service") {
+            if (!s.services.count(x.value)) s.services[x.value] = x.name;
+        } else if (x.kind == "devmap") {
+            if (!s.devices.count(x.value)) s.devices[x.value] = x.name;
+        } else if (x.kind == "const") {
+            if (!s.consts.count((uint32_t)x.value)) s.consts[(uint32_t)x.value] = x.name;
+        }
+    }
+    return s;
+}
+
+std::string EepromSymbols::json() const {
+    std::ostringstream o;
+    auto list = [&](const char* key, const char* what, const auto& m, bool last) {
+        o << " \"" << key << "\":[";
+        bool first = true;
+        for (const auto& kv : m) { o << (first ? "" : ",") << "\n  {\"" << what << "\":" << kv.first << ",\"name\":\"" << json::escape(kv.second) << "\"}"; first = false; }
+        o << (first ? "" : "\n ") << "]" << (last ? "\n" : ",\n");
+    };
+    o << "{\n \"format\":\"asmcore-eeprom-sym-1\",\n";
+    list("main_labels", "pc", labels[0], false);
+    list("peri_labels", "pc", labels[1], false);
+    list("csrs", "address", csrs, false);
+    list("services", "id", services, false);
+    list("devices", "index", devices, false);
+    list("consts", "offset", consts, true);
+    o << "}\n";
+    return o.str();
+}
+
+bool loadEepromSymbolsJson(const std::string& text, EepromSymbols& out, std::string& error) {
+    json::Value v;
+    json::Parser p(text);
+    if (!p.parse(v)) { error = "symbol file: " + p.error(); return false; }
+    const json::Value* f = v.get("format");
+    if (!f || f->str != "asmcore-eeprom-sym-1") { error = "symbol file: not an asmcore EEPROM symbol file (\"format\":\"asmcore-eeprom-sym-1\")"; return false; }
+    out = EepromSymbols();
+    auto read = [&](const char* key, const char* what, auto& m) {
+        const json::Value* a = v.get(key);
+        if (!a || a->kind != json::Value::Array) return;
+        for (const json::Value& e : a->arr) {
+            const json::Value *k = e.get(what), *n = e.get("name");
+            if (k && n && k->kind == json::Value::Number && n->kind == json::Value::String) m[(typename std::decay<decltype(m)>::type::key_type)k->num] = n->str;
+        }
+    };
+    read("main_labels", "pc", out.labels[0]);
+    read("peri_labels", "pc", out.labels[1]);
+    read("csrs", "address", out.csrs);
+    read("services", "id", out.services);
+    read("devices", "index", out.devices);
+    read("consts", "offset", out.consts);
+    return true;
+}
+
+}  // namespace asmcore

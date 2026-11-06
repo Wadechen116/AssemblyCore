@@ -20,6 +20,7 @@
 #include <vector>
 
 #include "asmcore/asmcore.h"
+#include "asmcore/eeprom.h"
 
 namespace asmcore {
 
@@ -104,6 +105,34 @@ struct DisasmResult {
 DisasmResult disassemble(const DomainImage& image, const Profile& profile, const DisasmOptions& opt = DisasmOptions());
 // Both domains of an assembler result as one source file (labels keep their original names).
 std::string disassembleResult(const Result& r, const Profile& profile, std::vector<DisasmIssue>* issues = nullptr, bool annotate = false);
+// A burned EEPROM image (eeprom.h) back to source, both domains: the regions of `map` give each domain's code and tables. With `symbols`
+// (PREFIX.eeprom.sym) the names come back: labels, CSRs (with their .csr lines), services (.service), DeviceMap devices, and the const
+// pool symbols as comments; the text still assembles to the same image. False with `error` if the image cannot be read through the map.
+bool disassembleEeprom(const std::vector<uint8_t>& image, const EepromMap& map, const Profile& profile, const EepromSymbols* symbols, bool annotate,
+                       std::string& source, std::vector<DisasmIssue>* issues, std::string& error);
+
+// The disassembly of an EEPROM image, checked: is it a program of this project's specification? Three things are checked, and anything that
+// is not is reported:
+//   decode     the bytes are legal encodings (reserved bits, table indexes, branch targets on an instruction ...)       -> decodeIssues
+//   spec       the text goes through the assembler: every rule of docs/ASM_SYNTAX.md, the profile's limits and the data-flow check  -> specDiags
+//   identity   it assembles back to the same bytes in every region of the image                                         -> identical
+struct EepromDisasmCheck {
+    std::string source;
+    std::vector<DisasmIssue> decodeIssues;
+    std::vector<Diagnostic> specDiags;            // lines refer to `source`
+    bool assembles = false;                       // the assembler found no error
+    bool identical = false;
+    size_t differentBytes = 0;                    // in the regions, against the image
+    int differentRegion = -1;                     // the first region with a difference (EepromRegionId)
+    uint32_t firstDifference = 0;                 // its EEPROM address
+    int fatalDecode() const { int n = 0; for (const DisasmIssue& i : decodeIssues) n += i.fatal; return n; }
+    int errors() const { int n = 0; for (const Diagnostic& d : specDiags) n += d.sev == Diagnostic::Error; return n; }
+    int warnings() const { int n = 0; for (const Diagnostic& d : specDiags) n += d.sev == Diagnostic::Warning; return n + (int)decodeIssues.size() - fatalDecode(); }
+    // strict: a warning (a data-flow rule, an unreachable instruction, a decoder remark) fails it too
+    bool ok(bool strict = false) const { return fatalDecode() == 0 && assembles && identical && (!strict || warnings() == 0); }
+};
+bool checkEepromDisassembly(const std::vector<uint8_t>& image, const EepromMap& map, const Profile& profile, const EepromSymbols* symbols, bool annotate,
+                            EepromDisasmCheck& out, std::string& error);
 // Label names of one domain from the assembler's symbol table, for DisasmOptions::names.
 std::map<uint32_t, std::string> labelNames(const Result& r, Domain d);
 

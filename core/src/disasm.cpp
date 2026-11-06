@@ -462,4 +462,128 @@ std::string disassembleResult(const Result& r, const Profile& pf, std::vector<Di
     return out;
 }
 
+namespace {
+
+// "0x120" at text[pos..]: its value and length (0 if there is none)
+size_t hexAt(const std::string& t, size_t pos, uint32_t& v) {
+    if (t.compare(pos, 2, "0x") != 0) return 0;
+    size_t e = pos + 2;
+    while (e < t.size() && std::isxdigit((unsigned char)t[e])) e++;
+    if (e == pos + 2) return 0;
+    v = (uint32_t)std::strtoul(t.c_str() + pos + 2, nullptr, 16);
+    return e - pos;
+}
+
+// The names of the symbol file in one disassembled line (the decoders write numbers): the CSR of an EXEC_CSR, the service of an EXEC_PUB,
+// the device of an EXEC_XFER. `used` collects what was named, for the definitions.
+std::string nameLine(std::string t, const EepromSymbols& s, std::set<uint32_t>& csrs, std::set<int64_t>& services) {
+    if (t.compare(0, 9, "EXEC_CSR ") == 0) {
+        const size_t sp = t.find(' ', 9);
+        uint32_t a = 0;
+        const size_t n = sp == std::string::npos ? 0 : hexAt(t, sp + 1, a);
+        auto it = s.csrs.find(a);
+        if (n && it != s.csrs.end()) { t.replace(sp + 1, n, it->second); csrs.insert(a); }
+    } else if (t.compare(0, 9, "EXEC_PUB ") == 0) {
+        const size_t p = t.find("service=");
+        if (p != std::string::npos) {
+            const size_t e = t.find_first_of(", ", p + 8);
+            const int64_t id = std::strtoll(t.c_str() + p + 8, nullptr, 10);
+            auto it = s.services.find(id);
+            if (it != s.services.end()) { t.replace(p + 8, (e == std::string::npos ? t.size() : e) - (p + 8), it->second); services.insert(id); }
+        }
+    } else if (t.compare(0, 10, "EXEC_XFER ") == 0) {
+        const size_t p = t.find("dev=");
+        if (p != std::string::npos) {
+            const size_t e = t.find_first_of(", ", p + 4);
+            const int64_t dv = std::strtoll(t.c_str() + p + 4, nullptr, 10);
+            auto it = s.devices.find(dv);
+            if (it != s.devices.end()) t.replace(p + 4, (e == std::string::npos ? t.size() : e) - (p + 4), it->second);
+        }
+    }
+    return t;
+}
+
+}  // namespace
+
+bool disassembleEeprom(const std::vector<uint8_t>& image, const EepromMap& map, const Profile& pf, const EepromSymbols* syms, bool annotate,
+                       std::string& source, std::vector<DisasmIssue>* issues, std::string& error) {
+    Result r;
+    r.ok = true;
+    if (!domainImagesFromEeprom(image, map, r.main, r.peri, error)) return false;
+    std::string body;
+    std::set<uint32_t> usedCsrs;
+    std::set<int64_t> usedServices;
+    for (Domain d : {Domain::Main, Domain::Peri}) {
+        const DomainImage& im = r.image(d);
+        if (!im.present) continue;
+        const int k = d == Domain::Main ? 0 : 1;
+        DisasmOptions o;
+        if (syms) o.names = &syms->labels[k];
+        DisasmResult dr = disassemble(im, pf, o);
+        if (syms) {
+            for (DisasmLine& ln : dr.lines) {
+                if (!ln.valid) continue;
+                ln.text = nameLine(ln.text, *syms, usedCsrs, usedServices);
+                const size_t p = ln.text.find("MAIN_CONST_POOL[");                // a const pool symbol: as a comment (the pool itself stays as the bytes)
+                if (k == 0 && p != std::string::npos) {
+                    auto it = syms->consts.find((uint32_t)std::strtoul(ln.text.c_str() + p + 16, nullptr, 10));
+                    if (it != syms->consts.end()) ln.comment += (ln.comment.empty() ? "" : "  ") + it->second;
+                }
+            }
+            for (std::string& def : dr.definitions)                              // ".devmap 0, I2C, 0x68" -> "..., DEV_IMU"
+                if (def.compare(0, 8, ".devmap ") == 0) {
+                    auto it = syms->devices.find(std::strtoll(def.c_str() + 8, nullptr, 10));
+                    if (it != syms->devices.end() && std::count(def.begin(), def.end(), ',') == 2) def += ", " + it->second;
+                }
+        }
+        body += dr.source(annotate) + "\n";
+        if (issues) for (const DisasmIssue& i : dr.issues) issues->push_back(i);
+    }
+    std::string head;
+    if (syms) {
+        for (uint32_t a : usedCsrs) { char b[16]; std::snprintf(b, sizeof b, "0x%03X", a); head += ".csr " + syms->csrs.at(a) + " = " + b + "\n"; }
+        for (int64_t id : usedServices) head += ".service " + syms->services.at(id) + " = " + std::to_string(id) + "\n";
+        if (!head.empty()) head = "; names from the symbol file\n" + head;
+    }
+    source = head + body;
+    return true;
+}
+
+bool checkEepromDisassembly(const std::vector<uint8_t>& image, const EepromMap& map, const Profile& pf, const EepromSymbols* syms, bool annotate,
+                            EepromDisasmCheck& out, std::string& error) {
+    out = EepromDisasmCheck();
+    if (!disassembleEeprom(image, map, pf, syms, annotate, out.source, &out.decodeIssues, error)) return false;
+    // the text through the assembler, with the profile and the image's own placement: every rule of the specification applies
+    Options opt;
+    opt.profile = pf;
+    opt.profile.eepromCapacity = (int)map.capacity;
+    opt.profile.eepromDevAddr = map.devAddr;
+    opt.profile.eepromAddrBytes = map.addrBytes;
+    opt.profile.eepromFill = map.fill;
+    for (int i = 0; i < ER_COUNT; i++) opt.profile.eepromAddr[i] = (int)map.region[i].addr;
+    std::vector<Source> src{Source{"disassembly.asm", out.source}};
+    const Result back = assemble(src, nullptr, opt);
+    out.specDiags = back.diags;
+    out.assembles = back.ok;
+    if (!back.ok) return true;
+    std::vector<uint8_t> again;
+    EepromMap m2;
+    std::string why;
+    if (!buildEeprom(back, opt.profile, again, m2, why)) { out.specDiags.push_back(Diagnostic{Diagnostic::Error, SrcLoc{}, "EEPROM", "the disassembly does not fit the EEPROM as the image places it: " + why}); out.assembles = false; return true; }
+    for (int i = 0; i < ER_COUNT; i++) {
+        const EepromRegion &a = map.region[i], &b = m2.region[i];
+        const uint32_t n = std::max(a.size, b.size);
+        for (uint32_t k = 0; k < n; k++) {
+            const int x = k < a.size && a.addr + k < image.size() ? image[a.addr + k] : -1;
+            const int y = k < b.size && b.addr + k < again.size() ? again[b.addr + k] : -1;
+            if (x != y) {
+                if (!out.differentBytes) { out.differentRegion = i; out.firstDifference = a.addr + k; }
+                out.differentBytes++;
+            }
+        }
+    }
+    out.identical = out.differentBytes == 0;
+    return true;
+}
+
 }  // namespace asmcore

@@ -8,6 +8,7 @@
 
 #include "asmcore/asmcore.h"
 #include "asmcore/disasm.h"
+#include "asmcore/eeprom.h"
 
 using namespace asmcore;
 
@@ -418,6 +419,55 @@ static void t_invalid() {
     }
 }
 
+// A burned EEPROM image: both domains back with their names (PREFIX.eeprom.sym), checked against the specification and the image.
+static void t_eeprom() {
+    section("EEPROM images: names from the symbol file, the checks of the specification, the same image again");
+    const std::string src = ".csr CTRL = 0x120\n.service SID_A = 1\n.devmap 0, I2C, 0x68, IMU\n.const BIAS dw 0x0102\n"
+                            ".main\nstart: MOV MAIN_CONST_POOL[@BIAS] -> MAIN_SCRATCHPAD[0..1]\n EXEC_CSR WRITE8 CTRL, 1\nh: JMP h\n"
+                            ".peri\np: EXEC_XFER READ dev=IMU, len=2, ptr=0, ext=[0x10]\n EXEC_PUB service=SID_A, src=0, len=2\n JMP p\n";
+    const Result r = build(src);
+    check(r.ok, "(the program assembles)", r.diagnosticsText());
+    if (!r.ok) return;
+    Profile pf;
+    std::vector<uint8_t> eep;
+    EepromMap map;
+    std::string err;
+    check(buildEeprom(r, pf, eep, map, err), "(its EEPROM image)", err);
+    const EepromSymbols syms = eepromSymbols(r);
+    {
+        EepromSymbols back;
+        check(loadEepromSymbolsJson(syms.json(), back, err) && back.labels[0].at(0) == "start" && back.csrs.at(0x120) == "CTRL" && back.services.at(1) == "SID_A" && back.devices.at(0) == "IMU" &&
+              back.consts.at(0) == "BIAS", "the symbol file reads back: labels, CSRs, services, devices, constants", err);
+    }
+    EepromDisasmCheck c;
+    check(checkEepromDisassembly(eep, map, pf, &syms, false, c, err), "(checked)", err);
+    check(c.ok(true), "with the names: no decode issue, the assembler is happy (no warning either), the identical image", c.source);
+    check(c.source.find(".csr CTRL = 0x120") != std::string::npos && c.source.find("EXEC_CSR WRITE8 CTRL, 0x01") != std::string::npos && c.source.find("start:") != std::string::npos,
+          "the CSR and the labels have their names back");
+    check(c.source.find(".service SID_A = 1") != std::string::npos && c.source.find("service=SID_A") != std::string::npos && c.source.find("dev=IMU") != std::string::npos &&
+          c.source.find("I2C, 0x68, IMU") != std::string::npos, "...the service and the device too");
+    check(c.source.find("; BIAS") != std::string::npos, "...and a constant of the pool as a comment");
+    EepromDisasmCheck plain;
+    checkEepromDisassembly(eep, map, pf, nullptr, false, plain, err);
+    check(plain.ok() && plain.source.find("0x120") != std::string::npos && plain.source.find("L_0000") != std::string::npos, "without the symbol file: numbers and L_xxxx, still the identical image");
+    {   // the last JMP of Main becomes the MOV of descriptor 0: no rule of the decoder is broken, the specification's is (E303)
+        std::vector<uint8_t> bad = eep;
+        bad[map.region[ER_MAIN_CODE].addr + 3] = 0x80;
+        EepromDisasmCheck b;
+        checkEepromDisassembly(bad, map, pf, &syms, false, b, err);
+        bool e303 = false;
+        for (const Diagnostic& d : b.specDiags) e303 = e303 || d.code == "E303";
+        check(!b.ok() && b.fatalDecode() == 0 && e303 && !b.assembles, "a program that runs off its end: the assembler's rule E303 fails it");
+    }
+    {   // a reserved bit in a descriptor: the decoder already fails it
+        std::vector<uint8_t> bad = eep;
+        bad[map.region[ER_MAIN_DESC].addr + 4 + 1] |= 0x01;                     // the branch descriptor after the one MOV descriptor: its bit 8
+        EepromDisasmCheck b;
+        checkEepromDisassembly(bad, map, pf, &syms, false, b, err);
+        check(!b.ok() && b.fatalDecode() > 0, "a reserved bit set: a decode error");
+    }
+}
+
 int main() {
     std::printf("AssemblyCore disassembler tests\n");
     t_roundtrip();
@@ -426,6 +476,7 @@ int main() {
     t_bare();
     t_names_and_options();
     t_invalid();
+    t_eeprom();
     std::printf("\n%s  %d passed, %d failed\n", g_fail ? "FAILED" : "OK    ", g_pass, g_fail);
     return g_fail ? 1 : 0;
 }

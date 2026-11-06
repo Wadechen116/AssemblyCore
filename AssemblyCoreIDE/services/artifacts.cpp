@@ -28,6 +28,7 @@ std::vector<std::string> writeArtifacts(IFileSystem& fs, const std::string& pref
             put(prefix + ".eeprom.bin", std::string(image.begin(), image.end()));
             put(prefix + ".eeprom.hex", asmcore::intelHex(image));
             put(prefix + ".eeprom.json", map.json());
+            put(prefix + ".eeprom.sym", asmcore::eepromSymbols(r).json());
         } else if (error.empty()) {
             error = prefix + ".eeprom.bin (" + why + ")";
         }

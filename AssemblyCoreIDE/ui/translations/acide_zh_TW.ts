@@ -1199,20 +1199,112 @@ The sources changed since this build: build the program again to write what they
         <translation>無法讀取對照表 %1%2：沒有它就不知道各區域在哪裡（asmc --eeprom 和建置都會把它寫在燒錄檔旁邊）。</translation>
     </message>
     <message>
-        <source>Main: %1 bytes of code at %2 · Peri: %3 bytes of code at %4</source>
-        <translation>Main：程式碼 %1 byte，位於 %2 · Peri：程式碼 %3 byte，位於 %4</translation>
-    </message>
-    <message>
-        <source>Every instruction decoded cleanly.</source>
-        <translation>每條指令都正確解碼。</translation>
-    </message>
-    <message>
         <source>An EEPROM image</source>
         <translation>EEPROM 燒錄檔</translation>
     </message>
     <message>
         <source>EEPROM images (*.eeprom.bin);;All files (*)</source>
         <translation>EEPROM 燒錄檔 (*.eeprom.bin);;所有檔案 (*)</translation>
+    </message>
+    <message>
+        <source>The sources changed since the last build: building the program first...</source>
+        <translation>原始碼在上次建置後有修改：先建置程式…</translation>
+    </message>
+    <message>
+        <source>names from the symbol file</source>
+        <translation>使用符號檔的名稱</translation>
+    </message>
+    <message>
+        <source>PREFIX.eeprom.sym next to the image: labels, CSRs, services, devices (and the const pool symbols as comments)</source>
+        <translation>燒錄檔旁邊的 PREFIX.eeprom.sym：標籤、CSR、服務、裝置（Const Pool 的符號以註解標出）</translation>
+    </message>
+    <message>
+        <source>strict (a warning fails it too)</source>
+        <translation>嚴格（警告也算失敗）</translation>
+    </message>
+    <message>
+        <source>Check</source>
+        <translation>檢查</translation>
+    </message>
+    <message>
+        <source>Code</source>
+        <translation>代碼</translation>
+    </message>
+    <message>
+        <source>Line</source>
+        <translation>行</translation>
+    </message>
+    <message>
+        <source>Names from %1.</source>
+        <translation>名稱來自 %1。</translation>
+    </message>
+    <message>
+        <source>The symbol file cannot be read (%1): numbers and L_xxxx labels.</source>
+        <translation>無法讀取符號檔（%1）：以數字和 L_xxxx 標籤顯示。</translation>
+    </message>
+    <message>
+        <source>No symbol file (%1): numbers and L_xxxx labels.</source>
+        <translation>沒有符號檔（%1）：以數字和 L_xxxx 標籤顯示。</translation>
+    </message>
+    <message>
+        <source>Without names: numbers and L_xxxx labels.</source>
+        <translation>不使用名稱：以數字和 L_xxxx 標籤顯示。</translation>
+    </message>
+    <message>
+        <source>decode error</source>
+        <translation>解碼錯誤</translation>
+    </message>
+    <message>
+        <source>decode remark</source>
+        <translation>解碼備註</translation>
+    </message>
+    <message>
+        <source>pc %1: %2</source>
+        <translation>pc %1：%2</translation>
+    </message>
+    <message>
+        <source>spec error</source>
+        <translation>規格錯誤</translation>
+    </message>
+    <message>
+        <source>spec warning</source>
+        <translation>規格警告</translation>
+    </message>
+    <message>
+        <source>spec note</source>
+        <translation>規格備註</translation>
+    </message>
+    <message>
+        <source>identity</source>
+        <translation>往返一致</translation>
+    </message>
+    <message>
+        <source>It assembles to ANOTHER image: %1 byte(s) differ, the first in %2 at %3</source>
+        <translation>重新組譯得到的是另一份燒錄檔：%1 byte 不同，第一個在 %2 的 %3</translation>
+    </message>
+    <message>
+        <source>✔ A program of the specification: every byte decodes, the assembler finds no error%1, and it assembles to the identical image.</source>
+        <translation>✔ 符合規格的程式：每個 byte 都正確解碼，組譯器沒有發現錯誤%1，而且組回完全相同的燒錄檔。</translation>
+    </message>
+    <message>
+        <source> and no warning</source>
+        <translation>與警告</translation>
+    </message>
+    <message>
+        <source>✘ NOT a correct program: %1 decode error(s), %2 spec error(s), %3 warning(s)%4.</source>
+        <translation>✘ 不是正確的程式：%1 個解碼錯誤、%2 個規格錯誤、%3 個警告%4。</translation>
+    </message>
+    <message>
+        <source>, it does not assemble</source>
+        <translation>，無法組譯</translation>
+    </message>
+    <message>
+        <source>, it assembles to another image</source>
+        <translation>，組回的是另一份燒錄檔</translation>
+    </message>
+    <message>
+        <source>Main: %1 bytes of code at %2 · Peri: %3 bytes of code at %4 · %5</source>
+        <translation>Main：程式碼 %1 byte，位於 %2 · Peri：程式碼 %3 byte，位於 %4 · %5</translation>
     </message>
 </context>
 <context>
