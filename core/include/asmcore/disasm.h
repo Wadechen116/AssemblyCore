@@ -74,6 +74,7 @@ struct DisasmOptions {
     std::function<std::string(uint32_t pc, const std::string& text)> commentHook;
 };
 struct DisasmIssue {
+    Domain domain = Domain::Main;                 // the domain whose image it is about
     uint32_t pc = 0;
     std::string code;                             // D1xx: image, D2xx: instruction, D3xx: tables
     std::string msg;
@@ -108,8 +109,9 @@ std::string disassembleResult(const Result& r, const Profile& profile, std::vect
 // A burned EEPROM image (eeprom.h) back to source, both domains: the regions of `map` give each domain's code and tables. With `symbols`
 // (PREFIX.eeprom.sym) the names come back: labels, CSRs (with their .csr lines), services (.service), DeviceMap devices, and the const
 // pool symbols as comments; the text still assembles to the same image. False with `error` if the image cannot be read through the map.
+// `lineOf`, when given, gets the line of `source` (1-based) of every instruction: [domain 0 Main / 1 Peri][pc].
 bool disassembleEeprom(const std::vector<uint8_t>& image, const EepromMap& map, const Profile& profile, const EepromSymbols* symbols, bool annotate,
-                       std::string& source, std::vector<DisasmIssue>* issues, std::string& error);
+                       std::string& source, std::vector<DisasmIssue>* issues, std::string& error, std::map<uint32_t, int>* lineOf = nullptr);
 
 // The disassembly of an EEPROM image, checked: is it a program of this project's specification? Three things are checked, and anything that
 // is not is reported:
@@ -120,6 +122,14 @@ struct EepromDisasmCheck {
     std::string source;
     std::vector<DisasmIssue> decodeIssues;
     std::vector<Diagnostic> specDiags;            // lines refer to `source`
+    std::map<uint32_t, int> lineOf[2];            // [0] Main, [1] Peri: pc -> its line in `source` (1-based)
+    // The line of `source` a decode issue is about: the instruction at its pc (D2xx); 0 for an issue of the image or a table (D1xx, D3xx).
+    int lineOfIssue(const DisasmIssue& i) const {
+        if (i.code.compare(0, 2, "D2") != 0) return 0;
+        const auto& m = lineOf[i.domain == Domain::Peri ? 1 : 0];
+        auto it = m.find(i.pc);
+        return it == m.end() ? 0 : it->second;
+    }
     bool assembles = false;                       // the assembler found no error
     bool identical = false;
     size_t differentBytes = 0;                    // in the regions, against the image

@@ -264,7 +264,7 @@ DisasmResult disassemble(const DomainImage& image, const Profile& pf, const Disa
     const bool mainD = image.domain == Domain::Main;
     auto issue = [&](uint32_t pc, const char* code, const std::string& msg, bool fatal = true) {
         DisasmIssue i;
-        i.pc = pc; i.code = code; i.msg = msg; i.fatal = fatal;
+        i.domain = image.domain; i.pc = pc; i.code = code; i.msg = msg; i.fatal = fatal;
         res.issues.push_back(i);
     };
     ImageView iv;
@@ -506,7 +506,7 @@ std::string nameLine(std::string t, const EepromSymbols& s, std::set<uint32_t>& 
 }  // namespace
 
 bool disassembleEeprom(const std::vector<uint8_t>& image, const EepromMap& map, const Profile& pf, const EepromSymbols* syms, bool annotate,
-                       std::string& source, std::vector<DisasmIssue>* issues, std::string& error) {
+                       std::string& source, std::vector<DisasmIssue>* issues, std::string& error, std::map<uint32_t, int>* lineOf) {
     Result r;
     r.ok = true;
     if (!domainImagesFromEeprom(image, map, r.main, r.peri, error)) return false;
@@ -536,6 +536,13 @@ bool disassembleEeprom(const std::vector<uint8_t>& image, const EepromMap& map, 
                     if (it != syms->devices.end() && std::count(def.begin(), def.end(), ',') == 2) def += ", " + it->second;
                 }
         }
+        if (lineOf) {                                                          // where each instruction lands in the text: DisasmResult::source writes two header
+            int line = 1 + (int)std::count(body.begin(), body.end(), '\n') + 2 + (int)dr.definitions.size();      // lines, the definitions, then per line an optional label
+            for (const DisasmLine& ln : dr.lines) {
+                if (!ln.label.empty()) line++;
+                lineOf[k][ln.pc] = line++;
+            }
+        }
         body += dr.source(annotate) + "\n";
         if (issues) for (const DisasmIssue& i : dr.issues) issues->push_back(i);
     }
@@ -546,13 +553,17 @@ bool disassembleEeprom(const std::vector<uint8_t>& image, const EepromMap& map, 
         if (!head.empty()) head = "; names from the symbol file\n" + head;
     }
     source = head + body;
+    if (lineOf) {                                                              // (the definitions at the top come before everything)
+        const int shift = (int)std::count(head.begin(), head.end(), '\n');
+        for (int k = 0; k < 2; k++) for (auto& kv : lineOf[k]) kv.second += shift;
+    }
     return true;
 }
 
 bool checkEepromDisassembly(const std::vector<uint8_t>& image, const EepromMap& map, const Profile& pf, const EepromSymbols* syms, bool annotate,
                             EepromDisasmCheck& out, std::string& error) {
     out = EepromDisasmCheck();
-    if (!disassembleEeprom(image, map, pf, syms, annotate, out.source, &out.decodeIssues, error)) return false;
+    if (!disassembleEeprom(image, map, pf, syms, annotate, out.source, &out.decodeIssues, error, out.lineOf)) return false;
     // the text through the assembler, with the profile and the image's own placement: every rule of the specification applies
     Options opt;
     opt.profile = pf;

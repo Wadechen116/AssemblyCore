@@ -48,13 +48,13 @@
 
 **IDE**（`AssemblyCoreIDE.exe`）：
 
-- **反組譯**：Build →「反組譯 EEPROM 燒錄檔…」，選一個 `.eeprom.bin` →「反組譯」。上方顯示 ✔／✘，下方列出每一項檢查結果（解碼錯誤、規格錯誤／警告、往返一致）；點規格錯誤那一行會跳到反組譯文字的那一行。可勾選「使用符號檔的名稱」「加上位址與 byte 註解」「嚴格（警告也算失敗）」；「另存為 .asm 並開啟…」存成原始碼。
+- **反組譯**：Build →「反組譯 EEPROM 燒錄檔…」，選一個 `.eeprom.bin` →「反組譯」。上方顯示 ✔／✘，下方列出每一項檢查結果（解碼錯誤、規格錯誤／警告、往返一致）；點解碼錯誤或規格錯誤那一行，會跳到反組譯文字裡對應的那一行（表格層級的問題，例如沒被使用的描述子，不屬於任何一行）。可勾選「使用符號檔的名稱」「加上位址與 byte 註解」「嚴格（警告也算失敗）」；「另存為 .asm 並開啟…」存成原始碼。
 - **驗證**：先開範例 14 的專案（`14_main_peri_sim.acproj`）並建置，Build →「驗證 EEPROM 燒錄檔…」，選一個 `.eeprom.bin` →「驗證」。列出不一致的指令和 byte；雙擊指令那一行跳到原始碼。原始碼有修改時會先自動建置。
 
 **命令列**：
 
 ```bash
-asmdis --eeprom bad_runs_off_end.eeprom.bin --check            # 反組譯檢查；不通過時結束碼 1
+asmdis --eeprom bad_runs_off_end.eeprom.bin --check            # 反組譯檢查；不通過時結束碼 1（錯誤附 Main/Peri、pc 與行號）
 asmdis --eeprom good.eeprom.bin -o good.asm                      # 反組譯成原始碼（有 .eeprom.sym 就還原名稱；--no-names 不用）
 asmsim ../14_main_peri_sim/main_peri.asm -I ../common --verify-eeprom bad_constant.eeprom.bin   # 驗證；不一致時結束碼 1
 ```

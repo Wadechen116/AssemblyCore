@@ -1259,10 +1259,6 @@ The sources changed since this build: build the program again to write what they
         <translation>解碼備註</translation>
     </message>
     <message>
-        <source>pc %1: %2</source>
-        <translation>pc %1：%2</translation>
-    </message>
-    <message>
         <source>spec error</source>
         <translation>規格錯誤</translation>
     </message>
@@ -1305,6 +1301,10 @@ The sources changed since this build: build the program again to write what they
     <message>
         <source>Main: %1 bytes of code at %2 · Peri: %3 bytes of code at %4 · %5</source>
         <translation>Main：程式碼 %1 byte，位於 %2 · Peri：程式碼 %3 byte，位於 %4 · %5</translation>
+    </message>
+    <message>
+        <source>%1 pc %2: %3</source>
+        <translation>%1 pc %2：%3</translation>
     </message>
 </context>
 <context>

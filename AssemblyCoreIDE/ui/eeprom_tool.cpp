@@ -396,6 +396,7 @@ private:
         source_->setPlainText(fromStd(head + c.source));
         // the findings: decode, specification, identity
         const bool strict = strict_->isChecked();
+        const int lineOffset = 1;                                                   // (the "disassembled from" line in front of the text)
         int r = 0;
         auto row = [&](const QString& check, const QString& code, int line, const QString& what, bool bad) {
             checks_->setRowCount(r + 1);
@@ -408,9 +409,11 @@ private:
             if (bad) for (int k = 0; k < 4; k++) checks_->item(r, k)->setBackground(QColor(208, 64, 64, 70));
             r++;
         };
-        const int lineOffset = 1;                                                   // (the "disassembled from" line in front of the text)
-        for (const asmcore::DisasmIssue& i : c.decodeIssues)                      // (a decoder finding names the pc it is about; it has no line of the text)
-            row(i.fatal ? tr("decode error") : tr("decode remark"), fromStd(i.code), 0, tr("pc %1: %2").arg(i.pc).arg(fromStd(i.msg)), i.fatal || strict);
+        for (const asmcore::DisasmIssue& i : c.decodeIssues) {                    // an instruction's (D2xx): the line of that instruction; an image's or a table's: no line
+            const int line = c.lineOfIssue(i);
+            row(i.fatal ? tr("decode error") : tr("decode remark"), fromStd(i.code), line > 0 ? line + lineOffset : 0,
+                tr("%1 pc %2: %3").arg(i.domain == asmcore::Domain::Peri ? "Peri" : "Main").arg(i.pc).arg(fromStd(i.msg)), i.fatal || strict);
+        }
         for (const asmcore::Diagnostic& d : c.specDiags) {
             const bool err = d.sev == asmcore::Diagnostic::Error;
             row(err ? tr("spec error") : d.sev == asmcore::Diagnostic::Warning ? tr("spec warning") : tr("spec note"), fromStd(d.code), d.loc.line > 0 ? d.loc.line + lineOffset : 0, fromStd(d.msg),

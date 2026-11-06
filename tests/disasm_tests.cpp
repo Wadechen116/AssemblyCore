@@ -459,6 +459,24 @@ static void t_eeprom() {
         for (const Diagnostic& d : b.specDiags) e303 = e303 || d.code == "E303";
         check(!b.ok() && b.fatalDecode() == 0 && e303 && !b.assembles, "a program that runs off its end: the assembler's rule E303 fails it");
     }
+    {   // a branch into the middle of an instruction: the decode error points at the line of that branch in the text
+        std::vector<uint8_t> bad = eep;
+        bad[map.region[ER_MAIN_DESC].addr + 4] = 0x02;                          // the JMP's descriptor (after the one MOV descriptor): target pc 2, the inline byte of the EXEC_CSR
+        EepromDisasmCheck b;
+        checkEepromDisassembly(bad, map, pf, &syms, false, b, err);
+        const DisasmIssue* d203 = nullptr;
+        for (const DisasmIssue& i : b.decodeIssues) if (i.code == "D203") d203 = &i;
+        std::string lineText;
+        if (d203 && b.lineOfIssue(*d203) > 0) {
+            std::istringstream in(b.source);
+            for (int n = 1; std::getline(in, lineText) && n < b.lineOfIssue(*d203); n++) {}
+        }
+        check(d203 && d203->domain == Domain::Main && d203->pc == 3 && lineText.find("JMP 0x0002") != std::string::npos,
+              "a branch into an instruction: D203 of Main pc 3, and its line in the text is that JMP", lineText);
+        bool tableHasNoLine = true;
+        for (const DisasmIssue& i : b.decodeIssues) if (i.code.compare(0, 2, "D3") == 0 && b.lineOfIssue(i) != 0) tableHasNoLine = false;
+        check(tableHasNoLine, "...an issue of a table (D3xx) has no line of its own");
+    }
     {   // a reserved bit in a descriptor: the decoder already fails it
         std::vector<uint8_t> bad = eep;
         bad[map.region[ER_MAIN_DESC].addr + 4 + 1] |= 0x01;                     // the branch descriptor after the one MOV descriptor: its bit 8

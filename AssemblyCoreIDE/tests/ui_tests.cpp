@@ -835,6 +835,21 @@ private slots:
             for (int i = 0; i < checks->rowCount(); i++) e303 = e303 || checks->item(i, 1)->text() == "E303";
             QVERIFY2(e303 && info->text().contains("NOT a correct program"), qPrintable(info->text()));
             tool->grab().save(outDirFree() + "/eeprom_disassemble_bad.png");
+            // a branch into the middle of an instruction: a click on the decode error goes to that JMP in the text
+            std::string mid;
+            QVERIFY(r.f.fs->read("/w/out/t.eeprom.bin", mid));
+            mid[map.region[asmcore::ER_MAIN_DESC].addr] = '\x01';                           // JMP h -> pc 1, the inline byte of the first EXEC_CSR
+            r.f.fs->write("/w/out/mid.eeprom.bin", mid);
+            r.f.fs->write("/w/out/mid.eeprom.json", json);
+            tool->findChild<QLineEdit*>("eepromDisasmPath")->setText("/w/out/mid.eeprom.bin");
+            tool->findChild<QPushButton*>("eepromDisassemble")->click();
+            int d203 = -1;
+            for (int i = 0; i < checks->rowCount(); i++) if (checks->item(i, 1)->text() == "D203") d203 = i;
+            QVERIFY2(d203 >= 0 && checks->item(d203, 2)->text().toInt() > 0 && checks->item(d203, 3)->text().startsWith("Main pc 6"), qPrintable(d203 >= 0 ? checks->item(d203, 3)->text() : QString("no D203")));
+            QTest::mouseClick(checks->viewport(), Qt::LeftButton, Qt::NoModifier, checks->visualItemRect(checks->item(d203, 0)).center());
+            auto* src = tool->findChild<QPlainTextEdit*>("eepromSource");
+            QCOMPARE(src->textCursor().blockNumber() + 1, checks->item(d203, 2)->text().toInt());
+            QVERIFY2(src->textCursor().block().text().contains("JMP 0x0001"), qPrintable(src->textCursor().block().text()));
             tool->findChild<QLineEdit*>("eepromDisasmPath")->setText("/w/out/t.eeprom.bin");
             tool->findChild<QPushButton*>("eepromDisassemble")->click();
         }

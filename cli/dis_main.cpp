@@ -127,10 +127,15 @@ int main(int argc, char** argv) {
         const std::string text = "; disassembled from " + eepromPath + (haveSyms ? ", names from " + eepromSymPath : std::string(" (no symbol file: L_xxxx labels)")) + "\n" + c.source;
         if (!outPath.empty()) { std::ofstream o(outPath, std::ios::binary); o << text; if (!o) { std::fprintf(stderr, "asmdis: cannot write %s\n", outPath.c_str()); return 2; } }
         else std::fputs(text.c_str(), stdout);
-        for (const DisasmIssue& i : c.decodeIssues) std::fprintf(stderr, "%s %s @%u: %s\n", i.fatal ? "decode error" : "decode remark", i.code.c_str(), i.pc, i.msg.c_str());
+        const int shift = (int)std::count(text.begin(), text.end() - (long)c.source.size(), '\n');             // (the "disassembled from" line in front)
+        for (const DisasmIssue& i : c.decodeIssues) {
+            const int line = c.lineOfIssue(i);
+            std::fprintf(stderr, "%s %s %s pc %u%s: %s\n", i.fatal ? "decode error" : "decode remark", i.code.c_str(), domainName(i.domain), i.pc,
+                         line ? (" (line " + std::to_string(line + shift) + ")").c_str() : "", i.msg.c_str());
+        }
         if (!check) return c.fatalDecode() ? 1 : 0;
         for (const Diagnostic& d : c.specDiags)
-            std::fprintf(stderr, "spec %s %s line %d: %s\n", d.sev == Diagnostic::Error ? "error" : d.sev == Diagnostic::Warning ? "warning" : "note", d.code.c_str(), d.loc.line, d.msg.c_str());
+            std::fprintf(stderr, "spec %s %s line %d: %s\n", d.sev == Diagnostic::Error ? "error" : d.sev == Diagnostic::Warning ? "warning" : "note", d.code.c_str(), d.loc.line > 0 ? d.loc.line + shift : 0, d.msg.c_str());
         if (c.assembles && !c.identical)
             std::fprintf(stderr, "check: DIFFERENT - it assembles to another image: %zu byte(s) differ, the first in %s at 0x%04X\n", c.differentBytes, eepromRegionName(c.differentRegion), c.firstDifference);
         std::fprintf(stderr, "check: %s - %d decode error(s), %d spec error(s), %d warning(s), %s\n", c.ok(strict) ? "OK" : "FAILED", c.fatalDecode(), c.errors(), c.warnings(),
