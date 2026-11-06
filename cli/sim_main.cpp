@@ -45,6 +45,8 @@ void usage() {
         "  --eeprom FILE        run what is burned into the EEPROM (asmc --eeprom): the decoders fetch every instruction from these bytes. With\n"
         "                       the source too, the source only names things (labels, lines); without it, the binary alone is run\n"
         "  --eeprom-map FILE    the map of the EEPROM image (default: PREFIX.eeprom.json next to it)\n"
+        "  --verify-eeprom FILE check a burned EEPROM image against the program (no run): every byte of the six regions, then every\n"
+        "                       instruction as the decoders read it; exit status 1 if anything differs. Its map (FILE's .json) is checked too\n"
         "  --env FILE           environment file (CSR behaviours, I2C devices, video timing; docs/SIM.md)\n"
         "  --scenario FILE      run a scenario script instead of a plain run\n"
         "  --cycles N           plain run: stop after N cycles (default 1000000)\n"
@@ -71,7 +73,7 @@ int main(int argc, char** argv) {
     Options opt;
     sim::SimConfig cfg;
     std::vector<std::string> inputs, incDirs;
-    std::string eepromPath, eepromMapPath, envPath, scnPath, untilExpr, tracePath, eventsPath, vcdPath, profilePath, paramsPath;
+    std::string verifyPath, eepromPath, eepromMapPath, envPath, scnPath, untilExpr, tracePath, eventsPath, vcdPath, profilePath, paramsPath;
     std::vector<std::string> paramArgs;
     long long cycles = 1000000;
     bool dump = false, decoded = false;
@@ -85,6 +87,7 @@ int main(int argc, char** argv) {
         else if (a == "--env") envPath = need();
         else if (a == "--eeprom") eepromPath = need();
         else if (a == "--eeprom-map") eepromMapPath = need();
+        else if (a == "--verify-eeprom") verifyPath = need();
         else if (a == "--scenario") scnPath = need();
         else if (a == "--cycles") cycles = std::atoll(need().c_str());
         else if (a == "--until") untilExpr = need();
@@ -159,6 +162,31 @@ int main(int argc, char** argv) {
     }
 
     cfg.profile = opt.profile;
+    if (!verifyPath.empty()) {                                          // a burned image against the program: report, no run
+        if (sources.empty()) { std::fprintf(stderr, "asmsim: --verify-eeprom needs the program's source\n"); return 2; }
+        std::string bin, mapText, err;
+        if (!readFile(verifyPath, bin)) { std::fprintf(stderr, "asmsim: cannot read %s\n", verifyPath.c_str()); return 2; }
+        const size_t dot = verifyPath.rfind(".bin");
+        const std::string mp = (dot != std::string::npos && dot + 4 == verifyPath.size() ? verifyPath.substr(0, dot) : verifyPath) + ".json";
+        EepromMap imap;
+        const bool haveMap = readFile(mp, mapText) && loadEepromMapJson(mapText, imap, err);
+        const std::vector<uint8_t> image(bin.begin(), bin.end());
+        const sim::EepromVerifyReport rep = sim::verifyEepromImage(r, cfg, image, haveMap ? &imap : nullptr);
+        std::printf("EEPROM image %s (%zu bytes) against %s:\n", verifyPath.c_str(), image.size(), sources[0].name.c_str());
+        if (!haveMap) std::printf("  (no map %s: the regions are where the program places them)\n", mp.c_str());
+        for (const std::string& p : rep.problems) std::printf("  problem: %s\n", p.c_str());
+        size_t shown = 0;
+        for (const sim::EepromByteDiff& d : rep.diffs) {
+            if (shown++ == 64) { std::printf("  ... %zu more byte(s)\n", rep.diffs.size() - 64); break; }
+            if (d.missing) std::printf("  %-12s @%04X  expected %02X, the image has ended\n", eepromRegionName(d.region), d.addr, d.expected);
+            else std::printf("  %-12s @%04X  expected %02X, burned %02X\n", eepromRegionName(d.region), d.addr, d.expected, d.actual);
+        }
+        for (const sim::DecodedLine& L : rep.instructions)
+            std::printf("  %s %03X @%04X: decodes to  %s\n               should be   %s%s\n", domainName(L.domain), L.pc, L.eepromAddr, L.text.c_str(), L.expected.c_str(),
+                        L.source.empty() ? "" : ("   ; " + L.source).c_str());
+        std::printf("%s: %u byte(s) compared, %zu differ, %zu instruction(s) differ\n", rep.ok ? "OK" : "MISMATCH", rep.bytesCompared, rep.diffs.size(), rep.instructions.size());
+        return rep.ok ? 0 : 1;
+    }
     if (!envPath.empty() && !readFile(envPath, cfg.env)) { std::fprintf(stderr, "asmsim: cannot read %s\n", envPath.c_str()); return 2; }
     sim::Simulator s(r, cfg);
     for (auto& e : s.configErrors()) std::fprintf(stderr, "%s: %s\n", envPath.empty() ? "environment" : envPath.c_str(), e.c_str());

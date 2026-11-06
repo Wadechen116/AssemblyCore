@@ -36,6 +36,7 @@
 #include "block_editor.h"
 #include "isa_top_view.h"
 #include "sim_panels.h"
+#include "eeprom_tool.h"
 #include "asmcore/eeprom.h"
 #include "block_link.h"
 #include "document_tab.h"
@@ -761,6 +762,75 @@ private slots:
         r.w->dock("decoder")->widget()->grab().save(outDirFree() + "/decoder_panel.png");
         r.f.dbg.useBuildEeprom();
         r.f.dbg.stop();
+    }
+
+    void theEepromToolBuildsVerifiesAndDisassemblesAnImage() {
+        Rig r(kProg);
+        QVERIFY(r.f.ctx.snapshot && r.f.ctx.snapshot->result.ok);
+        // 1. build: the regions of the newest build, written where asked
+        r.w->findChild<QAction*>("eepromBuildAction")->trigger();
+        QWidget* tool = acide::eepromToolWindow(r.f.ctx);
+        QVERIFY(tool && tool->isVisible());
+        auto* regions = tool->findChild<QTableWidget*>("eepromRegions");
+        QVERIFY(regions && regions->rowCount() == 6 && regions->item(0, 0)->text() == "main.code" && regions->item(0, 2)->text() == "0x0000");
+        QVERIFY2(tool->findChild<QLabel*>("eepromBuildInfo")->text().contains("I2C address 0x50"), qPrintable(tool->findChild<QLabel*>("eepromBuildInfo")->text()));
+        tool->findChild<QLineEdit*>("eepromOutPath")->setText("/w/out/t.eeprom.bin");
+        tool->findChild<QPushButton*>("eepromWrite")->click();
+        QVERIFY(r.f.fs->exists("/w/out/t.eeprom.bin") && r.f.fs->exists("/w/out/t.eeprom.hex") && r.f.fs->exists("/w/out/t.eeprom.json"));
+        QVERIFY(tool->findChild<QLabel*>("eepromWritten")->text().contains("/w/out/t.eeprom.json"));
+        // 2. verify: the image just written is what the program burns
+        auto* tabs = tool->findChild<QTabWidget*>("eepromTabs");
+        r.w->findChild<QAction*>("eepromVerifyAction")->trigger();
+        QCOMPARE(tabs->currentIndex(), 1);
+        auto* vpath = tool->findChild<QLineEdit*>("eepromVerifyPath");
+        auto* verdict = tool->findChild<QLabel*>("eepromVerdict");
+        auto* diffs = tool->findChild<QTableWidget*>("eepromDiffs");
+        vpath->setText("/w/out/t.eeprom.bin");
+        tool->findChild<QPushButton*>("eepromVerify")->click();
+        QVERIFY2(verdict->text().contains("is what the program burns") && diffs->rowCount() == 0, qPrintable(verdict->text()));
+        // ...one byte changed in a burned copy: the instructions it breaks and the byte itself
+        std::string img;
+        QVERIFY(r.f.fs->read("/w/out/t.eeprom.bin", img));
+        asmcore::EepromMap map;
+        std::string json, why;
+        QVERIFY(r.f.fs->read("/w/out/t.eeprom.json", json) && asmcore::loadEepromMapJson(json, map, why));
+        img[map.region[asmcore::ER_MAIN_DESC].addr + 2] ^= 0x01;                              // the CSR descriptor of the three writes
+        r.f.fs->write("/w/out/bad.eeprom.bin", img);
+        r.f.fs->write("/w/out/bad.eeprom.json", json);
+        vpath->setText("/w/out/bad.eeprom.bin");
+        tool->findChild<QPushButton*>("eepromVerify")->click();
+        QVERIFY2(verdict->text().contains("NOT what the program burns") && verdict->text().contains("1 of"), qPrintable(verdict->text()));
+        int instr = 0, bytes = 0;
+        for (int i = 0; i < diffs->rowCount(); i++) { if (diffs->item(i, 0)->text() == "instruction") instr++; if (diffs->item(i, 0)->text() == "byte") bytes++; }
+        QVERIFY2(instr == 3 && bytes == 1, qPrintable(QString("%1 instructions, %2 bytes").arg(instr).arg(bytes)));
+        QVERIFY(diffs->item(0, 3)->text() == "EXEC_CSR WRITE8 0x120, 0x01" && diffs->item(0, 4)->text() == "EXEC_CSR WRITE8 0x121, 0x01" && diffs->item(0, 5)->text().startsWith("EXEC_CSR WRITE8 C, 1"));
+        tool->resize(1000, 520);
+        QApplication::processEvents();
+        tool->grab().save(outDirFree() + "/eeprom_verify.png");
+        // 3. disassemble the burned image, save it as source and open it
+        r.w->findChild<QAction*>("eepromDisassembleAction")->trigger();
+        QCOMPARE(tabs->currentIndex(), 2);
+        tool->findChild<QLineEdit*>("eepromDisasmPath")->setText("/w/out/t.eeprom.bin");
+        tool->findChild<QPushButton*>("eepromDisassemble")->click();
+        const QString text = tool->findChild<QPlainTextEdit*>("eepromSource")->toPlainText();
+        QVERIFY2(text.contains(".main") && text.contains("EXEC_CSR WRITE8 0x120, 0x01") && text.contains("EXEC_CSR WRITE8 0x120, 0x03"), qPrintable(text));
+        QVERIFY(tool->findChild<QLabel*>("eepromDisasmInfo")->text().contains("Every instruction decoded cleanly"));
+        tool->grab().save(outDirFree() + "/eeprom_disassemble.png");
+        QVERIFY(acide::saveEepromDisassembly(r.f.ctx, "/w/out/t.disasm.asm"));
+        std::string saved;
+        QVERIFY(r.f.fs->read("/w/out/t.disasm.asm", saved) && saved.find("EXEC_CSR WRITE8 0x120, 0x02") != std::string::npos);
+        QVERIFY(r.until([&] { return r.w->currentEditor() && r.w->currentEditor()->path() == "/w/out/t.disasm.asm"; }));
+        // the disassembly assembles back to the same image
+        asmcore::Options o;
+        std::vector<asmcore::Source> src{asmcore::Source{"/w/out/t.disasm.asm", saved}};
+        const asmcore::Result back = asmcore::assemble(src, [](const std::string&, const std::string&, asmcore::Source&) { return false; }, o);
+        std::vector<uint8_t> eep2;
+        asmcore::EepromMap map2;
+        std::string original;
+        QVERIFY(r.f.fs->read("/w/out/t.eeprom.bin", original));
+        QVERIFY2(back.ok && asmcore::buildEeprom(back, asmcore::Profile(), eep2, map2, why) && std::string(eep2.begin(), eep2.end()) == original,
+                 qPrintable(QString::fromStdString(back.diagnosticsText())));
+        tool->close();
     }
 
     void theBoxesOfTheDiagramSetTheirOwnParameters() {

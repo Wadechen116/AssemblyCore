@@ -27,6 +27,7 @@
 #include "block_link.h"
 #include "hardware_designer.h"
 #include "sim_panels.h"
+#include "eeprom_tool.h"
 #include "hardware_link.h"
 #include "i18n.h"
 #include "templates.h"
@@ -280,6 +281,18 @@ void MainWindow::createActions() {
     QMenu* build = menuBar()->addMenu(tr("&Build"));
     act(build, tr("&Build"), QKeySequence("F7"), [this] { buildNow(true); });
     build->addSeparator();
+    {   // the EEPROM the decoders fetch from: write its image, verify a burned one, disassemble one
+        QAction* a1 = build->addAction(tr("Build the EEPROM Image..."));
+        a1->setObjectName("eepromBuildAction");
+        connect(a1, &QAction::triggered, this, [this] { showEepromTool(ctx_, this, EepromPage::Build); });
+        QAction* a2 = build->addAction(tr("Verify an EEPROM Image..."));
+        a2->setObjectName("eepromVerifyAction");
+        connect(a2, &QAction::triggered, this, [this] { showEepromTool(ctx_, this, EepromPage::Verify); });
+        QAction* a3 = build->addAction(tr("Disassemble an EEPROM Image..."));
+        a3->setObjectName("eepromDisassembleAction");
+        connect(a3, &QAction::triggered, this, [this] { showEepromTool(ctx_, this, EepromPage::Disassemble); });
+        build->addSeparator();
+    }
     auto* cm = build->addMenu(tr("Call model"));
     auto* grpC = new QActionGroup(this);
     grpC->setObjectName("callModelGroup");

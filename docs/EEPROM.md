@@ -54,10 +54,22 @@ asmsim prog.asm --eeprom prog.eeprom.bin --decoded   # 用燒錄檔執行，原�
 asmsim --eeprom prog.eeprom.bin --cycles 100000      # 只有燒錄檔、沒有原始碼也能跑
 ```
 
+驗證燒錄檔（不執行，不一致時結束碼為 1，可放進燒錄前後的檢查腳本）：
+
+```bash
+asmsim prog.asm --verify-eeprom prog.eeprom.bin
+```
+
+六個區域**逐 byte** 比對（包含沒被任何指令用到的 byte），列出每個不同 byte 的區域、位址、應該是與燒錄檔裡的值；再逐條列出解出的指令和應該的指令。旁邊的 `.eeprom.json` 也會檢查（區域位址或描述表位移不同會列為問題）。
+
 `--decoded` 的每一行：PC、EEPROM 位址、byte、解出的指令、原始碼；和組譯器產生的不一樣時前面標 `!!`，下一行寫出原本應該是什麼。MOV 讀 Const Pool 時，後面附上實際讀到的常數 byte（`; const 34 12`）。
 
 ## 6. IDE
 
+- **Build → 產生／驗證／反組譯 EEPROM 燒錄檔…**：開啟「EEPROM」視窗，三頁：
+  - **產生燒錄檔**：列出最新建置的六個區域（位址暫存器、起始位址、大小、結束位址）、用掉多少 EEPROM；選擇輸出位置後寫出 `.eeprom.bin`／`.hex`／`.json`。原始碼在建置後有修改時會提醒先重新建置。
+  - **驗證燒錄檔**：選一份燒錄檔，和最新建置的程式比對（同命令列的 `--verify-eeprom`）。上方顯示通過／不通過；表格先列不一致的指令（應該是／燒錄檔裡是／原始碼），再列不同的 byte。雙擊指令那一行跳到原始碼。
+  - **反組譯燒錄檔**：選一份燒錄檔（旁邊要有 `.eeprom.json`），反推出 Main 和 Peri 的組合語言顯示在視窗裡，可選擇加上位址與 byte 註解；「另存為 .asm 並開啟」存檔後在編輯器打開。反組譯的結果再組譯，會得到同一份燒錄檔。
 - **建置**：成功時除了 `.bin`，也寫出 `.eeprom.bin`／`.eeprom.hex`／`.eeprom.json`（照專案 profile 的 `eeprom_*` 位址），可直接燒錄。
 - **除錯**：預設就是 Decoder 從 EEPROM 取指令（本次建置產生的映像）。
 - **Debug → 從 EEPROM 映像除錯…**：選一份燒錄檔（例如從實際晶片讀回的），Decoder 改從那份 byte 取指令，原始碼只用來對照。**Debug → 使用建置產生的 EEPROM 除錯** 換回來。

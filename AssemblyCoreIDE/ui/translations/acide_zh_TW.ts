@@ -995,6 +995,227 @@ The assembler produced:  %2</source>
     </message>
 </context>
 <context>
+    <name>EepromTool</name>
+    <message>
+        <source>EEPROM</source>
+        <translation>EEPROM</translation>
+    </message>
+    <message>
+        <source>Build the image</source>
+        <translation>產生燒錄檔</translation>
+    </message>
+    <message>
+        <source>Verify an image</source>
+        <translation>驗證燒錄檔</translation>
+    </message>
+    <message>
+        <source>Disassemble an image</source>
+        <translation>反組譯燒錄檔</translation>
+    </message>
+    <message>
+        <source>Region</source>
+        <translation>區域</translation>
+    </message>
+    <message>
+        <source>Register</source>
+        <translation>位址暫存器</translation>
+    </message>
+    <message>
+        <source>Start</source>
+        <translation>起始位址</translation>
+    </message>
+    <message>
+        <source>Bytes</source>
+        <translation>大小（byte）</translation>
+    </message>
+    <message>
+        <source>End</source>
+        <translation>結束位址</translation>
+    </message>
+    <message>
+        <source>The start addresses come from the profile of the project (eeprom_main_code_addr ... eeprom_peri_devmap_addr; -1 = right after the region before it).</source>
+        <translation>起始位址來自專案的 profile（eeprom_main_code_addr … eeprom_peri_devmap_addr；-1 = 接在前一個區域之後）。</translation>
+    </message>
+    <message>
+        <source>Write to:</source>
+        <translation>寫到：</translation>
+    </message>
+    <message>
+        <source>PREFIX.eeprom.bin</source>
+        <translation>PREFIX.eeprom.bin</translation>
+    </message>
+    <message>
+        <source>Browse...</source>
+        <translation>瀏覽…</translation>
+    </message>
+    <message>
+        <source>Build the program</source>
+        <translation>建置程式</translation>
+    </message>
+    <message>
+        <source>Write the EEPROM image</source>
+        <translation>產生燒錄檔</translation>
+    </message>
+    <message>
+        <source>EEPROM images (*.eeprom.bin)</source>
+        <translation>EEPROM 燒錄檔 (*.eeprom.bin)</translation>
+    </message>
+    <message>
+        <source>Nothing has been built yet: build the program first.</source>
+        <translation>還沒有建置：請先建置程式。</translation>
+    </message>
+    <message>
+        <source>The program has errors: fix them, then build again.</source>
+        <translation>程式有錯誤：修正後再建置。</translation>
+    </message>
+    <message>
+        <source>The program does not fit the EEPROM: %1</source>
+        <translation>程式放不進 EEPROM：%1</translation>
+    </message>
+    <message>
+        <source>%1 of %2 bytes of the EEPROM used · I2C address 0x%3 · %4-byte memory addresses%5</source>
+        <translation>EEPROM 使用 %1 / %2 byte · I2C 位址 0x%3 · 記憶體位址 %4 byte%5</translation>
+    </message>
+    <message>
+        <source>
+The sources changed since this build: build the program again to write what they say now.</source>
+        <translation>
+原始碼在這次建置之後有修改：請重新建置，燒錄檔才會是目前的內容。</translation>
+    </message>
+    <message>
+        <source>Written:</source>
+        <translation>已寫出：</translation>
+    </message>
+    <message>
+        <source>Could not write every file:</source>
+        <translation>有檔案寫不出來：</translation>
+    </message>
+    <message>
+        <source>  wrote %1</source>
+        <translation>  已寫出 %1</translation>
+    </message>
+    <message>
+        <source>A burned image (e.g. read back from the board) against the newest build of the program: every byte of the six regions, then every instruction as the decoders read it.</source>
+        <translation>把燒錄檔（例如從板子讀回來的）和最新建置的程式比對：六個區域逐 byte 比對，再逐條比對 Decoder 解出的指令。</translation>
+    </message>
+    <message>
+        <source>the image (PREFIX.eeprom.bin; its .eeprom.json next to it is checked too)</source>
+        <translation>燒錄檔（PREFIX.eeprom.bin；旁邊的 .eeprom.json 也會一起檢查）</translation>
+    </message>
+    <message>
+        <source>Verify</source>
+        <translation>驗證</translation>
+    </message>
+    <message>
+        <source>What</source>
+        <translation>類型</translation>
+    </message>
+    <message>
+        <source>Where</source>
+        <translation>位置</translation>
+    </message>
+    <message>
+        <source>Should be</source>
+        <translation>應該是</translation>
+    </message>
+    <message>
+        <source>In the image</source>
+        <translation>燒錄檔裡是</translation>
+    </message>
+    <message>
+        <source>Source</source>
+        <translation>原始碼</translation>
+    </message>
+    <message>
+        <source>Build the program first: the image is compared with it.</source>
+        <translation>請先建置程式：燒錄檔要和它比對。</translation>
+    </message>
+    <message>
+        <source>Cannot read %1</source>
+        <translation>無法讀取 %1</translation>
+    </message>
+    <message>
+        <source>✔ The image is what the program burns: %1 bytes compared, none differs, every instruction decodes to its source.</source>
+        <translation>✔ 燒錄檔和程式一致：比對了 %1 byte，沒有不同，每條指令都解回原始碼。</translation>
+    </message>
+    <message>
+        <source>✘ The image is NOT what the program burns: %1 of %2 bytes differ, %3 instruction(s) decode to something else.</source>
+        <translation>✘ 燒錄檔和程式不一致：%2 byte 中有 %1 byte 不同，%3 條指令解出的內容不一樣。</translation>
+    </message>
+    <message>
+        <source>(no map next to the image: the regions are taken where the program places them)</source>
+        <translation>（燒錄檔旁邊沒有對照表：區域位址以程式的設定為準）</translation>
+    </message>
+    <message>
+        <source>Problem: %1</source>
+        <translation>問題：%1</translation>
+    </message>
+    <message>
+        <source>instruction</source>
+        <translation>指令</translation>
+    </message>
+    <message>
+        <source>byte</source>
+        <translation>byte</translation>
+    </message>
+    <message>
+        <source>(the image has ended)</source>
+        <translation>（燒錄檔已結束）</translation>
+    </message>
+    <message>
+        <source>A burned image back to assembler source: the code, descriptor tables and const pool / DeviceMap of each domain are read from the regions of its map.</source>
+        <translation>把燒錄檔反推回組合語言：依對照表的區域位址，讀出各 domain 的程式碼、描述表與 Const Pool／DeviceMap。</translation>
+    </message>
+    <message>
+        <source>the image (PREFIX.eeprom.bin with its .eeprom.json)</source>
+        <translation>燒錄檔（PREFIX.eeprom.bin，旁邊要有 .eeprom.json）</translation>
+    </message>
+    <message>
+        <source>Disassemble</source>
+        <translation>反組譯</translation>
+    </message>
+    <message>
+        <source>addresses and bytes as comments</source>
+        <translation>加上位址與 byte 註解</translation>
+    </message>
+    <message>
+        <source>Save as .asm and open it...</source>
+        <translation>另存為 .asm 並開啟…</translation>
+    </message>
+    <message>
+        <source>Save the disassembly</source>
+        <translation>儲存反組譯結果</translation>
+    </message>
+    <message>
+        <source>Assembler source (*.asm)</source>
+        <translation>組合語言 (*.asm)</translation>
+    </message>
+    <message>
+        <source>Cannot write %1</source>
+        <translation>無法寫入 %1</translation>
+    </message>
+    <message>
+        <source>Its map %1 cannot be read%2: without it the regions are not known (asmc --eeprom and the build write it next to the image).</source>
+        <translation>無法讀取對照表 %1%2：沒有它就不知道各區域在哪裡（asmc --eeprom 和建置都會把它寫在燒錄檔旁邊）。</translation>
+    </message>
+    <message>
+        <source>Main: %1 bytes of code at %2 · Peri: %3 bytes of code at %4</source>
+        <translation>Main：程式碼 %1 byte，位於 %2 · Peri：程式碼 %3 byte，位於 %4</translation>
+    </message>
+    <message>
+        <source>Every instruction decoded cleanly.</source>
+        <translation>每條指令都正確解碼。</translation>
+    </message>
+    <message>
+        <source>An EEPROM image</source>
+        <translation>EEPROM 燒錄檔</translation>
+    </message>
+    <message>
+        <source>EEPROM images (*.eeprom.bin);;All files (*)</source>
+        <translation>EEPROM 燒錄檔 (*.eeprom.bin);;所有檔案 (*)</translation>
+    </message>
+</context>
+<context>
     <name>EventModel</name>
     <message>
         <source>Cycle</source>
@@ -3685,6 +3906,18 @@ An IDE for the Sensor Micro-Sequencer ISA, built on the AssemblyCore assembler.<
     <message>
         <source>The decoders fetch from the EEPROM image of the newest build (from the next start)</source>
         <translation>Decoder 改從最新建置產生的 EEPROM 映像取指令（下次開始除錯時生效）</translation>
+    </message>
+    <message>
+        <source>Build the EEPROM Image...</source>
+        <translation>產生 EEPROM 燒錄檔…</translation>
+    </message>
+    <message>
+        <source>Verify an EEPROM Image...</source>
+        <translation>驗證 EEPROM 燒錄檔…</translation>
+    </message>
+    <message>
+        <source>Disassemble an EEPROM Image...</source>
+        <translation>反組譯 EEPROM 燒錄檔…</translation>
     </message>
 </context>
 <context>

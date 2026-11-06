@@ -459,6 +459,49 @@ static void t_eeprom() {
 }
 
 // The decoders read every instruction from the I2C EEPROM before they execute it (fetch.read_mode, the hardware default: sequential).
+// Checking a burned EEPROM image against the program (verifyEepromImage, asmsim --verify-eeprom).
+static void t_verify_eeprom() {
+    section("verifying a burned EEPROM image against the program");
+    const std::string prog = std::string(kDefs) + ".main\ns: MOV CONST(0x1234, 2) -> MAIN_SCRATCHPAD[0..1]\n EXEC_CSR WRITE8 MARK, 1\nh: JMP h\n.peri\np: JMP p\n";
+    Result r = assemble1(prog);
+    check(r.ok, "(the program assembles)", diags(r));
+    if (!r.ok) return;
+    SimConfig cfg;
+    std::vector<uint8_t> eep;
+    EepromMap map;
+    std::string err;
+    buildEeprom(r, cfg.profile, eep, map, err);
+    {
+        const EepromVerifyReport rep = verifyEepromImage(r, cfg, eep, &map);
+        check(rep.ok && rep.diffs.empty() && rep.instructions.empty() && rep.bytesCompared == (uint32_t)eep.size(), "the image the program burns: every byte of the six regions compared, nothing differs",
+              std::to_string(rep.bytesCompared));
+    }
+    {   // one bit in a descriptor every instruction of the program uses
+        std::vector<uint8_t> bad = eep;
+        bad[map.region[ER_MAIN_CONST].addr] ^= 0x01;
+        const EepromVerifyReport rep = verifyEepromImage(r, cfg, bad, &map);
+        check(!rep.ok && rep.diffs.size() == 1 && rep.diffs[0].region == ER_MAIN_CONST && rep.diffs[0].expected == eep[map.region[ER_MAIN_CONST].addr],
+              "a changed constant: one byte of main.const differs, with its address and both values");
+        check(rep.instructions.size() == 1 && rep.instructions[0].text.find("MAIN_CONST_POOL") != std::string::npos, "...and the MOV that reads it is listed (decoded vs what it should be)");
+    }
+    {   // a byte no instruction reads: the instruction-level comparison cannot see it, the byte comparison does
+        std::vector<uint8_t> bad = eep;
+        const uint32_t last = map.region[ER_PERI_DEVMAP].addr;          // Peri's DeviceMap: nothing in this program uses it
+        bad[last] ^= 0xFF;
+        const EepromVerifyReport rep = verifyEepromImage(r, cfg, bad, &map);
+        check(!rep.ok && rep.diffs.size() == 1 && rep.diffs[0].region == ER_PERI_DEVMAP && rep.instructions.empty(), "a byte no instruction reads (the DeviceMap here) is found too");
+    }
+    {   // too short, and a map that places a region elsewhere
+        std::vector<uint8_t> shortImg(eep.begin(), eep.end() - 2);
+        const EepromVerifyReport rep = verifyEepromImage(r, cfg, shortImg, &map);
+        check(!rep.ok && rep.diffs.size() == 2 && rep.diffs[0].missing && !rep.problems.empty(), "an image that ends too early: the missing bytes and a problem saying so");
+        EepromMap other = map;
+        other.region[ER_PERI_CODE].addr += 0x100;
+        const EepromVerifyReport r2 = verifyEepromImage(r, cfg, eep, &other);
+        check(!r2.ok && r2.diffs.empty() && r2.problems.size() == 1 && r2.problems[0].find("peri.code") == 0, "its map places a region elsewhere: reported (the bytes themselves are right)", r2.problems.empty() ? "" : r2.problems[0]);
+    }
+}
+
 static void t_fetch_timing() {
     section("fetching from the I2C EEPROM: what an instruction reads, how long it takes, the shared bus");
     // 27 MHz / 400 kHz: 607.5 ISA cycles a byte phase; a random read of N bytes is 2 + 2 (address bytes) + N phases, plus 2 cycles a transaction
@@ -1571,6 +1614,7 @@ int main() {
     t_timing();
     t_eeprom();
     t_fetch_timing();
+    t_verify_eeprom();
     t_peri_units();
     t_main_units();
     t_debug();

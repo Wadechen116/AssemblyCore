@@ -191,6 +191,20 @@ struct DecodedLine {
     std::vector<uint32_t> fetchBytes;
     uint64_t fetchCycles = 0;         // what reading them over the I2C bus takes with the parameters now (0 with fetch.read_mode = instant)
 };
+// Checking a burned EEPROM image against the program it should hold (verifyEepromImage).
+struct EepromByteDiff {
+    int region = -1;                  // EepromRegionId
+    uint32_t addr = 0;                // EEPROM byte address
+    uint8_t expected = 0, actual = 0;
+    bool missing = false;             // the image ends before this byte
+};
+struct EepromVerifyReport {
+    bool ok = false;                  // every byte of the six regions is what the program burns, and the map agrees
+    std::vector<std::string> problems;        // what is wrong besides bytes (the map of the image places a region elsewhere, the program does not fit ...)
+    std::vector<EepromByteDiff> diffs;        // every differing byte of the six regions (also the ones no instruction reads)
+    uint32_t bytesCompared = 0;
+    std::vector<DecodedLine> instructions;    // the instructions that do not decode to what the program says (what the decoder makes of the image)
+};
 struct CallFrame {
     std::string proc;
     SrcLoc callSite;
@@ -322,6 +336,11 @@ using ScenarioCommand = std::function<bool(Simulator& sim, const std::vector<std
 // A scenario is a text script (docs/SIM.md): run / step / break / inject / expect / dump / log ...
 // `extra` adds commands (lower-case names); a built-in command of the same name wins.
 ScenarioResult runScenario(Simulator& sim, const std::string& script, const std::map<std::string, ScenarioCommand>* extra = nullptr);
+
+// Compares a burned EEPROM image with the one `program` burns (placed by cfg.profile's eeprom_* addresses): byte by byte over the six regions,
+// then instruction by instruction through the decoders. `imageMap`, when given, is the map that came with the image: a region it places
+// elsewhere is reported. The image is not run.
+EepromVerifyReport verifyEepromImage(const Result& program, const SimConfig& cfg, const std::vector<uint8_t>& image, const EepromMap* imageMap = nullptr);
 
 }  // namespace sim
 }  // namespace asmcore

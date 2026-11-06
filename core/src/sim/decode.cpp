@@ -205,5 +205,47 @@ std::vector<DecodedLine> Simulator::decodedProgram(Domain d) const {
     return v;
 }
 
+EepromVerifyReport verifyEepromImage(const Result& program, const SimConfig& cfgIn, const std::vector<uint8_t>& image, const EepromMap* imageMap) {
+    EepromVerifyReport rep;
+    std::vector<uint8_t> want;
+    EepromMap map;
+    std::string err;
+    if (!buildEeprom(program, cfgIn.profile, want, map, err)) { rep.problems.push_back("the program's EEPROM image cannot be made: " + err); return rep; }
+    if (imageMap) {                                                         // the map that came with the image: does it place the regions where the program does?
+        for (int i = 0; i < ER_COUNT; i++) {
+            const EepromRegion &a = map.region[i], &b = imageMap->region[i];
+            if (a.addr != b.addr || a.size != b.size)
+                rep.problems.push_back(std::string(eepromRegionName(i)) + ": the image's map has it at 0x" + [&] { char t[16]; std::snprintf(t, sizeof t, "%04X", b.addr); return std::string(t); }() +
+                                       ", " + std::to_string(b.size) + " bytes; the program needs 0x" + [&] { char t[16]; std::snprintf(t, sizeof t, "%04X", a.addr); return std::string(t); }() + ", " + std::to_string(a.size) + " bytes");
+        }
+        for (int d = 0; d < 2; d++)
+            if (imageMap->present[d] && map.present[d] && imageMap->layout[d] != map.layout[d]) rep.problems.push_back(std::string(d == 0 ? "Main" : "Peri") + ": the image's map has another ImageLayout (descriptor table offsets)");
+    }
+    for (int i = 0; i < ER_COUNT; i++)
+        for (uint32_t k = 0; k < map.region[i].size; k++) {
+            const uint32_t a = map.region[i].addr + k;
+            rep.bytesCompared++;
+            const uint8_t w = want[a];
+            if (a >= image.size()) { rep.diffs.push_back({i, a, w, (uint8_t)map.fill, true}); continue; }
+            if (image[a] != w) rep.diffs.push_back({i, a, w, image[a], false});
+        }
+    {   // what the decoders make of it, instruction by instruction (the regions where the program places them)
+        SimConfig c = cfgIn;
+        c.eepromImage = image;
+        c.eepromMap = map;
+        std::string e;
+        c.params.set("fetch.source", "eeprom", e);
+        c.params.set("fetch.read_mode", "instant", e);
+        Simulator sim(program, c);
+        for (Domain d : {Domain::Main, Domain::Peri})
+            for (const DecodedLine& L : sim.decodedProgram(d)) if (!L.matches || !L.valid) rep.instructions.push_back(L);
+    }
+    bool missing = false;
+    for (const EepromByteDiff& x : rep.diffs) missing = missing || x.missing;
+    if (missing) rep.problems.push_back("the image ends at " + std::to_string(image.size()) + " bytes: the program needs " + std::to_string(want.size()));
+    rep.ok = rep.problems.empty() && rep.diffs.empty() && rep.instructions.empty();
+    return rep;
+}
+
 }  // namespace sim
 }  // namespace asmcore
