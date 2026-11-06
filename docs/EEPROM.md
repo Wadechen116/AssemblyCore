@@ -77,7 +77,7 @@ asmsim --eeprom prog.eeprom.bin --cycles 100000      # 只有燒錄檔、沒有�
 | `EXEC_CSR WRITE8` | 2（含內嵌 byte）+ 2 | 2 次，7,294 週期 | 4 次，12,160 週期 |
 | `MOV CONST(…, 2)` | 1 + 4 + 2 | 3 次，11,549 週期 | 7 次，21,280 週期 |
 
-**一條匯流排**：Main 取指令、Peri 取指令、Peri 的 `EXEC_XFER` 共用同一個 I2C master。先到先用；同一週期同時要用時 Main 先，另一個等（時間軸標「等待共用資源：I2C 匯流排」）。`EXEC_XFER` 從發出到傳輸結束都佔著匯流排。
+**一條匯流排**：Main 取指令、Peri 取指令、Peri 的 `EXEC_XFER` 共用同一個 I2C master。先到先用；同一週期同時要用時 **Main 先**，另一個等（時間軸標「等待共用資源：I2C 匯流排」）。這是匯流排自己的固定規則，**不受 `sim.tie_order` 影響**（把 `sim.tie_order` 改成 `peri_first` 也一樣是 Main 先）。`EXEC_XFER` 從發出到傳輸結束都佔著匯流排。
 
 Decoder 解碼面板的「取指令週期」欄顯示每條指令讀 EEPROM 要多少週期；`asmsim --decoded` 也列出。
 

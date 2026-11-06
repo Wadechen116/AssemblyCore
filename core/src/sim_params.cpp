@@ -82,7 +82,7 @@ std::vector<ParamDef> build() {
     add("sim.speed", "Simulator pace", "ISA cycles per second", 1000, 0, 1000000000, "how fast the IDE lets the simulator run in real time, so that it can be watched: 20 to 100 is slow enough to follow instruction by instruction, 1000 shows the two lanes moving, 0 is full speed. It never changes what the program does or when (the Main and Peri timers do that), only how fast the clock on your screen goes. It can be changed while the simulator runs", "");
 
     // ---- scheduling
-    choice("sim.tie_order", "Scheduling", {"main_first", "peri_first"}, 0, "who goes first when both sequencers are ready in the same cycle (timed events always come before both)", "two programs that touch the same CSR in the same cycle", true);
+    choice("sim.tie_order", "Scheduling", {"main_first", "peri_first"}, 0, "who goes first when both sequencers are ready in the same cycle (timed events always come before both). Shared resources with a rule of their own are not decided here: the I2C bus is always Main first, the CSR arbiter and the Status Flag unit follow csr.arbiter_policy / flag.arbiter_policy", "two programs that touch the same CSR in the same cycle", true);
     choice("sim.unmapped_csr", "Scheduling", {"ram", "fault"}, 0, "an EXEC_CSR to an address the environment does not define: behaves as RAM, or faults", "", true);
     choice("sim.fault_stops", "Scheduling", {"domain", "all"}, 0, "a fault stops only its own sequencer, or both", "", true);
 
@@ -92,7 +92,7 @@ std::vector<ParamDef> build() {
            "", true);
 
     choice("fetch.read_mode", "Program store", {"sequential", "per_byte", "instant"}, 0,
-           "how a decoder reads an instruction from the I2C EEPROM before it executes it (fetch.source = eeprom). sequential (read A): one transaction per contiguous piece -- the code bytes, each descriptor, the DeviceMap entry, the constants -- each a random read of N bytes: address+W, the memory address (eeprom_address_bytes), address+R, N data bytes. per_byte (read B): every byte its own random read. instant: no bus time (the model before the EEPROM). The decoders and EXEC_XFER share the one I2C bus: first come first served, Main first when both arrive together",
+           "how a decoder reads an instruction from the I2C EEPROM before it executes it (fetch.source = eeprom). sequential (read A): one transaction per contiguous piece -- the code bytes, each descriptor, the DeviceMap entry, the constants -- each a random read of N bytes: address+W, the memory address (eeprom_address_bytes), address+R, N data bytes. per_byte (read B): every byte its own random read. instant: no bus time (the model before the EEPROM). The decoders and EXEC_XFER share the one I2C bus: first come first served, Main first when both arrive together (a fixed rule of the hardware, whatever sim.tie_order says)",
            "an instruction of each kind alone in a loop: the cycles per instruction minus its execution, against the number of bytes it reads", true);
     add("fetch.transaction_overhead", "Program store", "ISA cycles", 2, 0, 100000, "extra cycles of every EEPROM read transaction of a decoder (like latency.xfer_issue for EXEC_XFER)", "a one-byte instruction: its fetch time minus the bus time of the transaction");
 

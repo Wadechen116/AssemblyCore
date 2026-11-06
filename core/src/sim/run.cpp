@@ -122,6 +122,15 @@ bool Simulator::Impl::nextIsCsr(int domain) const {
     return ((uint8_t)img[domain].u8(pc) >> 6) == 0;                          // opcode 0 is EXEC_CSR in both decoders
 }
 
+// What a decoder does next needs the I2C bus: reading its instruction from the EEPROM, or (Peri) an EXEC_XFER that has been read already.
+bool Simulator::Impl::wantsBus(int domain) const {
+    if (!fetchTimed()) return false;
+    const uint32_t pc = domain == 0 ? st.m.pc : st.p.pc;
+    if (!img[domain].present || pc >= img[domain].codeLimit) return false;
+    if (!st.fetched[domain]) return true;
+    return domain == 1 && ((uint8_t)img[1].u8(pc) >> 6) == 3;
+}
+
 bool Simulator::Impl::nextReadsFlag(int domain) const {
     const uint32_t pc = domain == 0 ? st.m.pc : st.p.pc;
     if (!img[domain].present || pc >= img[domain].codeLimit) return false;
@@ -209,7 +218,9 @@ Cycle Simulator::Impl::nextTime(int& who) const {
     who = tq == kNever ? -1 : 2;
     auto consider = [&](Cycle t, int w) { if (t < best || (t == best && who == -1 && t != kNever)) { best = t; who = w; } };
     bool mainFirst = tieMainFirst;
-    if (arbPolicy != 0 && tm == tp && tm != kNever && nextIsCsr(0) && nextIsCsr(1))                  // both want the CSR bus in the same cycle: the arbiter chooses
+    if (tm == tp && tm != kNever && wantsBus(0) && wantsBus(1))                                      // both want the I2C bus in the same cycle: Main first, always
+        mainFirst = true;                                                                             // (the hardware's rule, not sim.tie_order)
+    else if (arbPolicy != 0 && tm == tp && tm != kNever && nextIsCsr(0) && nextIsCsr(1))                  // both want the CSR bus in the same cycle: the arbiter chooses
         mainFirst = arbPolicy == 1 ? true : arbPolicy == 2 ? false : st.arb.last != 0;                // round robin: the one that did not have it last
     else if (flagPolicy != 0 && tm == tp && tm != kNever && nextReadsFlag(0) && nextReadsFlag(1))   // both BRs want the Status Flag unit in the same cycle
         mainFirst = flagPolicy == 1 ? true : flagPolicy == 2 ? false : st.flag.last != 0;

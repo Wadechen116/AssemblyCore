@@ -268,6 +268,7 @@ struct Simulator::Impl : public ExprBinder, public ExprEnv, public ActionContext
     bool evalCondition(int domain, const Expr& e) { viewDelay_ = (Cycle)sampleDelay[domain]; const bool r = evalBool(e); viewDelay_ = 0; return r; }
     bool nextIsCsr(int domain) const;                  // the instruction a decoder is about to issue is an EXEC_CSR
     bool nextReadsFlag(int domain) const;              // ... is a BR whose condition reads the Status Flag unit
+    bool wantsBus(int domain) const;                   // ... needs the I2C bus (an EEPROM fetch, or Peri's EXEC_XFER)
     Cycle claim(State::SharedRes& r, int domain, int penalty);      // 0: the resource is the decoder's now; else the cycle it has to wait for
     bool gate(int domain, uint32_t pc, bool csr, bool xfer, bool flag, bool bus = false);       // true: a shared resource is taken, the instruction waits (and tries again)
     void occupy(int domain, bool csr, bool xfer, bool flag, int latency);

@@ -516,6 +516,36 @@ static void t_fetch_timing() {
         check(rr.now == 2 * one && w->peri >= 1, "both want the bus at cycle 0: Main reads first; Peri waits, and executes after its own read (" + std::to_string(2 * one) + ")", std::to_string(rr.now) + " waits " + std::to_string(w->peri));
         check(ev(sim, "csr[0x50]") == 1 && w->fetches >= 2, "Main's CSR was written long before");
     }
+    {   // the bus has a rule of its own: Main first when both want it in the same cycle, whatever sim.tie_order says
+        const std::string two = std::string(kDefs) + ".csr B = 0x51\n.main\ns: EXEC_CSR WRITE8 MARK, 1\nh: JMP h\n.peri\np: EXEC_CSR WRITE8 B, 2\nq: JMP q\n";
+        Result r2 = assemble1(two);
+        const Cycle one = (Cycle)(txn(2) + txn(2));
+        SimConfig c;
+        std::string e;
+        c.params.set("sim.tie_order", "peri_first", e);
+        Simulator sim(r2, c);
+        RunLimits l; l.maxCycles = 100000; l.stopOnIdle = false; l.untilExpr = "csr[0x50] == 1";
+        const Cycle mainAt = sim.run(l).now;
+        l.untilExpr = "csr[0x51] == 2";
+        const Cycle periAt = sim.run(l).now;
+        check(mainAt == one && periAt == 2 * one, "sim.tie_order = peri_first: still Main reads first on the I2C bus (Main " + std::to_string(one) + ", Peri " + std::to_string(2 * one) + ")",
+              std::to_string(mainAt) + " / " + std::to_string(periAt));
+        // ...while what does not use the bus still follows sim.tie_order: both write the same CSR in the same cycle, the later write stays
+        const std::string same = std::string(kDefs) + ".main\ns: EXEC_CSR WRITE8 MARK, 1\nh: JMP h\n.peri\np: EXEC_CSR WRITE8 MARK, 2\nq: JMP q\n";
+        Result r3 = assemble1(same);
+        auto lastWriter = [&](const char* tie) {
+            SimConfig k;
+            std::string er;
+            k.params.set("fetch.read_mode", "instant", er);
+            k.params.set("csr.arbiter_policy", "none", er);
+            k.params.set("sim.tie_order", tie, er);
+            Simulator s3(r3, k);
+            RunLimits l3; l3.maxCycles = 1; l3.stopOnIdle = false;
+            s3.run(l3);
+            return ev(s3, "csr[0x50]");
+        };
+        check(lastWriter("peri_first") == 1 && lastWriter("main_first") == 2, "without the bus (instant fetch, no CSR arbiter) the tie follows sim.tie_order: peri_first lets Peri write first, Main's write stays");
+    }
     {   // EXEC_XFER holds the bus while it transfers: a decoder that wants to read then waits
         const std::string x = std::string(kDefs) + ".main\ns: ALU ADD unsigned\n JMP s\n.peri\np: EXEC_XFER READ dev=0, len=6, ptr=0, ext=[0x10]\nq: JMP q\n";
         Result r3 = assemble1(x);
