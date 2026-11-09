@@ -8,6 +8,6 @@ scenario = profile_demo.scn
 call_model = inline
 dataflow = warn
 wcet = start:dispatch
-output_dir = out
+output_dir = out_sample09
 sample_expect = ok
 sample_models = inline softret

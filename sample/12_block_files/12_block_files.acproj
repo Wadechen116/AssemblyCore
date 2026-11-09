@@ -6,5 +6,5 @@ scenario = hello.scn
 blocks = hello.acblk
 call_model = inline
 dataflow = warn
-output_dir = out
+output_dir = out_sample12
 sample_expect = ok

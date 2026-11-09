@@ -9,5 +9,5 @@ scenario = fault_csr.scn
 scenario = fault_buf.scn
 call_model = inline
 dataflow = warn
-output_dir = out
+output_dir = out_sample08
 sample_expect = ok

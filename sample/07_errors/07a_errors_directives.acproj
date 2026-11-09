@@ -4,6 +4,6 @@ source = a_directives.asm
 include_dir = ../common
 call_model = inline
 dataflow = warn
-output_dir = out
+output_dir = out_sample07a
 sample_expect = fail
 sample_errors = E104 E105 E106

@@ -6,6 +6,6 @@ scenario = call_models.scn
 call_model = inline
 dataflow = warn
 wcet = start:done
-output_dir = out
+output_dir = out_sample03
 sample_expect = ok
 sample_models = inline softret

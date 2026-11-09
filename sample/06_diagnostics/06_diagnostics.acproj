@@ -3,5 +3,5 @@ name = 06_diagnostics
 source = warnings.asm
 call_model = inline
 dataflow = warn
-output_dir = out
+output_dir = out_sample06
 sample_expect = ok

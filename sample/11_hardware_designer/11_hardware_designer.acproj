@@ -8,5 +8,5 @@ environment = board.gen.env.cfg
 scenario = imu.scn
 call_model = inline
 dataflow = warn
-output_dir = out
+output_dir = out_sample11
 sample_expect = ok

@@ -5,5 +5,5 @@ include_dir = ../common
 blocks = demo.acblk
 call_model = inline
 dataflow = warn
-output_dir = out
+output_dir = out_sample13
 sample_expect = ok

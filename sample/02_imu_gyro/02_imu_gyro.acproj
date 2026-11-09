@@ -6,5 +6,5 @@ environment = imu_env.cfg
 scenario = imu_gyro.scn
 call_model = inline
 dataflow = warn
-output_dir = out
+output_dir = out_sample02
 sample_expect = ok

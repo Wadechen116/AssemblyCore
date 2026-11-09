@@ -5,5 +5,5 @@ include_dir = ../common
 scenario = alu_cascade.scn
 call_model = inline
 dataflow = warn
-output_dir = out
+output_dir = out_sample04
 sample_expect = ok

@@ -6,5 +6,5 @@ environment = events_env.cfg
 scenario = events.scn
 call_model = inline
 dataflow = warn
-output_dir = out
+output_dir = out_sample05
 sample_expect = ok

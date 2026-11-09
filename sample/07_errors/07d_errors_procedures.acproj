@@ -4,6 +4,6 @@ source = d_procedures.asm
 include_dir = ../common
 call_model = inline
 dataflow = warn
-output_dir = out
+output_dir = out_sample07d
 sample_expect = fail
 sample_errors = E305
