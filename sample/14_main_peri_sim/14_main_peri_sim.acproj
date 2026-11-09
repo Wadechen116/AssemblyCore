@@ -7,5 +7,5 @@ scenario = main_peri.scn
 simparams = main_peri.simparams
 call_model = inline
 dataflow = warn
-output_dir = out
+output_dir = out_sample14
 sample_expect = ok

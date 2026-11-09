@@ -2,6 +2,7 @@ build/
 dist/
 *.user
 sample/*/out/
+sample/*/out_*/
 *.autosave
 # vendor specification files: not ours to publish (only the derived notes in docs/ are tracked)
 docs/MicroISA_Spec_v31.pdf
