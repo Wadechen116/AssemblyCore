@@ -243,6 +243,8 @@ public:
     // ---- running
     RunResult run(const RunLimits& limits);
     RunResult step(Domain d);                               // that domain's next instruction (anything due before it happens first)
+    // "Set next statement": the domain goes on at `pc` (inside its code), from now, without its fault. False if pc is outside the code.
+    bool setPc(Domain d, uint32_t pc);
     RunResult stepOver(Domain d);                           // like step, but a CALL is run to its return
     RunResult stepOut(Domain d);                            // run until the current procedure returns (outside any procedure: like step)
     // Polled by run / step / stepOver / stepOut in addition to RunLimits::cancel; lets another thread interrupt any of them.

@@ -274,6 +274,7 @@ RunResult Simulator::Impl::runLoop(const RunLimits& lim, int stepDomain, bool, u
             if (lim.stopOnIdle || !timedPending()) { rr.reason = StopReason::Idle; rr.detail = "both domains halted or faulted"; break; }
         }
         int who;
+        bool ran = false;                                                    // a sequencer executed an instruction in this round
         Cycle t = nextTime(who);
         if (who < 0) { rr.reason = StopReason::Idle; rr.detail = "nothing left to run"; break; }
         if (lim.maxCycles && t - start > lim.maxCycles) { st.now = start + lim.maxCycles; rr.reason = StopReason::CycleLimit; break; }
@@ -300,11 +301,15 @@ RunResult Simulator::Impl::runLoop(const RunLimits& lim, int stepDomain, bool, u
             }
             lastWrites.clear();
             const uint64_t instrsBefore = who == 0 ? st.m.instrs : st.p.instrs;
+            const bool stoppedBefore = who == 0 ? (st.m.halted || st.m.faulted) : (st.p.halted || st.p.faulted);
             if (who == 0) stepMain(); else stepPeri();
-            if ((who == 0 ? st.m.instrs : st.p.instrs) != instrsBefore || (who == 0 ? st.m.pc : st.p.pc) != pcBefore) st.fetched[who] = false;      // executed: the next one is fetched
-            afterInstruction(d, pcBefore);
-            executed++;
-            {
+            // did the instruction run? An attempt that found a shared resource taken (it waits and tries again) did not: it is no step, no hit
+            ran = (who == 0 ? st.m.instrs : st.p.instrs) != instrsBefore || (who == 0 ? st.m.pc : st.p.pc) != pcBefore ||
+                  (who == 0 ? (st.m.halted || st.m.faulted) : (st.p.halted || st.p.faulted)) != stoppedBefore;
+            if (ran) {
+                st.fetched[who] = false;                                             // executed: the next one is fetched
+                afterInstruction(d, pcBefore);
+                executed++;
                 std::vector<uint32_t>& h = st.hits[who];
                 if (h.size() <= pcBefore) h.resize((size_t)pcBefore + 64, 0);
                 h[pcBefore]++;
@@ -317,7 +322,7 @@ RunResult Simulator::Impl::runLoop(const RunLimits& lim, int stepDomain, bool, u
         std::string wd;
         if (evalWatches(wid, wd)) { rr.reason = StopReason::Watchpoint; rr.id = wid; rr.detail = wd; break; }
         if (until.valid() && until.eval(*this)) { rr.reason = StopReason::Condition; rr.detail = "until " + lim.untilExpr; break; }
-        if (stepDomain >= 0 && who == stepDomain) { rr.reason = StopReason::InstrLimit; rr.detail = "stepped"; break; }
+        if (stepDomain >= 0 && who == stepDomain && ran) { rr.reason = StopReason::InstrLimit; rr.detail = "stepped"; break; }
         if (lim.maxInstrs && executed >= lim.maxInstrs) { rr.reason = StopReason::InstrLimit; rr.detail = "instruction limit"; break; }
     }
     rr.now = st.now;
@@ -344,6 +349,17 @@ void Simulator::reset() { p_->resetState(); p_->skipValid = false; }
 Cycle Simulator::now() const { return p_->st.now; }
 
 RunResult Simulator::run(const RunLimits& l) { return p_->runLoop(l, -1, false, 0, 0); }
+
+bool Simulator::setPc(Domain d, uint32_t pc) {
+    Impl& I = *p_;
+    const int k = di(d);
+    if (!I.img[k].present || pc >= I.img[k].codeLimit) return false;
+    if (d == Domain::Main) { I.st.m.pc = pc; I.st.m.halted = false; I.st.m.faulted = false; I.st.m.readyAt = I.st.now; }
+    else { I.st.p.pc = pc; I.st.p.halted = false; I.st.p.faulted = false; I.st.p.readyAt = I.st.now; I.st.p.xfer.active = false; }
+    I.st.hasFault[k] = false;
+    I.st.fetched[k] = false;
+    return true;
+}
 
 RunResult Simulator::step(Domain d) {
     Impl& I = *p_;

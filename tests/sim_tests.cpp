@@ -1530,6 +1530,14 @@ static void t_params() {
         check(pen.peri >= 1 && pen.cycles >= 5, "flag.arbiter_penalty = 4: the first wait is 1 + 4 cycles", std::to_string(pen.cycles));
         a = run("ALU_CMP_TRUE", P({{"flag.arbiter_policy", "main_first"}}));
         check(a.main == 0 && a.peri == 0, "a BR on an ALU flag (ALU_CMP_TRUE) does not use the Status Flag unit");
+        {   // Step on a sequencer that waits for the Status Flag unit: it is one instruction of that sequencer, not the attempt that waited (found by the decoder cross-check)
+            Fx f(".main\nm: BR.COND MAIN_TIMER_DONE, x\n JMP m\nx: JMP x\n.peri\np: BR.IF_TIMER_DONE y\n JMP p\ny: JMP y\n", "", CallModel::Inline, nullptr);
+            const RunResult rr = f.sim->step(Domain::Peri);
+            check(rr.reason == StopReason::InstrLimit && f.sim->instructions(Domain::Peri) == 1 && f.sim->pc(Domain::Peri) == 1,
+                  "Step Peri while Main has the Status Flag unit: Peri's BR runs (after waiting), one instruction", std::to_string(f.sim->instructions(Domain::Peri)) + " / pc " + std::to_string(f.sim->pc(Domain::Peri)));
+            const std::vector<uint32_t> hits = f.sim->pcHits(Domain::Peri);
+            check(!hits.empty() && hits[0] == 1, "...and its hit count is 1, not 2 (the attempt that waited is no hit)", hits.empty() ? "" : std::to_string(hits[0]));
+        }
     }
     {   // S7: what a BR sees: the flags as they were some cycles ago
         const std::string mainProg = ".csr A = 0x50\n.main\ns: BR.COND MAIN_TIMER_DONE, go\n JMP s\ngo: EXEC_CSR WRITE8 A, 1\nh: JMP h\n";
