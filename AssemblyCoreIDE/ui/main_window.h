@@ -131,6 +131,7 @@ private:
     bool quiet_ = false;
     QStringList warnings_;
     ConnectionBag conns_;
+    int decoderA_ = 0, decoderB_ = 0;                     // the decoder's problems last said (so a new start says it again only when they change)
 };
 
 }  // namespace acide

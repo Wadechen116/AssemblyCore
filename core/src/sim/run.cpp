@@ -1,4 +1,5 @@
 // Scheduler, timed events, injection, run control, and the Simulator facade methods that are not about debugging.
+#include <set>
 #include <cctype>
 #include "../codec.h"
 #include <chrono>
@@ -349,6 +350,14 @@ void Simulator::reset() { p_->resetState(); p_->skipValid = false; }
 Cycle Simulator::now() const { return p_->st.now; }
 
 RunResult Simulator::run(const RunLimits& l) { return p_->runLoop(l, -1, false, 0, 0); }
+
+char faultClass(const std::string& code) {
+    static const std::set<std::string> a = {"fault_desc_reserved", "fault_desc_index", "fault_opcode", "fault_pc_out_of_code", "fault_cond_undefined",
+                                            "fault_peri_csr_multibyte", "fault_peri_csr_read", "fault_xfer_multibyte_write", "fault_publish_service",
+                                            "xfer_fault_reserved_bus_type"};
+    static const std::set<std::string> b = {"fault_branch_target", "fault_mov_range", "fault_mov_region", "fault_mov_overlap", "fault_range", "fault_dev_undefined"};
+    return a.count(code) ? 'A' : b.count(code) ? 'B' : 'C';
+}
 
 bool Simulator::setPc(Domain d, uint32_t pc) {
     Impl& I = *p_;

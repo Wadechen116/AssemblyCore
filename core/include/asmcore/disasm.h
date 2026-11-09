@@ -40,12 +40,24 @@ struct DecodeContext {
     std::function<bool(int table, uint32_t idx, int entryBytes, uint32_t& value)> entry;
     // The DeviceMap entry byte for EXEC_XFER.dev_sel (Peri); false if absent.
     std::function<bool(uint32_t dev, uint32_t& value)> deviceMap;
+    const Profile* profile = nullptr; // region rules of the target (same-region MOV, DeviceMap layout); nullptr = the defaults
+    uint32_t constSize = 0;           // bytes of MAIN_CONST_POOL (a MOV from it must stay inside); 0 = not known, not checked
+    // Whether a named branch condition has a definition where the program runs (the simulator: its ConditionMap with the environment file);
+    // empty = every named condition counts as defined (the disassembler alone cannot know a profile-defined one).
+    std::function<bool(int code)> conditionDefined;
 };
+// Two kinds of problem in the bytes of an instruction (docs/DISASM.md "A / B"):
+//   A  not a legal encoding: reserved bits, a table index, a reserved code ... -- it cannot be written as an instruction (valid = false, text is a comment)
+//   B  a legal encoding that breaks a rule of the spec: a MOV range outside its region, a region in the wrong direction, a branch target outside
+//      the code, a DeviceMap entry that is not there ... -- it is written as the instruction it encodes (the assembler rejects it), and the
+//      hardware faults when it executes it (which stage detects it is the target's matter). specProblem says which rule.
+// A third kind, C, is not in the bytes at all: the state when it runs (an empty result slot, an ERET outside a handler); only running finds it.
 struct DecodedInstr {
     uint32_t length = 1;
-    bool valid = true;                // false: not a legal encoding; `problem` says why and `text` is a comment
+    bool valid = true;                // false: not a legal encoding (A); `problem` says why and `text` is a comment
     std::string text;                 // assembler syntax; "{L}" stands for the label of `target`
-    std::string problem;
+    std::string problem;              // with valid: a remark (D202), not an error
+    std::string specProblem;          // B: a legal encoding against a rule of the spec ("" = none); text is the instruction
     bool branch = false;              // has a branch target
     bool uncond = false;              // never falls through (the next address is not reached from here)
     bool eret = false;                // BR.ERET: ends an event handler, but more code (another handler) may follow, so it does not mark the end of the code

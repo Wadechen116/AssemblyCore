@@ -124,6 +124,13 @@ fault（規格 15.1）：記下出事的 pc、**pc 不前進**、該 domain 停�
 descriptor 索引超出表、MOV 前置檢查失敗（不會部分寫入）、cascade 巢狀／步數不符／END 無 BEGIN、分支目標超出程式、
 Peri 的 MultiByte CSR 與 `READ8`、MultiByte WRITE、DeviceMap 項目缺失或 bus_type 保留、pc 超出程式範圍。
 
+每個錯誤碼有類別（`faultClass(code)`，見 DISASM.md「A 與 B」）：**A** byte 不是合法編碼、**B** 合法編碼但違反規格（這兩類在 byte 裡，
+解碼時就看得出來）、**C** 執行當下的狀態（例如 `fault_slot_not_valid`、`fault_bad_eret_context`）。保留的 MOV 區域代碼（9～15）報 `fault_desc_reserved`（A）。
+
+`setPc(domain, pc)`（設定下一條指令）讓該 sequencer 從 pc 繼續、清掉它的錯誤；交叉比對測試用它單獨執行每一條指令。
+`step(domain)` 是該 sequencer **真正執行**一條指令：它若在等共用資源（Status Flag 單元等），會等到輪到它、執行完才停，
+那次等待不算一步，也不算命中次數。
+
 ## 5b. 給互動工具用的介面
 
 `RunLimits::cancel` 與 `maxMillis`（失控保護）、`Simulator::setCancelHook`（讓另一個執行緒中斷 run／stepOver／stepOut）、`stepOut`、`regionSize`、`injectNow`

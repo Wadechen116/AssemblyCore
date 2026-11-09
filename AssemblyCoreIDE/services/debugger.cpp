@@ -366,7 +366,66 @@ DebugLocation Debugger::stopLocation(const SimUpdate& u) const {
     return locationOf(d, u.view->pc[d == Domain::Main ? 0 : 1]);
 }
 
+void Debugger::collectRuntimeProblems(const SimUpdate& u) {
+    std::vector<RuntimeProblem> out;
+    std::string key;
+    if (u.view && u.state != SimState::Empty) {
+        auto add = [&](RuntimeProblem p) {
+            const DebugLocation l = locationOf(p.domain, p.pc);
+            if (l.valid) { p.file = l.file; p.line = l.line; }
+            key += p.cls; key += p.code; key += std::to_string((int)p.domain) + ":" + std::to_string(p.pc) + "|";
+            out.push_back(std::move(p));
+        };
+        for (int d = 0; d < 2; d++)
+            for (const sim::DecodedLine& L : u.view->decoded[d]) {
+                const char c = L.problemClass();
+                if (!c) continue;
+                RuntimeProblem p;
+                p.cls = c;
+                p.domain = L.domain;
+                p.pc = L.pc;
+                p.code = c == 'A' ? "D201" : "D205";
+                p.msg = c == 'A' ? L.problem : L.specProblem;
+                p.instruction = L.text;
+                add(p);
+            }
+        for (int d = 0; d < 2; d++)
+            if (u.view->hasFault[d]) {
+                const sim::Fault& f = u.view->fault[d];
+                RuntimeProblem p;
+                p.cls = sim::faultClass(f.code);
+                p.fault = true;
+                p.domain = f.domain;
+                p.pc = f.pc;
+                p.code = f.code;
+                p.msg = f.msg;
+                for (const sim::DecodedLine& L : u.view->decoded[d]) if (L.pc == f.pc) p.instruction = L.text;
+                add(p);
+            }
+    }
+    if (key == runtimeKey_ && out.size() == runtime_.size()) return;
+    runtimeKey_ = key;
+    runtime_ = std::move(out);
+    runtimeProblemsChanged.fire();
+}
+
+std::vector<asmcore::Diagnostic> Debugger::runtimeDiagnosticsFor(const std::string& file) const {
+    std::vector<asmcore::Diagnostic> v;
+    for (const RuntimeProblem& p : runtime_) {
+        if (p.file != file || p.line < 1) continue;
+        asmcore::Diagnostic d;
+        d.sev = asmcore::Diagnostic::Error;
+        d.loc.file = p.file;
+        d.loc.line = p.line;
+        d.code = p.code;
+        d.msg = std::string(p.fault ? "runtime fault " : "decoder ") + p.cls + ": " + p.msg + (p.instruction.empty() ? "" : "  [" + p.instruction + "]");
+        v.push_back(d);
+    }
+    return v;
+}
+
 void Debugger::onUpdate(const SimUpdate& u) {
+    collectRuntimeProblems(u);
     if (u.state == SimState::Empty) trace_.clear();
     else if (u.rewound) trace_.truncateAfter(u.rewoundTo);                  // (the replay re-sends what is already kept)
     else { if (u.eventsReset) trace_.clear(); trace_.feed(u); }

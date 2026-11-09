@@ -41,6 +41,13 @@ DecodedInstr plain(uint32_t length, const std::string& text) {
     d.text = text;
     return d;
 }
+// B: the first rule of the spec the (legal) encoding breaks; the instruction keeps its text
+DecodedInstr& breaks(DecodedInstr& d, const std::string& rule) {
+    if (d.specProblem.empty()) d.specProblem = rule;
+    return d;
+}
+bool conditionDefined(const DecodeContext& c, int code) { return !c.conditionDefined || c.conditionDefined(code); }
+std::string targetRule(uint32_t target, uint32_t codeLimit) { return "branch target " + hx(target) + " is outside the code (" + num((int)codeLimit) + " bytes)"; }
 
 std::string regionText(int id, int off, int len) {
     const char* name = kRegions[id].name;
@@ -69,8 +76,9 @@ DecodedInstr mainCsr(const DecodeContext& c) {
     }
     codec::CsrM x = codec::unpackCsrM(d);
     if (x.op != CSRM_WRITE_SP && x.op != CSRM_READ_BUF) return invalid(2, "EXEC_CSR", "CsrMultiByte csr_op " + num(x.op) + " is reserved");
-    if (x.ptr + x.len > 32) return invalid(2, "EXEC_CSR", std::string("ptr + len exceeds ") + (x.op == CSRM_WRITE_SP ? "MAIN_SCRATCHPAD" : "MAIN_CSR_DATA_BUF"));
-    return plain(2, std::string("EXEC_CSR ") + (x.op == CSRM_WRITE_SP ? "WRITE_SP " : "READ_BUF ") + hx(((uint32_t)x.page << 8) | imm, 3) + ", len=" + num(x.len) + ", ptr=" + num(x.ptr));
+    DecodedInstr r = plain(2, std::string("EXEC_CSR ") + (x.op == CSRM_WRITE_SP ? "WRITE_SP " : "READ_BUF ") + hx(((uint32_t)x.page << 8) | imm, 3) + ", len=" + num(x.len) + ", ptr=" + num(x.ptr));
+    if (x.ptr + x.len > 32) breaks(r, std::string("ptr + len exceeds ") + (x.op == CSRM_WRITE_SP ? "MAIN_SCRATCHPAD" : "MAIN_CSR_DATA_BUF") + " (32 bytes)");
+    return r;
 }
 
 std::string mainCondName(int code) {
@@ -98,13 +106,16 @@ DecodedInstr mainBr(const DecodeContext& c) {
     if (b.type == MB_COND) {
         std::string n = mainCondName(b.arg);
         if (n.empty()) return invalid(1, "BR.COND", "condition " + hx((uint32_t)b.arg, 1) + " is reserved");
+        if (!conditionDefined(c, b.arg)) return invalid(1, "BR.COND", "condition " + n + " (" + hx((uint32_t)b.arg, 1) + ") has no definition here (profile-defined, not given)");
         r.uncond = b.arg == 0;
         r.text = b.arg == 0 ? "JMP {L}" + safe : "BR.COND " + n + ", {L}" + safe;
+        if (b.target >= c.codeLimit) breaks(r, targetRule(b.target, c.codeLimit));
         return r;
     }
     if (b.eventSafe) return invalid(1, "BR", "event_safe is set on a CASCADE descriptor (only an ordinary BR.COND may be an event checkpoint)");
-    if (b.type == MB_CASCADE_BEGIN) { r.text = "CASCADE_BEGIN " + num(b.arg) + ", {L}"; return r; }
-    return [&] { r.text = "CASCADE_END " + num(b.arg) + ", {L}"; return r; }();
+    r.text = (b.type == MB_CASCADE_BEGIN ? "CASCADE_BEGIN " : "CASCADE_END ") + num(b.arg) + ", {L}";
+    if (b.target >= c.codeLimit) breaks(r, std::string(b.type == MB_CASCADE_BEGIN ? "cascade block0 " : "cascade exit ") + hx(b.target) + " is outside the code (" + num((int)c.codeLimit) + " bytes)");
+    return r;
 }
 
 DecodedInstr mainMov(const DecodeContext& c) {
@@ -113,11 +124,22 @@ DecodedInstr mainMov(const DecodeContext& c) {
     codec::Move m = codec::unpackMove(d);
     if (m.rsv) return invalid(1, "MOV", "MainMoveDesc reserved bits are not zero");
     if (m.srcRegion > R_META || m.dstRegion > R_META) return invalid(1, "MOV", "unknown region id");
-    if ((m.dstRegion == R_OPA || m.dstRegion == R_OPB) && (m.dstOff != 0 || m.len != 2)) return invalid(1, "MOV", "ALU operands are loaded with offset 0 and length 2");
-    if (m.srcRegion == R_OPA || m.srcRegion == R_OPB) return invalid(1, "MOV", "ALU_OPA / ALU_OPB cannot be a source");
-    if (m.dstRegion == R_CSRBUF) return invalid(1, "MOV", "MAIN_CSR_DATA_BUF is read-only for MOV (spec v31 5.1)");
-    if (m.srcRegion == R_CONST && m.dstRegion != R_SCRATCH) return invalid(1, "MOV", "MAIN_CONST_POOL can only be moved to MAIN_SCRATCHPAD (spec v31 5.1)");
-    return plain(1, "MOV " + regionText(m.srcRegion, m.srcOff, m.len) + " -> " + regionText(m.dstRegion, m.dstOff, m.len));
+    DecodedInstr r = plain(1, "MOV " + regionText(m.srcRegion, m.srcOff, m.len) + " -> " + regionText(m.dstRegion, m.dstOff, m.len));
+    // B: the rules of spec v31 5.1 / 5.2 -- the direction of each region, the ranges, no overlap
+    const int sr = m.srcRegion, dr = m.dstRegion;
+    if (sr == R_OPA || sr == R_OPB) breaks(r, std::string(kRegions[sr].name) + " cannot be a MOV source");
+    if (dr == R_CSRBUF) breaks(r, "MAIN_CSR_DATA_BUF is read-only for MOV (spec v31 5.1: only EXEC_CSR READ8 / READ_BUF write it)");
+    else if (dr != R_SCRATCH && dr != R_OPA && dr != R_OPB) breaks(r, std::string(kRegions[dr].name) + " cannot be a MOV destination");
+    if (sr == dr) {
+        if (m.srcOff < m.dstOff + m.len && m.dstOff < m.srcOff + m.len) breaks(r, "MOV between overlapping ranges of one region (no memmove semantics, spec v31 5.2)");
+        else if (c.profile && !c.profile->sameRegionMov) breaks(r, "this profile does not allow MOV inside one region");
+    }
+    if (sr == R_CONST && dr != R_SCRATCH) breaks(r, "MAIN_CONST_POOL can only be moved to MAIN_SCRATCHPAD (spec v31 5.1)");
+    if ((dr == R_OPA || dr == R_OPB) && (m.dstOff != 0 || m.len != 2)) breaks(r, "ALU operands are loaded with offset 0 and length 2");
+    const int srcSize = sr == R_CONST ? (int)c.constSize : kRegions[sr].size, dstSize = kRegions[dr].size;
+    if ((sr != R_CONST || c.constSize) && m.srcOff + m.len > srcSize) breaks(r, std::string(kRegions[sr].name) + " source range exceeds the region (" + num(srcSize) + " bytes)");
+    if (dr != R_CONST && m.dstOff + m.len > dstSize) breaks(r, std::string(kRegions[dr].name) + " destination range exceeds the region (" + num(dstSize) + " bytes)");
+    return r;
 }
 
 DecodedInstr mainAlu(const DecodeContext& c) {
@@ -178,11 +200,13 @@ DecodedInstr periBr(const DecodeContext& c) {
         return r;
     }
     if (b.type > 7) return invalid(1, "BR", "condition " + num(b.type) + " is reserved");
+    if (!conditionDefined(c, b.type)) return invalid(1, "BR", std::string("condition ") + kPeriConds[b.type].name + " has no definition here");
     r.branch = true;
     r.target = b.target;
     r.uncond = b.type == 0;
     const std::string safe = b.eventSafe ? ", safe" : "";
     r.text = b.type == 0 ? "JMP {L}" + safe : std::string("BR.") + kPeriConds[b.type].name + " {L}" + safe;
+    if (b.target >= c.codeLimit) breaks(r, targetRule(b.target, c.codeLimit));
     return r;
 }
 
@@ -192,8 +216,18 @@ DecodedInstr periPub(const DecodeContext& c) {
     codec::Pub p = codec::unpackPub(d);
     if (p.rsv) return invalid(1, "EXEC_PUB", "PeriPublishDesc reserved bits are not zero");
     if (p.service == 0) return invalid(1, "EXEC_PUB", "service_id 0 is reserved");
-    if (p.src + p.len > 32) return invalid(1, "EXEC_PUB", "src + len exceeds PERI_RX_BUF");
-    return plain(1, "EXEC_PUB service=" + num(p.service) + ", src=" + num(p.src) + ", len=" + num(p.len));
+    DecodedInstr r = plain(1, "EXEC_PUB service=" + num(p.service) + ", src=" + num(p.src) + ", len=" + num(p.len));
+    if (p.src + p.len > 32) breaks(r, "src + len exceeds PERI_RX_BUF (32 bytes)");
+    return r;
+}
+
+// The DeviceMap entry of an EXEC_XFER: a reserved bus_type is not a legal encoding (A); an entry that is not there breaks the image's rule (B).
+bool deviceEntry(const DecodeContext& c, int dev, DecodedInstr& r) {
+    uint32_t v = 0;
+    if (!c.deviceMap || !c.deviceMap((uint32_t)dev, v)) { breaks(r, "DeviceMap[" + num(dev) + "] is not in the image"); return true; }
+    const Profile defaults;
+    if (codec::unpackDev(c.profile ? *c.profile : defaults, v).busType != 0) { r = invalid(r.length, "EXEC_XFER", "DeviceMap[" + num(dev) + "] bus_type is reserved (baseline: I2C only)"); return false; }
+    return true;
 }
 
 DecodedInstr periXfer(const DecodeContext& c) {
@@ -214,12 +248,12 @@ DecodedInstr periXfer(const DecodeContext& c) {
         } else t += ", data=" + hx(b1);
         DecodedInstr r = plain(2, t);
         if (x.addrLen == 0 && x.addr != 0) r.problem = "xfer_addr is ignored when addr_len = 0 but is not zero; the text drops it";
+        deviceEntry(c, x.dev, r);
         return r;
     }
     codec::XferM x = codec::unpackXferM(d);
     if (!x.rw) return invalid(1 + (uint32_t)(x.addrLen & 3), "EXEC_XFER", "MultiByte WRITE is illegal in the baseline");
     if (x.addrLen == 3) return invalid(1, "EXEC_XFER", "addr_len 3 is reserved");
-    if (x.ptr + x.len > 32) return invalid(1 + (uint32_t)x.addrLen, "EXEC_XFER", "ptr + len exceeds PERI_RX_BUF");
     const uint32_t length = 1 + (uint32_t)x.addrLen;
     if (c.pc + length > c.codeLimit) return invalid(1, "EXEC_XFER", "the address bytes are cut off by the end of the code");
     std::string t = "EXEC_XFER READ dev=" + num(x.dev) + ", len=" + num(x.len) + ", ptr=" + num(x.ptr);
@@ -228,7 +262,10 @@ DecodedInstr periXfer(const DecodeContext& c) {
         for (int i = 0; i < x.addrLen; i++) t += (i ? ", " : "") + hx(c.byteAt(c.pc + 1 + (uint32_t)i));
         t += "]";
     }
-    return plain(length, t);
+    DecodedInstr r = plain(length, t);
+    if (!deviceEntry(c, x.dev, r)) return r;
+    if (x.ptr + x.len > 32) breaks(r, "ptr + len exceeds PERI_RX_BUF (32 bytes)");
+    return r;
 }
 
 }  // namespace
@@ -289,6 +326,8 @@ DisasmResult disassemble(const DomainImage& image, const Profile& pf, const Disa
         if (ok) used.insert({PT_DEVMAP, dev});
         return ok;
     };
+    base.profile = &pf;
+    if (mainD && iv.end[MT_CONST] > iv.off[MT_CONST]) base.constSize = iv.end[MT_CONST] - iv.off[MT_CONST];
 
     // every branch target named by the BranchDesc table: tells where the code really ends
     std::set<uint32_t> targets;
@@ -327,7 +366,10 @@ DisasmResult disassemble(const DomainImage& image, const Profile& pf, const Disa
         ln.valid = di.valid;
         starts.insert(pc);
         if (!di.valid) issue(pc, "D201", di.problem);
-        else if (!di.problem.empty()) issue(pc, "D202", di.problem, false);
+        else {
+            if (!di.specProblem.empty()) issue(pc, "D205", di.specProblem);             // B: legal encoding, against a rule of the spec
+            if (!di.problem.empty()) issue(pc, "D202", di.problem, false);
+        }
         res.lines.push_back(ln);
         decoded.push_back(di);
         pc += ln.length;

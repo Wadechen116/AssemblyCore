@@ -369,6 +369,8 @@ private:
 // What the two decoders make of the bytes they fetch from the EEPROM (through the region registers): every instruction with its EEPROM address, the bytes,
 // the instruction decoded from them and the source line it should be. A line that is not what the assembler produced (a wrong byte burned, a register
 // pointing elsewhere, an EXEC_XFER write into the program) is marked. The instruction each sequencer is at is marked with its letter.
+// Problems in the bytes, known before anything runs: A (not a legal encoding, red) and B (a legal encoding against a rule of the spec, orange);
+// the instruction a sequencer faulted on is marked with a cross and the class of its fault (A / B / C).
 class DecoderPanel : public QWidget {
     Q_DECLARE_TR_FUNCTIONS(DecoderPanel)
 public:
@@ -407,23 +409,32 @@ private:
         if (!v) { table_->setRowCount(0); summary_->setText(tr("Start debugging to see what the decoders fetch.")); return; }
         // the table is rebuilt only when what it shows changed (the decoded lines rarely do; the cursors move all the time)
         std::string key;
-        for (int d = 0; d < 2; d++) for (const auto& L : v->decoded[d]) { key += L.text; key += L.matches ? '1' : '0'; key += std::to_string(L.eepromAddr); key += std::to_string(L.fetchCycles); key += '|'; }
+        for (int d = 0; d < 2; d++) for (const auto& L : v->decoded[d]) { key += L.text; key += L.matches ? '1' : '0'; key += L.problemClass(); key += std::to_string(L.eepromAddr); key += std::to_string(L.fetchCycles); key += '|'; }
         if (key != key_) { key_ = key; rebuild(*v); }
         // the cursors: the line each sequencer is at
+        bool marksChanged = false;
         for (int r = 0; r < table_->rowCount(); r++) {
             auto* pcItem = table_->item(r, 2);
             const int d = pcItem->data(Qt::UserRole + 1).toInt();
-            const bool here = !v->halted[d] && (uint32_t)pcItem->data(Qt::UserRole).toUInt() == v->pc[d];
+            const uint32_t pc = (uint32_t)pcItem->data(Qt::UserRole).toUInt();
+            const bool faultHere = v->hasFault[d] && v->fault[d].pc == pc;
+            const bool here = faultHere || (!v->halted[d] && pc == v->pc[d]);
             auto* mark = table_->item(r, 0);
-            const QString want = here ? (d == 0 ? QString::fromUtf8("M\xE2\x96\xB6") : QString::fromUtf8("P\xE2\x96\xB6")) : QString();
+            const QString want = faultHere ? QString::fromUtf8(d == 0 ? "M\xE2\x9C\x96 " : "P\xE2\x9C\x96 ") + QChar(asmcore::sim::faultClass(v->fault[d].code))
+                                 : here ? (d == 0 ? QString::fromUtf8("M\xE2\x96\xB6") : QString::fromUtf8("P\xE2\x96\xB6")) : QString();
             if (mark->text() != want) {
                 mark->setText(want);
+                mark->setToolTip(faultHere ? tr("Fault %1 here: %2 (%3)").arg(QChar(asmcore::sim::faultClass(v->fault[d].code))).arg(fromStd(v->fault[d].msg), fromStd(v->fault[d].code)) : QString());
+                mark->setForeground(faultHere ? QBrush(QColor("#f14c4c")) : QBrush());
                 for (int c = 0; c < table_->columnCount(); c++) { QFont f = table_->item(r, c)->font(); f.setBold(here); table_->item(r, c)->setFont(f); }
+                if (faultHere) table_->scrollToItem(mark);
+                marksChanged = true;
             }
         }
+        if (marksChanged) table_->resizeColumnToContents(0);
         QString s;
-        int differ = 0, invalid = 0, total = 0;
-        for (int d = 0; d < 2; d++) for (const auto& L : v->decoded[d]) { total++; if (!L.matches) differ++; if (!L.valid) invalid++; }
+        int differ = 0, invalid = 0, total = 0, spec = 0;
+        for (int d = 0; d < 2; d++) for (const auto& L : v->decoded[d]) { total++; if (!L.matches) differ++; if (!L.valid) invalid++; else if (!L.specProblem.empty()) spec++; }
         const std::string img = ctx_.debugger.eepromImagePath();
         if (v->fromEeprom) s = img.empty() ? tr("EEPROM: the image of the build") : tr("EEPROM: %1 (a burned image)").arg(QFileInfo(fromStd(img)).fileName());
         s += "\n";
@@ -434,8 +445,14 @@ private:
         s += "\n";
         if (differ == 0) s += tr("%1 instructions: every one is what the assembler produced.").arg(total);
         else s += tr("%1 instructions: %2 are NOT what the assembler produced (marked red)%3.").arg(total).arg(differ).arg(invalid ? tr(", %1 cannot be decoded").arg(invalid) : QString());
+        if (invalid || spec)
+            s += "\n" + tr("Problems in the bytes (before anything runs): A not a legal encoding %1 (red), B breaks a rule of the spec %2 (orange) -- listed in Problems").arg(invalid).arg(spec);
+        for (int d = 0; d < 2; d++)
+            if (v->hasFault[d])
+                s += "\n" + tr("%1 faulted at pc 0x%2: %3 %4 -- %5").arg(d == 0 ? "Main" : "Peri").arg(v->fault[d].pc, 2, 16, QChar('0'))
+                                .arg(QChar(asmcore::sim::faultClass(v->fault[d].code))).arg(fromStd(v->fault[d].code), fromStd(v->fault[d].msg));
         summary_->setText(s);
-        summary_->setStyleSheet(differ ? "color: #d04040;" : QString());
+        summary_->setStyleSheet(differ || invalid || spec || v->hasFault[0] || v->hasFault[1] ? "color: #d04040;" : QString());
     }
     void rebuild(const SimView& v) {
         table_->setRowCount(0);
@@ -455,7 +472,8 @@ private:
                 pc->setData(Qt::UserRole + 1, d);
                 put(3, QString("%1").arg(L.eepromAddr, 4, 16, QChar('0')).toUpper());
                 put(4, bytes.trimmed());
-                put(5, fromStd(L.text) + (L.valid ? QString() : "    ; " + fromStd(L.problem)));
+                const char cls = L.problemClass();
+                put(5, fromStd(L.text) + (cls == 'A' ? "    ; A: " + fromStd(L.problem) : cls == 'B' ? "    ; B: " + fromStd(L.specProblem) : QString()));
                 put(6, fromStd(L.source));
                 {
                     QString reads;
@@ -464,9 +482,12 @@ private:
                     fc->setToolTip(tr("Read from the EEPROM over the I2C bus before it executes: %1 byte(s) (%2 read(s) of %3), %4 ISA cycles with fetch.read_mode now")
                                        .arg([&] { uint32_t t = 0; for (uint32_t n : L.fetchBytes) t += n; return t; }()).arg(L.fetchBytes.size()).arg(reads).arg((qulonglong)L.fetchCycles));
                 }
-                if (!L.matches || !L.valid) {
-                    const QString tip = tr("Fetched from the EEPROM:  %1\nThe assembler produced:  %2").arg(fromStd(L.text), fromStd(L.expected));
-                    for (int c = 0; c < 8; c++) { table_->item(r, c)->setBackground(QColor(208, 64, 64, 90)); table_->item(r, c)->setToolTip(tip); }
+                if (!L.matches || cls) {
+                    QString tip = tr("Fetched from the EEPROM:  %1\nThe assembler produced:  %2").arg(fromStd(L.text), fromStd(L.expected));
+                    if (cls == 'A') tip += "\n" + tr("A, not a legal encoding: %1").arg(fromStd(L.problem));
+                    if (cls == 'B') tip += "\n" + tr("B, a legal encoding that breaks a rule of the spec (the hardware faults when it executes it): %1").arg(fromStd(L.specProblem));
+                    const QColor bg = cls == 'B' ? QColor(230, 140, 40, 100) : QColor(208, 64, 64, 90);      // the class first: B orange; A, or a byte that differs, red
+                    for (int c = 0; c < 8; c++) { table_->item(r, c)->setBackground(bg); table_->item(r, c)->setToolTip(tip); }
                 }
                 r++;
             }

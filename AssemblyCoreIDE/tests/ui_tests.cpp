@@ -764,6 +764,71 @@ private slots:
         r.f.dbg.stop();
     }
 
+    void problemsInTheBytesAreShownBeforeTheyRunAndFaultsWhenTheyDo() {
+        // two MOVs: a burned image makes the first a legal encoding against a rule of the spec (B: its source range leaves MAIN_SCRATCHPAD)
+        // and the second not a legal encoding (A: reserved bits)
+        Rig r(".main\ns: MOV MAIN_SCRATCHPAD[0..1] -> MAIN_SCRATCHPAD[4..5]\n MOV MAIN_SCRATCHPAD[4..5] -> ALU_OPA\nh: JMP h\n.peri\np: JMP p\n");
+        std::string why;
+        std::vector<uint8_t> eep;
+        asmcore::EepromMap map;
+        QVERIFY(asmcore::buildEeprom(r.f.ctx.snapshot->result, asmcore::Profile(), eep, map, why));
+        auto find = [&](std::initializer_list<uint8_t> want) -> int {             // a MOV descriptor (MainMoveDesc, 4 bytes) in the Main tables
+            const std::vector<uint8_t> w(want);
+            const uint32_t a = map.region[asmcore::ER_MAIN_DESC].addr, n = map.region[asmcore::ER_MAIN_DESC].size;
+            for (uint32_t i = a; i + 4 <= a + n; i++) if (std::equal(w.begin(), w.end(), eep.begin() + i)) return (int)i;
+            return -1;
+        };
+        int mov1 = find({0x01, 0x04, 0x00, 0x00}), mov2 = find({0x01, 0x00, 0x04, 0x03});       // (little-endian)
+        int hiOff = 2, rsv = 0;
+        if (mov1 < 0) { mov1 = find({0x00, 0x00, 0x04, 0x01}); mov2 = find({0x03, 0x04, 0x00, 0x01}); hiOff = 1; rsv = 3; }  // (big-endian)
+        QVERIFY2(mov1 >= 0 && mov2 >= 0, "the two MOV descriptors are in the image");
+        eep[mov1 + hiOff] = 31;                                                    // src_offset 31, len 2: MAIN_SCRATCHPAD[31..32]
+        eep[mov2 + rsv] |= 0x20;                                                   // a reserved bit
+        r.f.fs->write("/w/burned.eeprom.bin", std::string(eep.begin(), eep.end()));
+        r.f.fs->write("/w/burned.eeprom.json", map.json());
+        QVERIFY2(r.f.dbg.useEepromImage("/w/burned.eeprom.bin", why), why.c_str());
+        r.f.dbg.simParams().set("sim.speed", "0", why);
+        QVERIFY(r.f.dbg.start(why));
+        // 1. before anything runs: the decoder's view, Problems and the editor show both, each with its class
+        auto* table = r.find<QTableWidget>("decoder", "decoderTable");
+        auto* summary = r.find<QLabel>("decoder", "decoderSummary");
+        r.w->dock("decoder")->show();
+        QVERIFY(r.until([&] { return table->rowCount() >= 3; }));
+        QVERIFY2(table->item(0, 5)->text().contains("MAIN_SCRATCHPAD[31..32]") && table->item(0, 5)->text().contains("; B: ") && table->item(0, 5)->text().contains("source range exceeds"),
+                 qPrintable(table->item(0, 5)->text()));
+        QVERIFY2(table->item(1, 5)->text().contains("; A: ") && table->item(1, 5)->text().contains("reserved bits"), qPrintable(table->item(1, 5)->text()));
+        QVERIFY(table->item(0, 5)->background().color() != table->item(1, 5)->background().color());   // B orange, A red
+        QVERIFY2(summary->text().contains("A not a legal encoding 1") && summary->text().contains("B breaks a rule of the spec 1"), qPrintable(summary->text()));
+        auto* problems = r.w->dock("problems")->widget()->findChild<QTableWidget*>("problemsTable");
+        QVERIFY(r.w->dock("problems")->isVisible());                                // shown by itself when the decoder finds problems
+        auto rowOf = [&](const QString& kind) { for (int i = 0; i < problems->rowCount(); i++) if (problems->item(i, 0)->text().startsWith(kind)) return i; return -1; };
+        const int b = rowOf("Decoder B"), a = rowOf("Decoder A");
+        QVERIFY2(b >= 0 && a >= 0, "both are listed in Problems");
+        QVERIFY(problems->item(b, 1)->text() == "D205" && problems->item(b, 4)->text() == "2" && problems->item(a, 1)->text() == "D201" && problems->item(a, 4)->text() == "3");
+        problems->cellDoubleClicked(b, 2);                                          // to the source line
+        auto* ed = qobject_cast<CodeEditor*>(r.w->tabs()->currentWidget());
+        QVERIFY(ed && ed->textCursor().blockNumber() + 1 == 2);
+        QVERIFY(r.until([&] { return ed->diagnosticSelectionCount() >= 2; }));     // wavy underlines on the two lines
+        // 2. it runs: Main faults on the first MOV, a fault of class B, at once (in Problems, the status, the decoder's view)
+        r.f.dbg.run();
+        QVERIFY(r.waitStops(1));
+        QCOMPARE((int)r.lastReason, (int)asmcore::sim::StopReason::Fault);
+        QVERIFY(r.lastWhere.valid && r.lastWhere.line == 2);
+        QVERIFY(r.until([&] { return rowOf("Fault B") >= 0; }));
+        QVERIFY2(problems->item(rowOf("Fault B"), 1)->text() == "fault_mov_range", qPrintable(problems->item(rowOf("Fault B"), 1)->text()));
+        QVERIFY(r.until([&] { return table->item(0, 0)->text().startsWith(QString::fromUtf8("M\xE2\x9C\x96")) && table->item(0, 0)->text().endsWith("B"); }));
+        QVERIFY2(summary->text().contains("Main faulted at pc 0x00: B fault_mov_range"), qPrintable(summary->text()));
+        r.w->dock("problems")->widget()->grab().save(outDirFree() + "/problems_runtime.png");
+        r.w->dock("decoder")->setFloating(true);
+        r.w->dock("decoder")->resize(1100, 260);
+        QApplication::processEvents();
+        r.w->dock("decoder")->widget()->grab().save(outDirFree() + "/decoder_ab.png");
+        // 3. debugging ends: the problems found while debugging go, the build's stay
+        r.f.dbg.stop();
+        QVERIFY(r.until([&] { return rowOf("Decoder") < 0 && rowOf("Fault") < 0; }));
+        r.f.dbg.useBuildEeprom();
+    }
+
     void theEepromToolBuildsVerifiesAndDisassemblesAnImage() {
         Rig r(kProg);
         QVERIFY(r.f.ctx.snapshot && r.f.ctx.snapshot->result.ok);

@@ -16,7 +16,7 @@ struct Reads {
 };
 
 // Decode the instruction at pc of an image, through the shared decoders of the disassembler (one bit layout for all three tools).
-DecodedInstr decodeOne(const ImageView& iv, Domain d, uint32_t pc, const Profile& pf, Reads& reads) {
+DecodedInstr decodeOne(const ImageView& iv, Domain d, uint32_t pc, const Profile& pf, const std::function<bool(int)>& condDefined, uint32_t constSize, Reads& reads) {
     static const DecoderSet decoders = DecoderSet::defaults();
     DecodeContext c;
     c.domain = d;
@@ -29,6 +29,9 @@ DecodedInstr decodeOne(const ImageView& iv, Domain d, uint32_t pc, const Profile
     c.byteAt = [&](uint32_t p) { return iv.u8(p); };
     c.entry = [&](int t, uint32_t idx, int eb, uint32_t& v) { reads.entries.push_back({t * 1000 + eb, idx}); return iv.entry(t, idx, eb, v); };
     c.deviceMap = [&](uint32_t dev, uint32_t& v) { reads.entries.push_back({PT_DEVMAP * 1000 + pf.deviceMapEntryBytes, dev}); return iv.entry(PT_DEVMAP, dev, pf.deviceMapEntryBytes, v); };
+    c.profile = &pf;
+    if (d == Domain::Main) c.constSize = constSize;                    // the simulator's: the const pool section (not the padding after it)
+    c.conditionDefined = condDefined;
     const DecodeFn& fn = d == Domain::Main ? decoders.main[c.opcode] : decoders.peri[c.opcode];
     if (!fn) { DecodedInstr x; x.valid = false; x.problem = "no decoder for opcode " + std::to_string(c.opcode); x.text = "; ?"; return x; }
     return fn(c);
@@ -89,10 +92,13 @@ DecodedLine Simulator::Impl::decode(int d, uint32_t pc) const {
     L.domain = dom;
     L.pc = pc;
     Reads reads;
-    const DecodedInstr x = decodeOne(iv, dom, pc, pf, reads);
+    // the conditions as this simulator has them (the defaults, or the environment file's [condition ...])
+    const std::function<bool(int)> condDefined = [this, d](int code) { return code >= 0 && code < (d == 0 ? 16 : 8) && cond[d][code].defined; };
+    const DecodedInstr x = decodeOne(iv, dom, pc, pf, condDefined, constSize, reads);
     L.length = std::max<uint32_t>(1, x.length);
     L.valid = x.valid;
     L.problem = x.problem;
+    L.specProblem = x.specProblem;
     L.text = d == 0 ? withConst(withLabel(x, labelAt[d]), iv) : withLabel(x, labelAt[d]);
     L.eepromAddr = iv.eeprom ? iv.eepromAddressOf(pc) : pc;
     for (uint32_t i = 0; i < L.length; i++) L.bytes.push_back((uint8_t)iv.u8(pc + i));
@@ -114,7 +120,7 @@ DecodedLine Simulator::Impl::decode(int d, uint32_t pc) const {
         ImageView plain = iv;
         plain.eeprom = nullptr;
         Reads r2;
-        const DecodedInstr y = decodeOne(plain, dom, pc, pf, r2);
+        const DecodedInstr y = decodeOne(plain, dom, pc, pf, condDefined, constSize, r2);
         L.expected = d == 0 ? withConst(withLabel(y, labelAt[d]), plain) : withLabel(y, labelAt[d]);
         bool same = L.expected == L.text && y.length == x.length;
         for (uint32_t i = 0; same && i < L.length; i++) same = plain.u8(pc + i) == iv.u8(pc + i);

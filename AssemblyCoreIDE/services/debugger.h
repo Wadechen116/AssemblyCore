@@ -28,6 +28,21 @@ struct DebugLocation {
     std::vector<asmcore::Frame> frames;                   // the CALL chain an expanded instruction came from, innermost last
 };
 
+// A problem found while debugging, on top of the build's messages: in the bytes the decoders fetch (A not a legal encoding, B a legal encoding
+// against a rule of the spec -- known as soon as debugging starts, before anything runs), or a fault when it ran (its class A / B / C:
+// C = the state at that moment). Each points at the source line of its instruction when there is one.
+struct RuntimeProblem {
+    char cls = 'A';                                       // 'A' 'B' 'C'
+    bool fault = false;                                   // false: seen by the decoder; true: the simulator faulted there
+    asmcore::Domain domain = asmcore::Domain::Main;
+    uint32_t pc = 0;
+    std::string code;                                     // D201 (A) / D205 (B) for the decoder; the fault code (fault_...) for a fault
+    std::string msg;
+    std::string instruction;                              // what the decoder made of the bytes
+    std::string file;                                     // "" when no source line is known (a burned image without its program)
+    int line = 0;
+};
+
 struct LineBreakpoint {
     std::string file;
     int line = 0;
@@ -117,6 +132,10 @@ public:
     std::string instructionText(asmcore::Domain d) const;  // the instruction that sequencer is about to execute ("" if unknown)
     DebugLocation locationOf(asmcore::Domain d, uint32_t pc) const;
     DebugLocation locationForPc(asmcore::Domain d, uint32_t pc) const;   // the same, also without a session (the newest build is used then)
+    // The problems found while debugging (see RuntimeProblem): the decoder's for the program being debugged, then the faults. Empty without a session.
+    const std::vector<RuntimeProblem>& runtimeProblems() const { return runtime_; }
+    // ...as messages of one file, for the editor (wavy underline, gutter mark, tooltip)
+    std::vector<asmcore::Diagnostic> runtimeDiagnosticsFor(const std::string& file) const;
     // Where the user should be taken after `stop`: the sequencer that caused it.
     DebugLocation stopLocation(const SimUpdate& u) const;
     SimSession& session() { return session_; }
@@ -126,12 +145,16 @@ public:
     Signal<> traceChanged;                                 // the history grew, was cut or wound back (before `updated` of the same update)
     Signal<const SimUpdate&> updated;                      // the session's updates, after the debugger has processed them
     Signal<const SimUpdate&, const DebugLocation&> stopped;   // a command finished: why, and where the user should look
+    Signal<> runtimeProblemsChanged;                       // runtimeProblems() changed (before `updated` of the same update)
 
 private:
     SnapshotPtr programForMapping() const;
     std::vector<BreakpointSpec> specs(std::vector<size_t>* owner = nullptr) const;
     void pushBreakpoints();
     void onUpdate(const SimUpdate& u);
+    void collectRuntimeProblems(const SimUpdate& u);
+    std::vector<RuntimeProblem> runtime_;
+    std::string runtimeKey_;
 
     SimParamsStore params_;
     asmcore::SimParams base_;

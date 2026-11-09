@@ -993,6 +993,26 @@ The assembler produced:  %2</source>
         <source>Read from the EEPROM over the I2C bus before it executes: %1 byte(s) (%2 read(s) of %3), %4 ISA cycles with fetch.read_mode now</source>
         <translation>執行前經 I2C 匯流排從 EEPROM 讀出：共 %1 byte（%2 次讀取：%3），依目前的 fetch.read_mode 需 %4 個 ISA 週期</translation>
     </message>
+    <message>
+        <source>Fault %1 here: %2 (%3)</source>
+        <translation>這裡發生 %1 類執行錯誤：%2（%3）</translation>
+    </message>
+    <message>
+        <source>Problems in the bytes (before anything runs): A not a legal encoding %1 (red), B breaks a rule of the spec %2 (orange) -- listed in Problems</source>
+        <translation>燒錄內容的問題（執行前就找到）：A 不合法的編碼 %1 條（紅色）、B 違反規格 %2 條（橘色），已列在「問題」面板</translation>
+    </message>
+    <message>
+        <source>%1 faulted at pc 0x%2: %3 %4 -- %5</source>
+        <translation>%1 在 pc 0x%2 發生執行錯誤：%3 類 %4 —— %5</translation>
+    </message>
+    <message>
+        <source>A, not a legal encoding: %1</source>
+        <translation>A，不合法的編碼：%1</translation>
+    </message>
+    <message>
+        <source>B, a legal encoding that breaks a rule of the spec (the hardware faults when it executes it): %1</source>
+        <translation>B，編碼合法但違反規格（硬體執行到時會報錯）：%1</translation>
+    </message>
 </context>
 <context>
     <name>EepromTool</name>
@@ -1925,6 +1945,50 @@ Double click on the time line: wind the simulator back to that cycle (what is la
     <message>
         <source>%1 error(s), %2 warning(s)</source>
         <translation>%1 個錯誤、%2 個警告</translation>
+    </message>
+    <message>
+        <source>Kind</source>
+        <translation>類別</translation>
+    </message>
+    <message>
+        <source>not a legal encoding</source>
+        <translation>不合法的編碼</translation>
+    </message>
+    <message>
+        <source>breaks a rule of the spec</source>
+        <translation>違反規格</translation>
+    </message>
+    <message>
+        <source>the state when it ran</source>
+        <translation>執行當下的狀態</translation>
+    </message>
+    <message>
+        <source>Fault</source>
+        <translation>執行錯誤</translation>
+    </message>
+    <message>
+        <source>Decoder</source>
+        <translation>解碼</translation>
+    </message>
+    <message>
+        <source>%1
+%2: %3
+The decoder made of the bytes: %4</source>
+        <translation>%1
+%2：%3
+解碼器從燒錄內容解出：%4</translation>
+    </message>
+    <message>
+        <source>(no source: see Decoder)</source>
+        <translation>（沒有原始碼：請看 Decoder 面板）</translation>
+    </message>
+    <message>
+        <source>Build</source>
+        <translation>建置</translation>
+    </message>
+    <message>
+        <source>while debugging: A %1, B %2, C %3</source>
+        <translation>除錯中發現：A %1、B %2、C %3</translation>
     </message>
 </context>
 <context>
@@ -3700,10 +3764,6 @@ An IDE for the Sensor Micro-Sequencer ISA, built on the AssemblyCore assembler.<
         <translation>資料中斷點</translation>
     </message>
     <message>
-        <source>FAULT</source>
-        <translation>錯誤（FAULT）</translation>
-    </message>
-    <message>
         <source>both sequencers are idle</source>
         <translation>兩個定序器都已閒置</translation>
     </message>
@@ -4010,6 +4070,26 @@ An IDE for the Sensor Micro-Sequencer ISA, built on the AssemblyCore assembler.<
     <message>
         <source>Disassemble an EEPROM Image...</source>
         <translation>反組譯 EEPROM 燒錄檔…</translation>
+    </message>
+    <message>
+        <source>The decoder finds problems in the bytes of the program before it runs: A (not a legal encoding) %1, B (breaks a rule of the spec) %2 -- see Problems</source>
+        <translation>解碼器在程式執行前就發現燒錄內容有問題：A（不合法的編碼）%1 條、B（違反規格）%2 條，請看「問題」面板</translation>
+    </message>
+    <message>
+        <source>FAULT %1 (%2)</source>
+        <translation>執行錯誤 %1 類（%2）</translation>
+    </message>
+    <message>
+        <source>not a legal encoding</source>
+        <translation>不合法的編碼</translation>
+    </message>
+    <message>
+        <source>breaks a rule of the spec</source>
+        <translation>違反規格</translation>
+    </message>
+    <message>
+        <source>the state when it ran</source>
+        <translation>執行當下的狀態</translation>
     </message>
 </context>
 <context>

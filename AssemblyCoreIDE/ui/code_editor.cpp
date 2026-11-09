@@ -207,10 +207,16 @@ void CodeEditor::setSnapshot(SnapshotPtr snap) {
     gutter_->update();
 }
 
+std::vector<asmcore::Diagnostic> CodeEditor::allDiagnostics() const {
+    std::vector<asmcore::Diagnostic> v;
+    if (snap_) v = snap_->diagnosticsFor(path_);
+    for (asmcore::Diagnostic& d : ctx_.debugger.runtimeDiagnosticsFor(path_)) v.push_back(std::move(d));
+    return v;
+}
+
 QList<asmcore::Diagnostic> CodeEditor::diagnosticsAt(int line, int byteCol, bool wholeLine) const {
     QList<asmcore::Diagnostic> out;
-    if (!snap_) return out;
-    for (const asmcore::Diagnostic& d : snap_->diagnosticsFor(path_)) {
+    for (const asmcore::Diagnostic& d : allDiagnostics()) {
         if (d.loc.line != line) continue;
         if (wholeLine || d.loc.endCol == 0 || (byteCol >= d.loc.col && byteCol <= d.loc.endCol)) out.append(d);
     }
@@ -276,9 +282,9 @@ void CodeEditor::updateExtra() {
             sel.append(s);
             execSelections_++;
         }
-    // diagnostics
-    if (snap_) {
-        for (const asmcore::Diagnostic& d : snap_->diagnosticsFor(path_)) {
+    // diagnostics (the build's, and the problems found while debugging)
+    {
+        for (const asmcore::Diagnostic& d : allDiagnostics()) {
             if (d.loc.line < 1) continue;
             QTextBlock b = document()->findBlockByNumber(d.loc.line - 1);
             if (!b.isValid()) continue;
@@ -360,13 +366,14 @@ void CodeEditor::lineNumberAreaPaint(QPaintEvent* ev) {
     p.fillRect(ev->rect(), theme_.lineNumberBg);
     QTextBlock b = firstVisibleBlock();
     int n = b.blockNumber();
+    const std::vector<asmcore::Diagnostic> diags = allDiagnostics();      // (once per paint, not once per line)
     int top = (int)blockBoundingGeometry(b).translated(contentOffset()).top();
     int bottom = top + (int)blockBoundingRect(b).height();
     const int cur = textCursor().blockNumber();
     while (b.isValid() && top <= ev->rect().bottom()) {
         if (b.isVisible() && bottom >= ev->rect().top()) {
             bool err = false, warn = false;
-            if (snap_) for (const asmcore::Diagnostic& d : snap_->diagnosticsFor(path_)) if (d.loc.line == n + 1) (d.sev == asmcore::Diagnostic::Error ? err : warn) = true;
+            for (const asmcore::Diagnostic& d : diags) if (d.loc.line == n + 1) (d.sev == asmcore::Diagnostic::Error ? err : warn) = true;
             if (err || warn) {
                 p.setPen(Qt::NoPen);
                 p.setBrush(err ? theme_.error : theme_.warning);

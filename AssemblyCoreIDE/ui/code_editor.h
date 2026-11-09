@@ -78,6 +78,8 @@ private:
     void onContentsChanged();
     void insertCompletion(const QString& insert);
     QList<asmcore::Diagnostic> diagnosticsAt(int line, int byteCol, bool wholeLineIfNoColumn) const;
+    // the build's messages for this file, and the problems found while debugging (the decoder's A / B, the faults) on its lines
+    std::vector<asmcore::Diagnostic> allDiagnostics() const;
     QString wordUnderCursor(const QTextCursor& c, int* start = nullptr) const;
 
     AppContext& ctx_;

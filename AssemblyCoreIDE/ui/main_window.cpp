@@ -107,6 +107,17 @@ MainWindow::MainWindow(AppContext& ctx, PanelRegistry& panels, QWidget* parent) 
     conns_.add(ctx.build.finished, [this](SnapshotPtr s) { onSnapshot(s); });
     conns_.add(ctx.debugger.updated, [this](const SimUpdate&) { updateDebugActions(); });
     conns_.add(ctx.debugger.stopped, [this](const SimUpdate& u, const DebugLocation& w) { onStopped(u, w); });
+    // problems in the bytes the decoders fetch are known as soon as debugging starts: say so once, and show them in Problems
+    conns_.add(ctx.debugger.runtimeProblemsChanged, [this] {
+        int a = 0, b = 0;
+        for (const RuntimeProblem& p : ctx_.debugger.runtimeProblems()) if (!p.fault) (p.cls == 'A' ? a : b)++;
+        if (a + b && (a != decoderA_ || b != decoderB_)) {
+            ctx_.log.fire(tr("The decoder finds problems in the bytes of the program before it runs: A (not a legal encoding) %1, B (breaks a rule of the spec) %2 -- see Problems").arg(a).arg(b));
+            ctx_.showPanel.fire("problems");
+        }
+        decoderA_ = a;
+        decoderB_ = b;
+    });
     conns_.add(ctx.debugger.session().loaded, [this](bool ok, const std::vector<std::string>& errs) {
         if (!ok) {
             QString m;
@@ -1205,7 +1216,13 @@ void MainWindow::onStopped(const SimUpdate& u, const DebugLocation& where) {
     switch (u.stop.reason) {
         case StopReason::Breakpoint: why = tr("breakpoint"); break;
         case StopReason::Watchpoint: why = tr("watchpoint"); break;
-        case StopReason::Fault: why = tr("FAULT"); break;
+        case StopReason::Fault: {
+            char cls = 'C';
+            for (int i = 0; i < 2; i++) if (u.view && u.view->hasFault[i]) cls = asmcore::sim::faultClass(u.view->fault[i].code);
+            why = tr("FAULT %1 (%2)").arg(QChar(cls)).arg(cls == 'A' ? tr("not a legal encoding") : cls == 'B' ? tr("breaks a rule of the spec") : tr("the state when it ran"));
+            ctx_.showPanel.fire("problems");
+            break;
+        }
         case StopReason::Idle: why = tr("both sequencers are idle"); break;
         case StopReason::CycleLimit: why = tr("cycle budget used up"); break;
         case StopReason::TimeLimit: why = tr("time budget used up"); break;

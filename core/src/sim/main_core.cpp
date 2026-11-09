@@ -156,6 +156,7 @@ void Simulator::Impl::opMainMov(OpCtx& oc) {
         const int sr = mv.srcRegion, dr = mv.dstRegion;
         const int so = mv.srcOff, dof = mv.dstOff, len = mv.len;
         if (mv.rsv) { fail("fault_desc_reserved", "MainMoveDesc reserved bits are not zero"); return; }
+        if (sr > 8 || dr > 8) { fail("fault_desc_reserved", "MainMoveDesc region id " + std::to_string(sr > 8 ? sr : dr) + " is reserved (no such region)"); return; }
         const bool srcOk = sr == 0 || sr == 1 || sr == 2 || sr == 5 || sr == 6 || sr == 7 || sr == 8;
         const bool dstOk = dr == 0 || dr == 3 || dr == 4;                 // v31 5.1: MAIN_CSR_DATA_BUF is written only by EXEC_CSR READ8 / READ_BUF
         if (!srcOk) { fail("fault_mov_region", std::string("region ") + std::to_string(sr) + " cannot be a MOV source"); return; }

@@ -135,6 +135,9 @@ struct Fault {
     std::string code;             // e.g. "fault_cascade_step_mismatch"
     std::string msg;
 };
+// The kind of a fault (see DecodedInstr in disasm.h): 'A' the bytes are not a legal encoding, 'B' a legal encoding against a rule of the spec
+// (both are in the bytes: the decoder's view shows them before the program runs), 'C' the state when it ran.
+char faultClass(const std::string& code);
 // One hardware event from detection to the return into the interrupted code (spec v31 16.9 keeps these intervals apart).
 struct EventRecord {
     Domain domain = Domain::Main;
@@ -181,8 +184,10 @@ struct DecodedLine {
     uint32_t eepromAddr = 0;          // where the opcode byte was fetched (= pc with fetch.source = sram)
     std::vector<uint8_t> bytes;       // the code bytes as fetched
     std::string text;                 // the instruction the decoder made of them (assembler syntax; labels by name when known)
-    bool valid = true;                // false: not a legal encoding (`problem` says why)
+    bool valid = true;                // false: not a legal encoding (A; `problem` says why)
     std::string problem;
+    std::string specProblem;          // B: a legal encoding that breaks a rule of the spec (the hardware faults when it executes it); "" = none
+    char problemClass() const { return !valid ? 'A' : !specProblem.empty() ? 'B' : 0; }
     std::string source;               // the line of the program at that pc ("" when only a binary was given)
     std::string expected;             // what the assembler's image decodes to at that pc ("" without it)
     bool matches = true;              // the fetched bytes (code, descriptors, constants) are the assembler's: what runs is what was written

@@ -61,10 +61,13 @@ public:
         bar->addWidget(filter_, 1);
         bar->addWidget(summary_);
         lay->addLayout(bar);
-        table_ = new QTableWidget(0, 4);
-        table_->setHorizontalHeaderLabels({tr("Code"), tr("Message"), tr("File"), tr("Line")});
+        // Kind: the build's message, or a problem found while debugging -- by the decoder (A / B, before anything runs) or when it ran (a fault A / B / C)
+        table_ = new QTableWidget(0, 5);
+        table_->setHorizontalHeaderLabels({tr("Kind"), tr("Code"), tr("Message"), tr("File"), tr("Line")});
         table_->horizontalHeader()->setStretchLastSection(false);
-        table_->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
+        table_->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Stretch);
+        table_->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
+        table_->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
         table_->verticalHeader()->hide();
         table_->setSelectionBehavior(QAbstractItemView::SelectRows);
         table_->setEditTriggers(QAbstractItemView::NoEditTriggers);
@@ -76,6 +79,7 @@ public:
         connect(table_, &QTableWidget::cellActivated, this, [this](int row, int) { open(row); });
         connect(table_, &QTableWidget::cellDoubleClicked, this, [this](int row, int) { open(row); });
         conns_.add(ctx.snapshotChanged, [this](SnapshotPtr s) { snap_ = s; refill(); });
+        conns_.add(ctx.debugger.runtimeProblemsChanged, [this] { refill(); });
         snap_ = ctx.snapshot;
         refill();
     }
@@ -90,41 +94,80 @@ private:
         l.col = it->data(Qt::UserRole + 3).toInt();
         l.endCol = it->data(Qt::UserRole + 4).toInt();
         if (l.line > 0) ctx_.goTo.fire(l);
+        else if (it->data(Qt::UserRole + 5).toBool()) ctx_.showPanel.fire("decoder");      // a problem of a burned image without its source: the decoder's view shows it
     }
+public:
+    static QString kindText(const RuntimeProblem& p) {
+        const QString what = p.cls == 'A' ? tr("not a legal encoding") : p.cls == 'B' ? tr("breaks a rule of the spec") : tr("the state when it ran");
+        return (p.fault ? tr("Fault") : tr("Decoder")) + QString(" %1 \xC2\xB7 ").arg(QChar(p.cls)) + what;
+    }
+private:
     void refill() {
         table_->setRowCount(0);
         int e = 0, w = 0;
+        const QString f = filter_->text();
+        // the problems found while debugging come first: they are about what runs now
+        int cls[3] = {0, 0, 0};
+        for (const RuntimeProblem& p : ctx_.debugger.runtimeProblems()) {
+            cls[p.cls == 'A' ? 0 : p.cls == 'B' ? 1 : 2]++;
+            e++;
+            if (!errors_->isChecked()) continue;
+            const QString kind = kindText(p), msg = fromStd(p.msg), file = p.file.empty() ? QString() : shortName(p.file);
+            const QString where = QString("%1 pc 0x%2").arg(p.domain == asmcore::Domain::Main ? "Main" : "Peri").arg(p.pc, 2, 16, QChar('0'));
+            if (!f.isEmpty() && !fromStd(p.code).contains(f, Qt::CaseInsensitive) && !msg.contains(f, Qt::CaseInsensitive) && !file.contains(f, Qt::CaseInsensitive) && !kind.contains(f, Qt::CaseInsensitive)) continue;
+            const int r = table_->rowCount();
+            table_->insertRow(r);
+            auto* c0 = new QTableWidgetItem(kind);
+            c0->setForeground(p.cls == 'B' ? QColor("#e08a2c") : QColor("#f14c4c"));
+            c0->setData(Qt::UserRole + 1, fromStd(p.file));
+            c0->setData(Qt::UserRole + 2, p.line);
+            c0->setData(Qt::UserRole + 5, true);
+            const QString tip = tr("%1\n%2: %3\nThe decoder made of the bytes: %4").arg(kind, where, msg, fromStd(p.instruction));
+            c0->setToolTip(tip);
+            table_->setItem(r, 0, c0);
+            table_->setItem(r, 1, new QTableWidgetItem(fromStd(p.code)));
+            auto* m = new QTableWidgetItem(where + ": " + msg + (p.instruction.empty() ? QString() : "   [" + fromStd(p.instruction) + "]"));
+            m->setToolTip(tip);
+            table_->setItem(r, 2, m);
+            table_->setItem(r, 3, new QTableWidgetItem(file.isEmpty() ? tr("(no source: see Decoder)") : file));
+            table_->setItem(r, 4, new QTableWidgetItem(p.line > 0 ? QString::number(p.line) : QString()));
+        }
         if (snap_) {
             for (const asmcore::Diagnostic& d : snap_->result.diags) {
                 bool isErr = d.sev == asmcore::Diagnostic::Error;
                 (isErr ? e : w)++;
                 if (isErr ? !errors_->isChecked() : !warnings_->isChecked()) continue;
                 QString msg = fromStd(d.msg), file = shortName(d.loc.file);
-                QString f = filter_->text();
                 if (!f.isEmpty() && !fromStd(d.code).contains(f, Qt::CaseInsensitive) && !msg.contains(f, Qt::CaseInsensitive) && !file.contains(f, Qt::CaseInsensitive)) continue;
                 int r = table_->rowCount();
                 table_->insertRow(r);
-                auto* c0 = new QTableWidgetItem(fromStd(d.code));
+                auto* c0 = new QTableWidgetItem(tr("Build"));
                 c0->setForeground(isErr ? QColor("#f14c4c") : QColor("#cca700"));
                 c0->setData(Qt::UserRole + 1, fromStd(d.loc.file));
                 c0->setData(Qt::UserRole + 2, d.loc.line);
                 c0->setData(Qt::UserRole + 3, d.loc.col);
                 c0->setData(Qt::UserRole + 4, d.loc.endCol);
                 table_->setItem(r, 0, c0);
-                table_->setItem(r, 1, new QTableWidgetItem(msg));
-                table_->setItem(r, 2, new QTableWidgetItem(file));
-                table_->setItem(r, 3, new QTableWidgetItem(QString::number(d.loc.line)));
+                auto* code = new QTableWidgetItem(fromStd(d.code));
+                code->setForeground(isErr ? QColor("#f14c4c") : QColor("#cca700"));
+                table_->setItem(r, 1, code);
+                table_->setItem(r, 2, new QTableWidgetItem(msg));
+                table_->setItem(r, 3, new QTableWidgetItem(file));
+                table_->setItem(r, 4, new QTableWidgetItem(QString::number(d.loc.line)));
             }
             for (const std::string& n : snap_->notes) {
                 int r = table_->rowCount();
                 table_->insertRow(r);
-                table_->setItem(r, 0, new QTableWidgetItem("note"));
-                table_->setItem(r, 1, new QTableWidgetItem(fromStd(n)));
-                table_->setItem(r, 2, new QTableWidgetItem(QString()));
+                table_->setItem(r, 0, new QTableWidgetItem(tr("Build")));
+                table_->setItem(r, 1, new QTableWidgetItem("note"));
+                table_->setItem(r, 2, new QTableWidgetItem(fromStd(n)));
                 table_->setItem(r, 3, new QTableWidgetItem(QString()));
+                table_->setItem(r, 4, new QTableWidgetItem(QString()));
             }
         }
-        summary_->setText(tr("%1 error(s), %2 warning(s)").arg(e).arg(w));
+        QString sum = tr("%1 error(s), %2 warning(s)").arg(e).arg(w);
+        if (cls[0] + cls[1] + cls[2]) sum += "  \xC2\xB7  " + tr("while debugging: A %1, B %2, C %3").arg(cls[0]).arg(cls[1]).arg(cls[2]);
+        summary_->setText(sum);
     }
 
     AppContext& ctx_;
