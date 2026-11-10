@@ -723,6 +723,16 @@ bool MainWindow::openProject(const QString& file) {
     restoreSession();
     if (tabs_->count() == 0 && !ctx_.workspace.project().sources.empty()) openFile(ctx_.workspace.project().absolute(ctx_.workspace.project().sources[0]));
     ctx_.log.fire(tr("Opened project %1").arg(fromStd(path)));
+    // the project may name the burned image its debugging fetches from (debug_eeprom); otherwise the build's
+    if (const std::string& img = ctx_.workspace.project().debugEeprom; !img.empty()) {
+        std::string why;
+        if (ctx_.debugger.useEepromImage(ctx_.workspace.project().absolute(img), why))
+            ctx_.log.fire(tr("This project debugs from the burned EEPROM image %1 (debug_eeprom); Debug > Debug from the Build's EEPROM switches back").arg(fromStd(img)));
+        else
+            ctx_.log.fire(tr("debug_eeprom %1 cannot be used: %2").arg(fromStd(img), fromStd(why)));
+    } else {
+        ctx_.debugger.useBuildEeprom();
+    }
     updateTitle();
     return true;
 }

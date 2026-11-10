@@ -28,10 +28,13 @@ ctest -R sample_projects                         # 在 CMake 建置目錄中（�
 | `14_main_peri_sim` | **Main + Peri 兩段程式一起跑**：Peri 由自己的 Timer 觸發、I2C 讀感測器、發佈到結果槽；Main 取用後等 Frame Timing 消隱視窗才提交；附 `.simparams`，給「模擬器」頁面調參數看差異 | 成功，零警告 |
 | `12_block_files` | **積木 B0**：`.acblk` 檔（程式的積木模型）、`asmblk` 轉換、文字⇄積木往返保證（圖形編輯器在 B1） | 成功，零警告 |
 | `10_multi_file` | 專案含多個來源檔（`shared.inc` + Main 檔 + Peri 檔）：專案樹、跨檔重新命名／找參照／跳轉 | 成功，零警告 |
+| `15_eeprom_images` | 測試用的 EEPROM 燒錄檔（範例 14 的正確與故意寫壞的版本）：反組譯檢查、驗證燒錄檔 | （沒有專案） |
+| `16_error_showcase` | **故意出錯，一次呈現各類問題**：建置警告、解碼 A／B（附改壞的燒錄檔，`debug_eeprom` 指定）、執行錯誤 B／C，在問題面板、編輯器、Decoder 面板同時看到 | 成功（有 4 個警告），除錯時有解碼問題與執行錯誤 |
 
 `common/defs.inc` 是共用的定義檔（CSR 位址是**範例值**，規格只給名稱，不給編號），各專案用 `include_dir = ../common` 引入。
 
 `.acproj` 內的 `sample_expect`、`sample_errors`、`sample_models` 只給 `check_samples.py` 讀；IDE 會原樣保留這些未知的鍵。
+`debug_eeprom = 檔案` 是 IDE 的專案設定：除錯時解碼器從這份燒錄檔讀指令（旁邊要有同名的 `.eeprom.json`），而不是建置產生的燒錄檔。
 
 ## IDE 功能 ↔ 在哪個範例測試
 
@@ -58,6 +61,8 @@ ctest -R sample_projects                         # 在 CMake 建置目錄中（�
 | 事件記錄（篩選、跳轉、匯出文字／CSV／VCD） | `02`、`05` | Events 面板；匯出 VCD 用波形檢視器開 |
 | 環境檔編輯（Debug → Edit Environment File…） | `02`、`08` | 改 `[device]` 的暫存器值、NACK 注入 |
 | fault 顯示與清除 | `08` | 見該專案 README |
+| 解碼 A／B 與執行錯誤 A／B／C：問題面板「類別」欄、編輯器波浪線、Decoder 面板顏色與標記 | `16` | 開啟專案按 F5，見該專案 README |
+| 從燒錄檔除錯（除錯 →「從 EEPROM 映像除錯…」，或專案 `debug_eeprom =`） | `16`、`15` | `16` 開啟專案就自動載入改壞的燒錄檔 |
 | 失控保護（週期／牆上時間上限） | `01` | 把 `done: JMP done` 改成真的無窮迴圈（例如 `JMP start` 且不碰 halt） |
 | 硬體設計器（元件樹、屬性表單、問題清單、產生檔預覽、Adopt） | `11` | 見該專案 README |
 | 中英文介面切換（View → Language） | 任一 | 切換後專案與中斷點保留 |

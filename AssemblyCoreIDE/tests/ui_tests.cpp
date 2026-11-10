@@ -829,6 +829,90 @@ private slots:
         r.f.dbg.useBuildEeprom();
     }
 
+    void example16ShowsEveryKindOfProblemInTheThreePlaces() {
+        // the real files of sample/16_error_showcase: what its README promises, in Problems, the editor and the Decoder panel
+        Rig r(".main\nh: JMP h\n");
+        namespace fs = std::filesystem;
+        const fs::path dir = fs::path(ACIDE_SAMPLE_DIR) / "16_error_showcase";
+        for (const char* f : {"16_error_showcase.acproj", "showcase.asm", "showcase.scn", "burned/showcase_bad.eeprom.bin", "burned/showcase_bad.eeprom.json", "burned/showcase_bad.eeprom.sym"}) {
+            std::ifstream in(dir / f, std::ios::binary);
+            QVERIFY2(in.good(), f);
+            std::ostringstream ss;
+            ss << in.rdbuf();
+            r.f.fs->write(std::string("/w/s16/") + f, ss.str());
+        }
+        QVERIFY(r.w->openProject("/w/s16/16_error_showcase.acproj"));
+        QVERIFY(r.waitBuild());
+        QCOMPARE(QString::fromStdString(r.f.dbg.eepromImagePath()), QString("/w/s16/burned/showcase_bad.eeprom.bin"));
+        std::string why;
+        r.f.dbg.simParams().set("sim.speed", "0", why);
+        r.f.dbg.setBaseParams(asmcore::SimParams());                                   // the real fetch over the I2C bus (the fixture makes it instant): the order of its README
+        auto* problems = r.w->dock("problems")->widget()->findChild<QTableWidget*>("problemsTable");
+        auto rows = [&](const QString& kind) {
+            QStringList v;
+            for (int i = 0; i < problems->rowCount(); i++) if (problems->item(i, 0)->text().startsWith(kind)) v << problems->item(i, 1)->text() + "@" + problems->item(i, 4)->text();
+            v.sort();
+            return v;
+        };
+        // 1. the build: four warnings
+        QVERIFY2(rows("Build") == QStringList({"W402@30", "W501@28", "W502@26", "W505@27"}), qPrintable(rows("Build").join(" ")));
+        // 2. debugging starts: the decoder's A and B, before anything runs
+        QVERIFY(r.f.dbg.start(why));
+        QVERIFY(r.until([&] { return rows("Decoder").size() == 3; }));
+        QVERIFY2(rows("Decoder A") == QStringList({"D201@28"}) && rows("Decoder B") == QStringList({"D205@30", "D205@36"}), qPrintable(rows("Decoder").join(" ")));
+        r.w->openFile("/w/s16/showcase.asm");
+        auto* ed = qobject_cast<CodeEditor*>(r.w->tabs()->currentWidget());
+        QVERIFY(ed);
+        QVERIFY2(r.until([&] { return ed->diagnosticSelectionCount() == 7; }), qPrintable(QString::number(ed->diagnosticSelectionCount())));   // 4 warnings + A + 2 B
+        auto* table = r.find<QTableWidget>("decoder", "decoderTable");
+        r.w->dock("decoder")->show();
+        QVERIFY(r.until([&] { return table->rowCount() == 9; }));                    // Main 6, Peri 3
+        auto rowText = [&](int row) { return table->item(row, 5)->text(); };
+        QVERIFY2(rowText(2).contains("; A: ") && rowText(4).contains("; B: ") && rowText(6).contains("; B: ") && rowText(6).contains("ptr=31"), qPrintable(rowText(2) + " | " + rowText(4) + " | " + rowText(6)));
+        // 3. it runs: Main faults C at line 27; going on, Peri faults B at line 36
+        r.f.dbg.run();
+        QVERIFY(r.waitStops(1));
+        QVERIFY2(r.lastReason == asmcore::sim::StopReason::Fault && r.lastWhere.line == 27, qPrintable(QString("stopped at line %1").arg(r.lastWhere.line)));
+        QVERIFY(r.until([&] { return rows("Fault C") == QStringList({"fault_slot_not_valid@27"}); }));
+        r.f.dbg.run();
+        QVERIFY(r.waitStops(2));
+        QVERIFY(r.until([&] { return rows("Fault B") == QStringList({"fault_range@36"}); }));
+        QVERIFY(r.until([&] { return table->item(1, 0)->text().endsWith("C") && table->item(6, 0)->text().endsWith("B"); }));
+        r.w->dock("problems")->widget()->grab().save(outDirFree() + "/example16_problems.png");
+        r.w->dock("decoder")->setFloating(true);
+        r.w->dock("decoder")->resize(1150, 330);
+        QApplication::processEvents();
+        r.w->dock("decoder")->widget()->grab().save(outDirFree() + "/example16_decoder.png");
+        r.w->tabs()->setCurrentWidget(ed);
+        ed->grab().save(outDirFree() + "/example16_editor.png");
+        r.f.dbg.stop();
+    }
+
+    void aProjectCanNameTheBurnedImageItDebugsFrom() {
+        // debug_eeprom: opening the project makes the decoders fetch from that image (example 16 ships a damaged one); a project without it, the build's
+        Rig r(".main\ns: MOV MAIN_SCRATCHPAD[0..1] -> MAIN_SCRATCHPAD[4..5]\nh: JMP h\n");
+        std::string why;
+        std::vector<uint8_t> eep;
+        asmcore::EepromMap map;
+        QVERIFY(asmcore::buildEeprom(r.f.ctx.snapshot->result, asmcore::Profile(), eep, map, why));
+        r.f.fs->write("/w/burned/b.eeprom.bin", std::string(eep.begin(), eep.end()));
+        r.f.fs->write("/w/burned/b.eeprom.json", map.json());
+        QStringList logged;
+        ConnectionBag bag;
+        bag.add(r.f.ctx.log, [&](const QString& m) { logged << m; });
+        r.f.fs->write("/w/q.acproj", "name = q\nsource = main.asm\ndebug_eeprom = burned/b.eeprom.bin\n");
+        QVERIFY(r.w->openProject("/w/q.acproj"));
+        QCOMPARE(QString::fromStdString(r.f.dbg.eepromImagePath()), QString("/w/burned/b.eeprom.bin"));
+        QVERIFY2(logged.join("\n").contains("debug_eeprom"), qPrintable(logged.join("\n")));
+        QVERIFY(r.w->openProject("/w/p.acproj"));                                    // no debug_eeprom: back to the build's image
+        QVERIFY(r.f.dbg.eepromImagePath().empty());
+        // a missing image is said, not fatal
+        logged.clear();
+        r.f.fs->write("/w/q.acproj", "name = q\nsource = main.asm\ndebug_eeprom = burned/none.eeprom.bin\n");
+        QVERIFY(r.w->openProject("/w/q.acproj"));
+        QVERIFY(r.f.dbg.eepromImagePath().empty() && logged.join("\n").contains("cannot be used"));
+    }
+
     void theEepromToolBuildsVerifiesAndDisassemblesAnImage() {
         Rig r(kProg);
         QVERIFY(r.f.ctx.snapshot && r.f.ctx.snapshot->result.ok);

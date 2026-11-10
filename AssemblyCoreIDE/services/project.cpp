@@ -65,6 +65,7 @@ bool Project::parse(const std::string& text, Project& p, std::vector<std::string
         else if (k == "werror") p.werror = v == "1" || v == "true" || v == "yes";
         else if (k == "output_dir") p.outputDir = v;
         else if (k == "output_prefix") p.outputPrefix = v;
+        else if (k == "debug_eeprom") p.debugEeprom = v;
         else p.extra.push_back({k, v});
     }
     if (p.outputPrefix.empty()) p.outputPrefix = p.name;
@@ -90,6 +91,7 @@ std::string Project::serialize() const {
     if (werror) o << "werror = 1\n";
     o << "output_dir = " << outputDir << "\n";
     if (!outputPrefix.empty() && outputPrefix != name) o << "output_prefix = " << outputPrefix << "\n";
+    if (!debugEeprom.empty()) o << "debug_eeprom = " << debugEeprom << "\n";
     for (auto& kv : extra) o << kv.first << " = " << kv.second << "\n";
     return o.str();
 }

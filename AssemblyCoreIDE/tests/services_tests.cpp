@@ -85,9 +85,9 @@ static void t_project() {
     std::printf("\nProject file\n");
     Project p;
     std::vector<std::string> errs;
-    std::string text = "name = imu\nsource = defs.inc\nsource = main.asm\ninclude_dir = inc\ncall_model = softret\ndataflow = error\nsuppress = W502\nsuppress = W510\nwcet = a:b\nwerror = 1\nfuture_key = 7\n";
+    std::string text = "name = imu\nsource = defs.inc\nsource = main.asm\ninclude_dir = inc\ncall_model = softret\ndataflow = error\nsuppress = W502\nsuppress = W510\nwcet = a:b\nwerror = 1\ndebug_eeprom = burned/x.eeprom.bin\nfuture_key = 7\n";
     check(Project::parse(text, p, errs) && errs.empty(), "parse");
-    check(p.name == "imu" && p.sources.size() == 2 && p.callModel == asmcore::CallModel::SoftRet && p.dataflow == asmcore::DataflowMode::Error && p.suppress.size() == 2 && p.werror, "fields");
+    check(p.name == "imu" && p.sources.size() == 2 && p.callModel == asmcore::CallModel::SoftRet && p.dataflow == asmcore::DataflowMode::Error && p.suppress.size() == 2 && p.werror && p.debugEeprom == "burned/x.eeprom.bin", "fields");
     Project q;
     check(Project::parse(p.serialize(), q, errs) && q.serialize() == p.serialize(), "serialize round trip");
     check(q.extra.size() == 1 && q.extra[0].first == "future_key", "unknown keys are kept");

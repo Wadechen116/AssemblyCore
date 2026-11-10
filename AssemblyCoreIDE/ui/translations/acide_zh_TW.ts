@@ -4091,6 +4091,14 @@ An IDE for the Sensor Micro-Sequencer ISA, built on the AssemblyCore assembler.<
         <source>the state when it ran</source>
         <translation>執行當下的狀態</translation>
     </message>
+    <message>
+        <source>This project debugs from the burned EEPROM image %1 (debug_eeprom); Debug &gt; Debug from the Build&apos;s EEPROM switches back</source>
+        <translation>這個專案從燒錄檔 %1 除錯（debug_eeprom）；除錯 →「使用建置產生的 EEPROM 除錯」可以切回</translation>
+    </message>
+    <message>
+        <source>debug_eeprom %1 cannot be used: %2</source>
+        <translation>debug_eeprom 指定的 %1 無法使用：%2</translation>
+    </message>
 </context>
 <context>
     <name>acide::TypeBlockBox</name>

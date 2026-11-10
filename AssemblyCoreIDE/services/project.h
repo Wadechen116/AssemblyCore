@@ -25,6 +25,9 @@ struct Project {
     std::vector<std::string> wcet;                 // "from:to"
     bool werror = false;
     std::string outputDir = "out";
+    // A burned EEPROM image (PREFIX.eeprom.bin, with its .eeprom.json next to it) the decoders fetch from when debugging, instead of the
+    // image of the build -- e.g. one read back from a board, or the deliberately damaged image of example 16. "" = the build's.
+    std::string debugEeprom;
     std::string outputPrefix;                      // default: name
 
     std::string baseDir() const;                   // directory of the project file

@@ -1,0 +1,6 @@
+; 用改壞的燒錄檔執行（make_bad_image.py 用它驗證）：Main 錯誤 C，Peri 在 EXEC_XFER 錯誤 B
+run until main.faulted max 5000000
+expect_fault main fault_slot_not_valid
+run until peri.faulted max 5000000
+expect_fault peri fault_range
+expect_pc peri poll

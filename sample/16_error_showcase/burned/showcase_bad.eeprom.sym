@@ -1,0 +1,17 @@
+{
+ "format":"asmcore-eeprom-sym-1",
+ "main_labels":[
+  {"pc":0,"name":"start"},
+  {"pc":3,"name":"hold"}
+ ],
+ "peri_labels":[
+  {"pc":0,"name":"poll"},
+  {"pc":3,"name":"idle"}
+ ],
+ "csrs":[],
+ "services":[
+  {"id":1,"name":"SENSOR"}
+ ],
+ "devices":[],
+ "consts":[]
+}

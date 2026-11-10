@@ -1,0 +1,9 @@
+# AssemblyCoreIDE project
+name = 16_error_showcase
+source = showcase.asm
+scenario = showcase.scn
+call_model = inline
+dataflow = warn
+output_dir = out_sample16
+debug_eeprom = burned/showcase_bad.eeprom.bin
+sample_expect = ok

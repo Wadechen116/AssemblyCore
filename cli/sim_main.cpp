@@ -221,7 +221,7 @@ int main(int argc, char** argv) {
     }
     if (dump) std::fputs(s.dumpState().c_str(), stdout);
     if (decoded) {                                                      // what the decoders make of the bytes they fetch, compared with the source
-        int differ = 0;
+        int differ = 0, classA = 0, classB = 0;
         for (Domain d : {Domain::Main, Domain::Peri}) {
             const std::vector<sim::DecodedLine> lines = s.decodedProgram(d);
             if (lines.empty()) continue;
@@ -232,9 +232,11 @@ int main(int argc, char** argv) {
                 for (uint8_t x : L.bytes) { std::snprintf(b, sizeof b, "%02X ", x); bytes += b; }
                 std::printf("  %s %03X  @%04X  %-9s %-46s %7llu  %s\n", L.matches ? "  " : "!!", L.pc, L.eepromAddr, bytes.c_str(), L.text.c_str(), (unsigned long long)L.fetchCycles, L.source.empty() ? "" : ("; " + L.source).c_str());
                 if (!L.matches) { differ++; std::printf("        the assembler produced: %s\n", L.expected.c_str()); }
+                if (L.problemClass() == 'A') { classA++; std::printf("        A (not a legal encoding): %s\n", L.problem.c_str()); }
+                if (L.problemClass() == 'B') { classB++; std::printf("        B (a legal encoding that breaks a rule of the spec): %s\n", L.specProblem.c_str()); }
             }
         }
-        std::printf("%d instruction(s) differ from what the assembler produced\n", differ);
+        std::printf("%d instruction(s) differ from what the assembler produced; problems in the bytes: A %d, B %d\n", differ, classA, classB);
     }
     if (vsink) vsink->finish(s.now());
     bool io = true;
