@@ -590,6 +590,7 @@ AutoFixResult autoFix(BuildInput in, const lang::Language& language, const AutoF
             const std::vector<std::string> lines = splitLines(it->second);
             for (const Diagnostic& d : kv.second) {
                 if (d.sev == Diagnostic::Note || taken.count({kv.first, d.loc.line})) continue;
+                if (opt.onlyLine > 0 && (kv.first != opt.onlyFile || d.loc.line != opt.onlyLine || (!opt.onlyCode.empty() && d.code != opt.onlyCode))) continue;
                 Edit e;
                 if (!makeEdit(d, lines, cx, opt.wordsOnly || opt.wordsOnlyFiles.count(kv.first) > 0, e)) continue;
                 const std::string key = kv.first + ":" + std::to_string(d.loc.line) + ":" + e.code + ":" + e.what;
@@ -645,6 +646,7 @@ AutoFixResult autoFix(BuildInput in, const lang::Language& language, const AutoF
         if (roundSteps.empty()) break;
         for (FixStep& s : roundSteps) res.steps.push_back(std::move(s));
         res.rounds = round + 1;
+        if (opt.onlyLine > 0) break;                                               // one problem was asked for: one repair
     }
     sync();
     res.build = buildNow(in, language);

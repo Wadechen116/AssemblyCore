@@ -43,6 +43,8 @@ struct AppContext {
     Signal<const QString&> status;                     // a message for the status bar
     Signal<const QString&> log;                        // a line for the output panel
     Signal<> requestBuild;                             // someone wants a build now
+    // One problem: the diagnostics on `line` of `file` (with `code`: only that one). What the editor's "Fix" menu entries call.
+    std::function<AutoFixOutcome(bool apply, const std::string& file, int line, const std::string& code)> autoFixAt;
     std::function<AutoFixOutcome(bool apply)> autoFix; // the main window repairs the program (apply) or only looks at what it would repair; empty without a window
     Signal<const std::string&> languageRequested;      // the user picked a language ("auto", "en", "zh_TW"); the shell rebuilds the window
 };

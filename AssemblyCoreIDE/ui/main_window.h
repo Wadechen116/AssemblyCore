@@ -96,6 +96,7 @@ private:
     void restartDebug();
     void updateDebugActions();
     void onStopped(const SimUpdate& u, const DebugLocation& where);
+    AutoFixOutcome runAutoFixAt(bool apply, const std::string& file, int line, const std::string& code);      // one problem (the editor's right-button menu)
     AutoFixOutcome runAutoFix(bool apply);                   // Debug > Auto Debug: repair what has one sure repair (apply), or only say what it would repair
     void editEnvironmentFile();
 

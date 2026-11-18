@@ -1738,6 +1738,72 @@ private slots:
         QVERIFY2(w.layout().boxes.size() >= 20, "a file that cannot be read leaves the built-in drawing");
     }
 
+    // Right button on a wavy line of the assembly editor: "Fix ..." mends that one problem; when nothing is left the program builds and can be debugged.
+    void theEditorMenuFixesTheProblemUnderThePointer() {
+        Rig r(".main\ns: MVO CONST(1,1) -> MAIN_SCRATCHPAD[0..0]\n JMP strat\nstart: JMP s\n");
+        CodeEditor* e = r.w->currentEditor();
+        if (!e) e = r.w->openFile("/w/main.asm");
+        QVERIFY(e);
+        QVERIFY(r.waitBuild());
+        QVERIFY(!r.f.ctx.snapshot->result.ok);
+        QStringList logged;
+        ConnectionBag bag;
+        bag.add(r.f.ctx.log, [&](const QString& l) { logged << l; });
+        // what the menu offers on the misspelt instruction (line 2, on the word) and on a clean line
+        const QList<CodeEditor::FixOffer> offers = e->fixOffersAt(2, 4);
+        QVERIFY2(offers.size() == 1 && offers[0].available && offers[0].code == "E101" && offers[0].text.contains("MOV"), qPrintable(offers.isEmpty() ? QString("no offer") : offers[0].text));
+        QVERIFY(e->fixOffersAt(4, 2).isEmpty());
+        QCOMPARE(e->toPlainText().count("MVO"), 1);                                          // looking changes nothing
+        // the real menu has the entries, first of all
+        {
+            QMenu* seen = nullptr;
+            QStringList entries;
+            QTimer::singleShot(0, [&] {
+                seen = qobject_cast<QMenu*>(QApplication::activePopupWidget());
+                if (seen) { for (QAction* a : seen->actions()) if (a->objectName().startsWith("fix")) entries << a->objectName() + ":" + a->text() + (a->isEnabled() ? "" : " (off)"); seen->close(); }
+            });
+            QTextCursor c(e->document()->findBlockByNumber(1));
+            c.movePosition(QTextCursor::Right, QTextCursor::MoveAnchor, 4);
+            const QPoint at = e->cursorRect(c).center();
+            QContextMenuEvent ev(QContextMenuEvent::Mouse, at, e->viewport()->mapToGlobal(at));
+            QApplication::sendEvent(e->viewport(), &ev);
+            QVERIFY2(seen, "the menu opened");
+            QVERIFY2(entries.size() == 2 && entries[0].startsWith("fixProblem:") && entries[0].contains("E101") && entries[1].startsWith("fixAllProblems:") && !entries[1].endsWith("(off)"), qPrintable(entries.join(" | ")));
+        }
+        // fix the first: only that line changes, the other problem is still there and the log says so
+        QCOMPARE(e->applyFix(2, "E101"), 1);
+        QVERIFY(e->toPlainText().contains("s: MOV CONST(1,1)") && e->toPlainText().contains("JMP strat"));
+        QVERIFY2(!logged.isEmpty() && logged.join("\n").contains("E101") && logged.join("\n").contains("left"), qPrintable(logged.join(" | ")));
+        QVERIFY(r.waitBuild());
+        QVERIFY(!r.f.ctx.snapshot->result.ok);
+        QVERIFY(e->fixOffersAt(2, 4).isEmpty());                                              // its wavy line is gone
+        // the second: now nothing is left, the program builds and a debug session starts
+        const QList<CodeEditor::FixOffer> second = e->fixOffersAt(3, 6);
+        QVERIFY2(second.size() == 1 && second[0].available && second[0].code == "E301", qPrintable(second.isEmpty() ? QString("no offer") : second[0].text));
+        logged.clear();
+        QCOMPARE(e->applyFix(3, "E301"), 1);
+        QVERIFY(e->toPlainText().contains("JMP start"));
+        QVERIFY2(logged.join("\n").contains("run or debugged"), qPrintable(logged.join(" | ")));
+        QVERIFY(r.waitBuild());
+        QVERIFY(r.f.ctx.snapshot->result.ok);
+        QCOMPARE(e->diagnosticSelectionCount(), 0);
+        // one undo step takes a repair back
+        e->undo();
+        QVERIFY(e->toPlainText().contains("JMP strat"));
+        e->redo();
+        // a problem with no sure repair is said so, greyed out
+        e->replaceAllText(".main\ns: MOV CONST(1,1) -> NO_SUCH_PLACE_AT_ALL[0..0]\n JMP s\n");
+        QVERIFY(r.waitBuild());
+        const QList<CodeEditor::FixOffer> hard = e->fixOffersAt(2, 24);
+        QVERIFY2(hard.size() >= 1 && !hard[0].available && hard[0].text.startsWith("No automatic fix"), qPrintable(hard.isEmpty() ? QString("no offer") : hard[0].text));
+        // fix everything at once
+        e->replaceAllText(".main\ns: MVO CONST(1,1) -> MAIN_SCRATCHPAD[0..0]\n JMP strat\nstart: JMP s\n");
+        QVERIFY(r.waitBuild());
+        QCOMPARE(e->applyFixAll(), 2);
+        QVERIFY(r.waitBuild());
+        QVERIFY(r.f.ctx.snapshot->result.ok);
+    }
+
     void autoDebugFindsWhatIsWrongAndShowsWhere() {
         Rig r(".main\nstart: BR.COND PERI_RESULT_VALID, take\n JMP start\ntake: JMP start\n");
         QAction* act = r.w->findChild<QAction*>("autoDebugAction");

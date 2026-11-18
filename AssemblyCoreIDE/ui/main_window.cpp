@@ -89,6 +89,7 @@ MainWindow::MainWindow(AppContext& ctx, PanelRegistry& panels, QWidget* parent) 
     createPanels(panels);
 
     ctx.autoFix = [this](bool apply) { return runAutoFix(apply); };
+    ctx.autoFixAt = [this](bool apply, const std::string& file, int line, const std::string& code) { return runAutoFixAt(apply, file, line, code); };
     conns_.add(ctx.showPanel, [this](const QString& id) {
         if (QDockWidget* d = dock(id)) { d->show(); d->raise(); }
         else statusBar()->showMessage(tr("No panel named %1").arg(id), 4000);
@@ -1190,7 +1191,9 @@ void MainWindow::syncSpeedBox() {
     else speedBox_->setEditText(tr("%1 cycles/s").arg((qlonglong)v));
 }
 
-AutoFixOutcome MainWindow::runAutoFix(bool apply) {
+AutoFixOutcome MainWindow::runAutoFix(bool apply) { return runAutoFixAt(apply, std::string(), 0, std::string()); }
+
+AutoFixOutcome MainWindow::runAutoFixAt(bool apply, const std::string& file, int line, const std::string& code) {
     AutoFixOutcome out;
     if (!ctx_.workspace.hasProject()) { out.error = "no project is open"; return out; }
     flushTabs();                                                                   // (what the blocks generate is in the workspace)
@@ -1199,6 +1202,9 @@ AutoFixOutcome MainWindow::runAutoFix(bool apply) {
         if (auto* be = qobject_cast<BlockEditor*>(tabs_->widget(i))) generated[be->generatedPath()] = be;
     AutoFixOptions opt;
     for (const auto& kv : generated) opt.wordsOnlyFiles.insert(kv.first);
+    opt.onlyFile = file;
+    opt.onlyLine = line;
+    opt.onlyCode = code;
     out.result = autoFix(ctx_.workspace.snapshot(), *ctx_.language, opt);
     if (!apply) return out;
     for (const auto& kv : out.result.texts) {

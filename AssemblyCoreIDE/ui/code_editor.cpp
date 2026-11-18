@@ -766,8 +766,98 @@ void CodeEditor::gotoLineDialog() {
     if (ok) goTo(n, 0, 0);
 }
 
+QList<CodeEditor::FixOffer> CodeEditor::fixOffersAt(int line, int byteCol) const {
+    QList<FixOffer> out;
+    if (plain_ || !snap_ || !ctx_.autoFixAt) return out;
+    // the problems of the build under the pointer (what is found while debugging has no repair of this kind); off every wavy line: those of the whole line
+    std::vector<asmcore::Diagnostic> here, onLine;
+    for (const asmcore::Diagnostic& d : snap_->diagnosticsFor(path_)) {
+        if (d.loc.line != line || d.sev == asmcore::Diagnostic::Note) continue;
+        onLine.push_back(d);
+        if (d.loc.endCol == 0 || (byteCol >= d.loc.col && byteCol <= d.loc.endCol)) here.push_back(d);
+    }
+    if (here.empty()) here = onLine;
+    std::set<std::string> seen;
+    for (const asmcore::Diagnostic& d : here) {
+        if (!seen.insert(d.code).second) continue;
+        FixOffer f;
+        f.code = d.code;
+        const AutoFixOutcome look = ctx_.autoFixAt(false, path_, line, d.code);      // what it would do, nothing is changed
+        if (!look.result.steps.empty()) {
+            const FixStep& s = look.result.steps.front();
+            f.available = true;
+            f.needsCheck = s.needsCheck;
+            f.text = (s.needsCheck ? tr("Fix %1: %2 (check the result)") : tr("Fix %1: %2")).arg(fromStd(d.code), fromStd(s.what));
+        } else {
+            QString msg = fromStd(d.msg);
+            if (msg.size() > 70) msg = msg.left(67) + "...";
+            f.text = tr("No automatic fix for %1: %2").arg(fromStd(d.code), msg);
+        }
+        out.append(f);
+    }
+    return out;
+}
+
+// what was done goes to the log (where, before -> after), with what the build still says
+int CodeEditor::reportFix(const AutoFixOutcome& o) {
+    if (!o.error.empty()) { ctx_.log.fire(tr("Fix: %1").arg(fromStd(o.error))); return 0; }
+    int made = 0;
+    for (const FixStep& s : o.result.steps) {
+        bool refused = false;
+        for (const FixStep& n : o.notApplied) refused |= n.file == s.file && n.line == s.line && n.code == s.code;
+        if (refused) { ctx_.log.fire(tr("Fix %1, line %2: could not be put into the blocks: %3").arg(fromStd(s.code)).arg(s.line).arg(fromStd(s.what))); continue; }
+        made++;
+        ctx_.log.fire(tr("Fixed %1, line %2: %3").arg(fromStd(s.code)).arg(s.line).arg(fromStd(s.what)) + (s.needsCheck ? " " + tr("(a guess: check it)") : QString()));
+    }
+    int errors = 0, warnings = 0;
+    for (const asmcore::Diagnostic& d : o.result.remaining) (d.sev == asmcore::Diagnostic::Error ? errors : warnings)++;
+    if (made > 0) {
+        if (errors == 0 && warnings == 0) ctx_.log.fire(tr("No problems are left: the program can be run or debugged."));
+        else if (errors == 0) ctx_.log.fire(tr("%1 warning(s) left; the program builds and can be run or debugged.").arg(warnings));
+        else ctx_.log.fire(tr("%1 error(s) and %2 warning(s) left.").arg(errors).arg(warnings));
+    } else if (o.result.steps.empty()) ctx_.log.fire(tr("Fix: nothing here has one sure repair."));
+    return made;
+}
+
+int CodeEditor::applyFix(int line, const std::string& code) {
+    if (!ctx_.autoFixAt) return 0;
+    return reportFix(ctx_.autoFixAt(true, path_, line, code));
+}
+
+int CodeEditor::applyFixAll() {
+    if (!ctx_.autoFix) return 0;
+    return reportFix(ctx_.autoFix(true));
+}
+
 void CodeEditor::contextMenuEvent(QContextMenuEvent* e) {
     QMenu* m = createStandardContextMenu();
+    // on a wavy line: the repair of that problem first, then "fix everything"
+    {
+        const Pos p = posOf(cursorForPosition(e->pos()));
+        const QList<FixOffer> offers = fixOffersAt(p.line, p.byteCol);
+        if (!offers.isEmpty()) {
+            QAction* first = m->actions().isEmpty() ? nullptr : m->actions().first();
+            QList<QAction*> mine;
+            for (const FixOffer& f : offers) {
+                auto* a = new QAction(f.text, m);
+                a->setObjectName("fixProblem");
+                a->setEnabled(f.available);
+                const int line = p.line;
+                const std::string code = f.code;
+                connect(a, &QAction::triggered, this, [this, line, code] { applyFix(line, code); });
+                mine.append(a);
+            }
+            int problems = 0;
+            for (const asmcore::Diagnostic& d : snap_->diagnosticsFor(path_)) if (d.sev != asmcore::Diagnostic::Note) problems++;
+            auto* all = new QAction(tr("Fix All Problems That Have One Sure Repair"), m);
+            all->setObjectName("fixAllProblems");
+            all->setEnabled(problems > 0 && (bool)ctx_.autoFix);
+            connect(all, &QAction::triggered, this, [this] { applyFixAll(); });
+            mine.append(all);
+            m->insertActions(first, mine);
+            m->insertSeparator(first);
+        }
+    }
     m->addSeparator();
     m->addAction(tr("Go to Definition\tF12"), this, &CodeEditor::goToDefinition);
     m->addAction(tr("Find All References\tShift+F12"), this, &CodeEditor::findReferences);

@@ -50,6 +50,19 @@ public:
 
     // for tests
     int diagnosticSelectionCount() const { return diagSelections_; }
+    // "Fix" in the right-button menu. On a wavy line (a warning or an error of the build) the menu offers the one most likely repair of that problem, as the auto
+    // fix would make it, and "Fix all problems" for everything that has one. fixOffersAt: what the menu would offer at a place (1-based line, byte column; a column
+    // off every wavy line takes the problems of the whole line). applyFix: makes the repair of one offer; applyFixAll: of everything. They return the number of
+    // repairs made, and say in the log what was changed and what is left.
+    struct FixOffer {
+        std::string code;                // "E101"
+        QString text;                    // the menu entry: "Fix E101: MVO -> MOV (unknown instruction)" / "No automatic fix for E3xx: ..."
+        bool available = false;
+        bool needsCheck = false;         // a good guess, not a certainty
+    };
+    QList<FixOffer> fixOffersAt(int line, int byteCol) const;
+    int applyFix(int line, const std::string& code);
+    int applyFixAll();
     int executionSelectionCount() const { return execSelections_; }      // lines highlighted as "about to execute"
     QWidget* gutterWidget() const { return gutter_; }
     int lineY(int line) const;                             // y (in the gutter) of the middle of a 1-based line, for tests
@@ -77,6 +90,7 @@ private:
     int bannerHeight() const;
     void onContentsChanged();
     void insertCompletion(const QString& insert);
+    int reportFix(const AutoFixOutcome& o);
     QList<asmcore::Diagnostic> diagnosticsAt(int line, int byteCol, bool wholeLineIfNoColumn) const;
     // the build's messages for this file, and the problems found while debugging (the decoder's A / B, the faults) on its lines
     std::vector<asmcore::Diagnostic> allDiagnostics() const;

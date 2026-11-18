@@ -2675,6 +2675,54 @@ The decoder made of the bytes: %4</source>
         <source>Step now acts on the %1 sequencer</source>
         <translation>單步現在作用在 %1 序列器</translation>
     </message>
+    <message>
+        <source>Fix %1: %2 (check the result)</source>
+        <translation>修正 %1：%2（請檢查結果）</translation>
+    </message>
+    <message>
+        <source>Fix %1: %2</source>
+        <translation>修正 %1：%2</translation>
+    </message>
+    <message>
+        <source>No automatic fix for %1: %2</source>
+        <translation>%1 沒有可自動修正的方法：%2</translation>
+    </message>
+    <message>
+        <source>Fix: %1</source>
+        <translation>修正：%1</translation>
+    </message>
+    <message>
+        <source>Fix %1, line %2: could not be put into the blocks: %3</source>
+        <translation>修正 %1，第 %2 行：無法套用到積木：%3</translation>
+    </message>
+    <message>
+        <source>Fixed %1, line %2: %3</source>
+        <translation>已修正 %1，第 %2 行：%3</translation>
+    </message>
+    <message>
+        <source>(a guess: check it)</source>
+        <translation>（這是推測，請檢查）</translation>
+    </message>
+    <message>
+        <source>No problems are left: the program can be run or debugged.</source>
+        <translation>已沒有任何問題：程式可以執行或開始除錯。</translation>
+    </message>
+    <message>
+        <source>%1 warning(s) left; the program builds and can be run or debugged.</source>
+        <translation>還有 %1 個警告；程式可以建置，並可執行或除錯。</translation>
+    </message>
+    <message>
+        <source>%1 error(s) and %2 warning(s) left.</source>
+        <translation>還有 %1 個錯誤、%2 個警告。</translation>
+    </message>
+    <message>
+        <source>Fix: nothing here has one sure repair.</source>
+        <translation>修正：這裡沒有可確定的修正方法。</translation>
+    </message>
+    <message>
+        <source>Fix All Problems That Have One Sure Repair</source>
+        <translation>修正所有可確定修正的問題</translation>
+    </message>
 </context>
 <context>
     <name>acide::CommentEdit</name>

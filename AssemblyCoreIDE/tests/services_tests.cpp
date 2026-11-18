@@ -1144,6 +1144,35 @@ static void t_auto_fix() {
         AutoFixResult r = fixIt(kFinite);
         check(r.clean() && r.steps.empty() && r.texts.empty(), "a program without errors is left alone");
     }
+    {   // one problem only (the editor's "Fix" entry): the line that was asked for is mended, the other problem stays
+        const std::string two = ".main\ns: MVO CONST(1,1) -> MAIN_SCRATCHPAD[0..0]\n JMP strat\nstart: JMP s\n";
+        auto one = [&](const std::string& src, int line, const std::string& code) {
+            auto fs = std::make_shared<MemoryFileSystem>();
+            fs->write("/p/p.acproj", "name = p\nsource = a.asm\n");
+            fs->write("/p/a.asm", src);
+            Workspace ws(fs);
+            std::vector<std::string> errs;
+            ws.openProject("/p/p.acproj", errs);
+            auto lang = asmcore::lang::Language::defaults();
+            AutoFixOptions o;
+            o.onlyFile = "/p/a.asm";
+            o.onlyLine = line;
+            o.onlyCode = code;
+            return autoFix(ws.snapshot(), lang, o);
+        };
+        AutoFixResult r = one(two, 2, "");
+        check(r.steps.size() == 1 && r.steps[0].line == 2 && r.steps[0].code == "E101" && has(text(r), "MOV CONST(1,1)") && has(text(r), "JMP strat"), "one problem asked for: only its line is mended",
+              r.steps.empty() ? "no step" : r.steps[0].what);
+        check(!r.clean() && !r.remaining.empty(), "...and what is left is still reported");
+        // (the assembler says the undefined target only once the instruction above it is one it knows: the second problem shows after the first repair)
+        AutoFixResult r3 = one(text(r), 3, "E301");
+        check(r3.steps.size() == 1 && r3.steps[0].line == 3 && has(text(r3), "JMP start") && r3.clean(), "then the other line, by its code: nothing is left and the program builds",
+              r3.remaining.empty() ? "" : r3.remaining[0].code + " " + r3.remaining[0].msg);
+        AutoFixResult none = one(two, 2, "E999");
+        check(none.steps.empty() && none.texts.empty(), "a code that is not on the line: nothing is done");
+        AutoFixResult all = fixIt(two);
+        check(all.clean() && all.steps.size() == 2, "(without the limit both are mended and the program builds)");
+    }
     {
         AutoFixResult r = fixIt(".main\ns: MVO CONST(1,1) -> MAIN_SCRATCHPAD[0..0]\n JMP s\n");
         check(r.clean() && has(text(r), "MOV CONST(1,1)") && r.steps.size() == 1 && r.steps[0].code == "E101" && r.steps[0].line == 2, "a misspelt instruction becomes the closest one", r.steps.empty() ? "no step" : r.steps[0].what);

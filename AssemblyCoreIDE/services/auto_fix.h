@@ -63,6 +63,10 @@ struct AutoFixOptions {
     // other steps are those of the file as it was.
     std::set<std::string> wordsOnlyFiles;
     bool wordsOnly = false;                          // all files
+    // One problem only (what "Fix this problem" in the editor's menu does): only the diagnostics on this line of this file are looked at (with onlyCode: only
+    // those with that code), one repair is made, and the program is built once more to see what is left. onlyLine 0: everything, as above.
+    std::string onlyFile, onlyCode;
+    int onlyLine = 0;
 };
 
 // What the IDE did with a result (the main window makes it): which files were changed, and the steps that could not be put into the blocks of a block program
