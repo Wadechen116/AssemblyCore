@@ -702,6 +702,29 @@ static void t_catalog() {
         }
         check(pieces > 40 && notOne.empty(), "every sample of an instruction / structure / definition / component drawer is one piece with empty sockets", notOne);
     }
+    // no two samples of a drawer say the same thing: what a block shows is its title (if it draws one), its own fields and the [Main] / [Peri] mark
+    {
+        std::map<std::string, std::string> seen;
+        std::string twins;
+        for (const CatalogEntry& e : cat.entries()) {
+            if (e.pattern() || e.custom || e.hardware) continue;
+            Document pd;
+            const std::vector<Block> bl = cat.instantiate(e, pd);
+            const BlockDef* bd = reg.find(e.type);
+            if (bl.empty() || !bd) continue;
+            // a component whose template is one field alone is drawn as that field's value and nothing else
+            std::string shown = e.title;
+            if (e.component() && bd->tmpl.size() > 2 && bd->tmpl.front() == '{' && bd->tmpl.find('}') == bd->tmpl.size() - 1 && bd->semantic != "region") shown = bl[0].get(bd->tmpl.substr(1, bd->tmpl.size() - 2));
+            const std::string key = e.category + " / " + shown + " / " + (e.domains == kMain ? "Main" : e.domains == kPeri ? "Peri" : "both");
+            if (seen.count(key)) twins += seen[key] + " and " + e.id + " both show \"" + shown + "\"; ";
+            seen[key] = e.id;
+        }
+        check(twins.empty(), "no two blocks of a drawer look alike (same words, same Main / Peri mark)", twins);
+        Document nd;
+        check(cat.instantiate(*cat.find("type:label_ref"), nd)[0].get("name") == "label" && cat.instantiate(*cat.find("type:csr_ref"), nd)[0].get("name") == "CSR_NAME" &&
+              cat.instantiate(*cat.find("type:proc_ref"), nd)[0].get("name") == "procedure" && cat.instantiate(*cat.find("type:proc"), nd)[0].get("name") == "procedure",
+              "a reference says what it refers to (label, procedure, CSR_NAME ...), and the procedure reference names the fresh procedure block");
+    }
     Document d;
     std::vector<Block> reg1 = cat.instantiate(*cat.find("type:region_main_scratchpad"), d), bin = cat.instantiate(*cat.find("type:expr_bin"), d), mov = cat.instantiate(*cat.find("type:mov"), d);
     check(!reg1[0].value("first") && !reg1[0].value("last") && !bin[0].value("a") && !bin[0].value("b") && !mov[0].value("src") && !mov[0].value("dst"), "a region, an expression and a move come with holes where their parts go");

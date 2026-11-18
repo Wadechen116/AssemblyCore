@@ -332,8 +332,9 @@ void BlockToolbox::build() {
         for (const CatalogEntry* e : d.entries) {
             auto* it = new QTreeWidgetItem(top);
             QString title = e->hardware ? hardwareTitle(e->title) : e->custom ? QString::fromStdString(e->title) : pattern ? tr2("BlockPattern", e->title) : tr2("BlockTitle", e->title);
-            if (e->domains == asmcore::blocks::kMain && !e->component()) title += "  [Main]";
-            else if (e->domains == asmcore::blocks::kPeri && !e->component()) title += "  [Peri]";
+            // (components too: the condition of a Main branch and the condition of a Peri branch are two blocks with one name, told apart by this)
+            if (e->domains == asmcore::blocks::kMain) title += "  [Main]";
+            else if (e->domains == asmcore::blocks::kPeri) title += "  [Peri]";
             it->setText(0, title);
             it->setData(0, Qt::UserRole, QString::fromStdString(e->id));
             it->setData(0, Qt::UserRole + 1, QString::fromStdString(e->title));
@@ -355,8 +356,8 @@ void BlockToolbox::build() {
             it->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable | Qt::ItemIsDragEnabled);
             if (previewer_) {                                                         // drawn as its blocks (the picture when the row is shown; the text stays: search, tooltips, accessibility)
                 QString mark = e->custom ? QStringLiteral("\u2605") : QString();
-                if (e->domains == asmcore::blocks::kMain && !e->component()) mark = "Main";
-                else if (e->domains == asmcore::blocks::kPeri && !e->component()) mark = "Peri";
+                if (e->domains == asmcore::blocks::kMain) mark = "Main";
+                else if (e->domains == asmcore::blocks::kPeri) mark = "Peri";
                 it->setData(0, Qt::UserRole + 5, mark);
                 if (pattern) it->setData(0, Qt::UserRole + 6, e->custom ? QString::fromStdString(e->title) : tr2("BlockPattern", e->title));
             }

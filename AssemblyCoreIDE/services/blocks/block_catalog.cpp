@@ -61,7 +61,7 @@ const char* sampleText(const std::string& type) {
         {"ret", "RET"},
         {"xfer", "EXEC_XFER READ dev=0, addr=0, addrlen=1, ptr=0"},
         {"pub", "EXEC_PUB service=1, src=0, len=1"},
-        {"proc", ".proc name\n.endp"},
+        {"proc", ".proc procedure\n.endp"},                                         // (the name the "procedure" reference of the Options drawer says)
         {"label", "label:"},
         {"vector", ".vector 0, handler"},
         {"wcet", ".wcet name, from, to"},
@@ -384,6 +384,16 @@ void hollow(Block& b, const Registry& reg) {
         if (in.derive.compare(0, 4, "arg:") == 0) b.set(in.derive.substr(4), partText(b, *d, in.derive.substr(4), reg));
 }
 
+// What a fresh component that stands for a name says. Each kind has a word of its own: they are drawn as the name alone, so with one common placeholder
+// ("name") a label, a procedure, a CSR, a service and a device were five blocks that looked alike in the toolbox.
+const char* placeholderName(const std::string& type) {
+    static const std::map<std::string, const char*> m = {
+        {"name", "NAME"}, {"label_ref", "label"}, {"proc_ref", "procedure"}, {"csr_ref", "CSR_NAME"}, {"service_ref", "SERVICE_NAME"}, {"dev_ref", "DEVICE_NAME"},
+    };
+    auto it = m.find(type);
+    return it == m.end() ? "name" : it->second;
+}
+
 // a component on its own: its own fields (a choice, a name, the value of a number), every socket a hole
 Block makeComponent(Document& doc, const Registry& reg, const std::string& type) {
     Block b = doc.make(type);
@@ -393,7 +403,7 @@ Block makeComponent(Document& doc, const Registry& reg, const std::string& type)
         if (!b.get(f.name).empty()) continue;
         if (f.optional) continue;                                                       // (a number's kind / sign / width stay "not stated")
         if (f.kind == FieldKind::Choice) { for (const std::string& o : f.options) if (!o.empty()) { b.set(f.name, o); break; } }
-        else if (f.name == "name") b.set("name", "name");
+        else if (f.name == "name") b.set("name", placeholderName(type));
         else if (f.name == "value" && d->semantic == "number") b.set("value", "0");
     }
     hollow(b, reg);
