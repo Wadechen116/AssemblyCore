@@ -6,6 +6,8 @@
 #include <set>
 
 #include <QCompleter>
+#include <QLabel>
+#include <QTimer>
 #include <QPlainTextEdit>
 #include <QStandardItemModel>
 
@@ -63,6 +65,13 @@ public:
     QList<FixOffer> fixOffersAt(int line, int byteCol) const;
     int applyFix(int line, const std::string& code);
     int applyFixAll();
+    // What a fix is doing and how it ended, said where the user is looking: a notice in the top right corner of the editor ("Fixing ..." with the wait cursor
+    // while the program is built and mended, then the outcome -- green: nothing is left, amber: something is, red: nothing could be mended; it goes away by
+    // itself after a few seconds, or on a click). The same sentence goes to the status bar, the details to the Output panel, which is brought up.
+    enum class Notice { None, Busy, Good, Partly, Bad };
+    Notice noticeKind() const { return noticeKind_; }
+    QString noticeText() const;
+    std::vector<QString> noticeHistory;                    // every notice shown, oldest first (tests: "Fixing ..." was shown before the outcome)
     int executionSelectionCount() const { return execSelections_; }      // lines highlighted as "about to execute"
     QWidget* gutterWidget() const { return gutter_; }
     int lineY(int line) const;                             // y (in the gutter) of the middle of a 1-based line, for tests
@@ -79,6 +88,7 @@ protected:
     void paintEvent(QPaintEvent* e) override;
     bool event(QEvent* e) override;
     void contextMenuEvent(QContextMenuEvent* e) override;
+    bool eventFilter(QObject* o, QEvent* e) override;
     void mouseReleaseEvent(QMouseEvent* e) override;
 
 private:
@@ -91,6 +101,9 @@ private:
     void onContentsChanged();
     void insertCompletion(const QString& insert);
     int reportFix(const AutoFixOutcome& o);
+    void showNotice(Notice kind, const QString& text);
+    void placeNotice();
+    void beginFix(const QString& what);
     QList<asmcore::Diagnostic> diagnosticsAt(int line, int byteCol, bool wholeLineIfNoColumn) const;
     // the build's messages for this file, and the problems found while debugging (the decoder's A / B, the faults) on its lines
     std::vector<asmcore::Diagnostic> allDiagnostics() const;
@@ -103,6 +116,9 @@ private:
     SyntaxHighlighter* hl_;
     QWidget* gutter_;
     QWidget* banner_ = nullptr;
+    QLabel* notice_ = nullptr;
+    QTimer* noticeTimer_ = nullptr;
+    Notice noticeKind_ = Notice::None;
     std::string generatedFrom_;
     QCompleter* completer_;
     QStandardItemModel* model_;

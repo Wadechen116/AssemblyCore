@@ -2723,6 +2723,30 @@ The decoder made of the bytes: %4</source>
         <source>Fix All Problems That Have One Sure Repair</source>
         <translation>修正所有可確定修正的問題</translation>
     </message>
+    <message>
+        <source>Fixed %1 problem(s). Nothing is left: the program can be run or debugged.</source>
+        <translation>已修正 %1 個問題。已沒有任何問題：程式可以執行或開始除錯。</translation>
+    </message>
+    <message>
+        <source>Fixed %1 problem(s). %2 warning(s) are left; the program can be run or debugged.</source>
+        <translation>已修正 %1 個問題。還有 %2 個警告；程式可以執行或除錯。</translation>
+    </message>
+    <message>
+        <source>Fixed %1 problem(s). %2 error(s) and %3 warning(s) are left: they have no sure repair, or show only now.</source>
+        <translation>已修正 %1 個問題。還有 %2 個錯誤、%3 個警告：它們沒有可確定的修正方法，或是現在才出現。</translation>
+    </message>
+    <message>
+        <source>Nothing was changed: no problem has one sure repair. %1 error(s) and %2 warning(s) are left.</source>
+        <translation>沒有修改任何內容：沒有可確定修正的問題。還有 %1 個錯誤、%2 個警告。</translation>
+    </message>
+    <message>
+        <source>Fixing the problem on line %1...</source>
+        <translation>正在修正第 %1 行的問題…</translation>
+    </message>
+    <message>
+        <source>Fixing all problems that have one sure repair...</source>
+        <translation>正在修正所有可確定修正的問題…</translation>
+    </message>
 </context>
 <context>
     <name>acide::CommentEdit</name>

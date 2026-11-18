@@ -360,6 +360,54 @@ void CodeEditor::resizeEvent(QResizeEvent* e) {
     const int bh = bannerHeight();
     if (banner_) banner_->setGeometry(QRect(cr.left(), cr.top(), cr.width(), bh));
     gutter_->setGeometry(QRect(cr.left(), cr.top() + bh, lineNumberAreaWidth(), cr.height() - bh));
+    placeNotice();
+}
+
+QString CodeEditor::noticeText() const { return notice_ && !notice_->isHidden() ? notice_->text() : QString(); }
+
+void CodeEditor::placeNotice() {
+    if (!notice_ || notice_->isHidden()) return;
+    const QRect cr = contentsRect();
+    const int scroll = verticalScrollBar() && verticalScrollBar()->isVisible() ? verticalScrollBar()->width() : 0;
+    const int maxW = std::max(160, cr.width() - lineNumberAreaWidth() - scroll - 24);
+    notice_->setMaximumWidth(maxW);
+    notice_->adjustSize();
+    notice_->move(cr.right() - scroll - notice_->width() - 10, cr.top() + bannerHeight() + 8);
+    notice_->raise();
+}
+
+void CodeEditor::showNotice(Notice kind, const QString& text) {
+    if (!notice_) {
+        notice_ = new QLabel(this);
+        notice_->setObjectName("editorNotice");
+        notice_->setWordWrap(true);
+        notice_->setMargin(8);
+        notice_->setCursor(Qt::ArrowCursor);
+        notice_->installEventFilter(this);                                           // a click puts it away
+        noticeTimer_ = new QTimer(this);
+        noticeTimer_->setSingleShot(true);
+        connect(noticeTimer_, &QTimer::timeout, this, [this] { if (notice_) notice_->hide(); noticeKind_ = Notice::None; });
+    }
+    noticeKind_ = kind;
+    noticeHistory.push_back(text);
+    const QColor edge = kind == Notice::Good ? QColor(46, 160, 67) : kind == Notice::Partly ? theme_.warning : kind == Notice::Bad ? theme_.error : theme_.lineNumberFg;
+    QColor back = theme_.lineNumberBg;
+    notice_->setStyleSheet(QString("QLabel#editorNotice { background: %1; color: %2; border: 2px solid %3; border-radius: 6px; font-weight: %4; }")
+                               .arg(back.name(), theme_.foreground.name(), edge.name(), kind == Notice::Busy ? "normal" : "bold"));
+    notice_->setText(text);
+    notice_->show();
+    placeNotice();
+    noticeTimer_->stop();
+    if (kind != Notice::Busy) noticeTimer_->start(kind == Notice::Good ? 6000 : 10000);      // (what is left to do stays a little longer)
+    ctx_.status.fire(text);
+}
+
+// A fix builds the program up to several times, on this thread: say so first (the notice, the wait cursor), and let it be painted before the work starts.
+void CodeEditor::beginFix(const QString& what) {
+    showNotice(Notice::Busy, what);
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+    notice_->repaint();
+    QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
 }
 void CodeEditor::lineNumberAreaPaint(QPaintEvent* ev) {
     QPainter p(gutter_);
@@ -800,7 +848,7 @@ QList<CodeEditor::FixOffer> CodeEditor::fixOffersAt(int line, int byteCol) const
 
 // what was done goes to the log (where, before -> after), with what the build still says
 int CodeEditor::reportFix(const AutoFixOutcome& o) {
-    if (!o.error.empty()) { ctx_.log.fire(tr("Fix: %1").arg(fromStd(o.error))); return 0; }
+    if (!o.error.empty()) { ctx_.log.fire(tr("Fix: %1").arg(fromStd(o.error))); showNotice(Notice::Bad, tr("Fix: %1").arg(fromStd(o.error))); return 0; }
     int made = 0;
     for (const FixStep& s : o.result.steps) {
         bool refused = false;
@@ -816,17 +864,34 @@ int CodeEditor::reportFix(const AutoFixOutcome& o) {
         else if (errors == 0) ctx_.log.fire(tr("%1 warning(s) left; the program builds and can be run or debugged.").arg(warnings));
         else ctx_.log.fire(tr("%1 error(s) and %2 warning(s) left.").arg(errors).arg(warnings));
     } else if (o.result.steps.empty()) ctx_.log.fire(tr("Fix: nothing here has one sure repair."));
+    // the outcome, in one sentence, where the user is looking
+    if (made > 0 && errors == 0 && warnings == 0) showNotice(Notice::Good, tr("Fixed %1 problem(s). Nothing is left: the program can be run or debugged.").arg(made));
+    else if (made > 0 && errors == 0) showNotice(Notice::Good, tr("Fixed %1 problem(s). %2 warning(s) are left; the program can be run or debugged.").arg(made).arg(warnings));
+    else if (made > 0) showNotice(Notice::Partly, tr("Fixed %1 problem(s). %2 error(s) and %3 warning(s) are left: they have no sure repair, or show only now.").arg(made).arg(errors).arg(warnings));
+    else showNotice(Notice::Bad, tr("Nothing was changed: no problem has one sure repair. %1 error(s) and %2 warning(s) are left.").arg(errors).arg(warnings));
+    ctx_.showPanel.fire("output");                                                // what was changed, line by line
     return made;
+}
+
+bool CodeEditor::eventFilter(QObject* o, QEvent* e) {
+    if (o == notice_ && e->type() == QEvent::MouseButtonPress) { notice_->hide(); noticeKind_ = Notice::None; if (noticeTimer_) noticeTimer_->stop(); return true; }
+    return QPlainTextEdit::eventFilter(o, e);
 }
 
 int CodeEditor::applyFix(int line, const std::string& code) {
     if (!ctx_.autoFixAt) return 0;
-    return reportFix(ctx_.autoFixAt(true, path_, line, code));
+    beginFix(tr("Fixing the problem on line %1...").arg(line));
+    const AutoFixOutcome o = ctx_.autoFixAt(true, path_, line, code);
+    QApplication::restoreOverrideCursor();
+    return reportFix(o);
 }
 
 int CodeEditor::applyFixAll() {
     if (!ctx_.autoFix) return 0;
-    return reportFix(ctx_.autoFix(true));
+    beginFix(tr("Fixing all problems that have one sure repair..."));
+    const AutoFixOutcome o = ctx_.autoFix(true);
+    QApplication::restoreOverrideCursor();
+    return reportFix(o);
 }
 
 void CodeEditor::contextMenuEvent(QContextMenuEvent* e) {

@@ -1771,8 +1771,15 @@ private slots:
             QVERIFY2(entries.size() == 2 && entries[0].startsWith("fixProblem:") && entries[0].contains("E101") && entries[1].startsWith("fixAllProblems:") && !entries[1].endsWith("(off)"), qPrintable(entries.join(" | ")));
         }
         // fix the first: only that line changes, the other problem is still there and the log says so
+        QVERIFY(e->noticeKind() == CodeEditor::Notice::None && e->noticeHistory.empty());
         QCOMPARE(e->applyFix(2, "E101"), 1);
         QVERIFY(e->toPlainText().contains("s: MOV CONST(1,1)") && e->toPlainText().contains("JMP strat"));
+        // it says that it is working, then how it ended: one mended, something is left (amber), and the wait cursor is gone
+        QVERIFY2(e->noticeHistory.size() == 2 && e->noticeHistory[0].startsWith("Fixing the problem on line 2"), qPrintable(e->noticeHistory.empty() ? QString("no notice") : e->noticeHistory[0]));
+        QVERIFY2(e->noticeKind() == CodeEditor::Notice::Partly && e->noticeText().startsWith("Fixed 1 problem(s).") && e->noticeText().contains("1 error(s)"), qPrintable(e->noticeText()));
+        QVERIFY(!QApplication::overrideCursor());
+        QVERIFY(e->findChild<QLabel*>("editorNotice") && e->findChild<QLabel*>("editorNotice")->isVisible());
+        e->grab().save(QDir::tempPath() + "/editor_fix_notice_partly.png");
         QVERIFY2(!logged.isEmpty() && logged.join("\n").contains("E101") && logged.join("\n").contains("left"), qPrintable(logged.join(" | ")));
         QVERIFY(r.waitBuild());
         QVERIFY(!r.f.ctx.snapshot->result.ok);
@@ -1784,6 +1791,10 @@ private slots:
         QCOMPARE(e->applyFix(3, "E301"), 1);
         QVERIFY(e->toPlainText().contains("JMP start"));
         QVERIFY2(logged.join("\n").contains("run or debugged"), qPrintable(logged.join(" | ")));
+        QVERIFY2(e->noticeKind() == CodeEditor::Notice::Good && e->noticeText().contains("Nothing is left") && e->noticeText().contains("run or debugged"), qPrintable(e->noticeText()));
+        e->grab().save(QDir::tempPath() + "/editor_fix_notice_good.png");
+        QTest::mouseClick(e->findChild<QLabel*>("editorNotice"), Qt::LeftButton);            // a click puts the notice away
+        QVERIFY(e->noticeKind() == CodeEditor::Notice::None && e->noticeText().isEmpty());
         QVERIFY(r.waitBuild());
         QVERIFY(r.f.ctx.snapshot->result.ok);
         QCOMPARE(e->diagnosticSelectionCount(), 0);
@@ -1796,10 +1807,17 @@ private slots:
         QVERIFY(r.waitBuild());
         const QList<CodeEditor::FixOffer> hard = e->fixOffersAt(2, 24);
         QVERIFY2(hard.size() >= 1 && !hard[0].available && hard[0].text.startsWith("No automatic fix"), qPrintable(hard.isEmpty() ? QString("no offer") : hard[0].text));
+        // "fix all" with nothing that can be mended: it still answers -- nothing was changed (red)
+        e->noticeHistory.clear();
+        QCOMPARE(e->applyFixAll(), 0);
+        QVERIFY2(e->noticeHistory.size() == 2 && e->noticeHistory[0].startsWith("Fixing all problems") && e->noticeKind() == CodeEditor::Notice::Bad && e->noticeText().startsWith("Nothing was changed"),
+                 qPrintable(e->noticeText()));
+        QVERIFY(!QApplication::overrideCursor());
         // fix everything at once
         e->replaceAllText(".main\ns: MVO CONST(1,1) -> MAIN_SCRATCHPAD[0..0]\n JMP strat\nstart: JMP s\n");
         QVERIFY(r.waitBuild());
         QCOMPARE(e->applyFixAll(), 2);
+        QVERIFY2(e->noticeKind() == CodeEditor::Notice::Good && e->noticeText().startsWith("Fixed 2 problem(s)."), qPrintable(e->noticeText()));
         QVERIFY(r.waitBuild());
         QVERIFY(r.f.ctx.snapshot->result.ok);
     }
