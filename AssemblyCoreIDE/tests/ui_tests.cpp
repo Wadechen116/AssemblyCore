@@ -657,6 +657,83 @@ private slots:
         QVERIFY(r.w->debugStatusText().contains("off"));
         QCOMPARE(r.w->currentEditor()->executionSelectionCount(), 0);
     }
+    // The listing is not only the build: while debugging it shows the program that runs, where the sequencers are, what ran how often, the breakpoints.
+    void theListingFollowsTheRunningProgram() {
+        Rig r(kProg);
+        auto* table = r.find<QTableWidget>("listing", "listingTable");
+        auto* status = r.find<QLabel>("listing", "listingStatus");
+        QVERIFY(table && status);
+        enum { kMark = 0, kDom, kPc, kBytes, kCyc, kHits, kText, kLine };
+        const int n = table->rowCount();
+        QCOMPARE(n, (int)r.f.ctx.snapshot->result.instrs.size());
+        auto rowOfLine = [&](int line) { for (int i = 0; i < n; i++) if (table->item(i, kDom)->text() == "M" && table->item(i, kLine)->text().toInt() == line) return i; return -1; };
+        const int r3 = rowOfLine(3), r4 = rowOfLine(4), r5 = rowOfLine(5), r6 = rowOfLine(6);
+        QVERIFY(r3 >= 0 && r4 >= 0 && r5 >= 0 && r6 >= 0);
+        // before a session: the build alone -- nothing about a run
+        for (int i = 0; i < n; i++) QVERIFY(table->item(i, kMark)->text().isEmpty() && table->item(i, kHits)->text().isEmpty());
+        QVERIFY2(status->text().contains("newest build"), qPrintable(status->text()));
+        // stopped at the breakpoint on line 4: line 3 ran once, line 4 is where Main is and carries the breakpoint, lines 5 and 6 have not run
+        r.clickGutter(4);
+        r.w->debugAction("start")->trigger();
+        QVERIFY2(r.waitStops(1), "no stop after F5");
+        QVERIFY(r.until([&] { return table->item(r4, kMark)->text().contains("M"); }));
+        const ViewPtr v = r.f.dbg.session().view();
+        QVERIFY(v);
+        QVERIFY2(table->item(r4, kMark)->text().contains(QString::fromUtf8("\xE2\x97\x8F")) && table->item(r4, kMark)->text().contains(QString::fromUtf8("M\xE2\x96\xB6")), qPrintable(table->item(r4, kMark)->text()));
+        QCOMPARE(table->item(r4, kPc)->text().toUInt(nullptr, 16), v->pc[0]);               // the row marked is the simulator's pc
+        QCOMPARE(table->item(r3, kHits)->text(), QString("1"));
+        QCOMPARE(table->item(r4, kHits)->text(), QString("0"));
+        QCOMPARE(table->item(r6, kHits)->text(), QString("0"));
+        const acide::Theme rows = table->palette().color(QPalette::Base).lightness() > 128 ? acide::Theme::light() : acide::Theme::dark();      // (the colours go with the table)
+        QVERIFY(table->item(r4, kText)->background().color() == rows.execMain);
+        QVERIFY(table->item(r3, kText)->background().style() == Qt::NoBrush);
+        QVERIFY2(table->item(r6, kText)->foreground().color() != table->item(r3, kText)->foreground().color(), "code that has not run is faded");
+        QVERIFY2(status->text().contains("being debugged") && status->text().contains(QString::number((qulonglong)v->cycle)), qPrintable(status->text()));
+        // every count in the table is the simulator's
+        for (int i = 0; i < n; i++) {
+            const int d = table->item(i, kDom)->text() == "M" ? 0 : 1;
+            const uint32_t pc = table->item(i, kPc)->text().toUInt(nullptr, 16);
+            QCOMPARE(table->item(i, kHits)->text().toULongLong(), (qulonglong)(pc < v->hits[d].size() ? v->hits[d][pc] : 0));
+        }
+        r.w->grab().save(QDir::tempPath() + "/acide_listing_live.png");
+        // a step: the mark moves on, the count of the line that ran goes up
+        r.w->debugAction("over")->trigger();
+        QVERIFY(r.waitStops(2));
+        QVERIFY(r.until([&] { return table->item(r5, kMark)->text().contains("M"); }));
+        QCOMPARE(table->item(r4, kHits)->text(), QString("1"));
+        QVERIFY(!table->item(r4, kMark)->text().contains("M") && table->item(r4, kMark)->text().contains(QString::fromUtf8("\xE2\x97\x8F")));      // the breakpoint stays, Main has left
+        QVERIFY(table->item(r4, kText)->background().style() == Qt::NoBrush);
+        // the text is edited while the session goes on: the listing keeps showing what runs, and says so
+        CodeEditor* e = r.w->currentEditor();
+        e->replaceAllText(QString(kProg) + "    EXEC_CSR WRITE8 C, 9\n");
+        QVERIFY(r.waitBuild());
+        QVERIFY(r.f.dbg.stale());
+        QVERIFY(r.until([&] { return status->text().contains("changed since"); }));
+        QCOMPARE(table->rowCount(), n);                                                       // (the newest build has one instruction more)
+        QVERIFY((int)r.f.ctx.snapshot->result.instrs.size() == n + 1);
+        // run on to the end (h: JMP h is where Main comes to rest): every line has run, Main is marked on line 6, and the counts are the simulator's
+        r.f.dbg.removeLineBreakpoint("/w/main.asm", 4);
+        r.f.dbg.runLive();
+        QVERIFY(r.until([&] { return !r.f.dbg.running() && table->item(r6, kMark)->text().contains("M"); }, 8000));
+        QVERIFY(r.until([&] { return table->item(r5, kHits)->text() == "1"; }));
+        {
+            const ViewPtr w2 = r.f.dbg.session().view();
+            QVERIFY(w2);
+            for (int i = 0; i < n; i++) {
+                const int d = table->item(i, kDom)->text() == "M" ? 0 : 1;
+                const uint32_t pc = table->item(i, kPc)->text().toUInt(nullptr, 16);
+                QCOMPARE(table->item(i, kHits)->text().toULongLong(), (qulonglong)(pc < w2->hits[d].size() ? w2->hits[d][pc] : 0));
+            }
+            QCOMPARE(table->item(r6, kPc)->text().toUInt(nullptr, 16), w2->pc[0]);
+        }
+        QVERIFY(table->item(r4, kMark)->text().isEmpty());                                    // the breakpoint is gone
+        // the session ends: the newest build again (with the new instruction), nothing about a run
+        r.w->debugAction("stop")->trigger();
+        QVERIFY(r.until([&] { return table->rowCount() == n + 1; }));
+        for (int i = 0; i < table->rowCount(); i++) QVERIFY(table->item(i, kMark)->text().isEmpty() && table->item(i, kHits)->text().isEmpty());
+        QVERIFY(status->text().contains("newest build"));
+    }
+
     // ---- the simulator parameters and the execution view
     static QTreeWidgetItem* paramRow(QTreeWidget* t, const char* key) {
         for (QTreeWidgetItemIterator it(t); *it; ++it) if ((*it)->data(0, Qt::UserRole).toString() == key) return *it;

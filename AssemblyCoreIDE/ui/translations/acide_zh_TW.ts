@@ -1715,6 +1715,50 @@ Double click on the time line: wind the simulator back to that cycle (what is la
         <source>Line</source>
         <translation>行</translation>
     </message>
+    <message>
+        <source>Runs</source>
+        <translation>次數</translation>
+    </message>
+    <message>
+        <source>Where Main (M) and Peri (P) are, breakpoints, faults, and code that differs from what the decoder fetched</source>
+        <translation>Main（M）與 Peri（P）目前的位置、中斷點、fault，以及與解碼器實際取到的內容不同的程式碼</translation>
+    </message>
+    <message>
+        <source>The assembler&apos;s planning figure for the instruction (not measured)</source>
+        <translation>組譯器對這道指令的規劃值（不是實際量測）</translation>
+    </message>
+    <message>
+        <source>How many times the simulator has executed the instruction in this session</source>
+        <translation>這次除錯中，模擬器執行這道指令的次數</translation>
+    </message>
+    <message>
+        <source>The decoder fetched: %1  (%2)</source>
+        <translation>解碼器取到：%1  （%2）</translation>
+    </message>
+    <message>
+        <source>The build has: %1</source>
+        <translation>建置結果為：%1</translation>
+    </message>
+    <message>
+        <source>Nothing is built yet.</source>
+        <translation>尚未建置。</translation>
+    </message>
+    <message>
+        <source>The newest build. Start debugging to see where the program is and what has run.</source>
+        <translation>最新的建置結果。開始除錯後，會顯示程式執行到哪裡、哪些指令已執行。</translation>
+    </message>
+    <message>
+        <source>The program being debugged, cycle %1. M / P: where Main and Peri are; Runs: how often each instruction has executed.</source>
+        <translation>正在除錯的程式，第 %1 週期。M／P：Main 與 Peri 目前的位置；次數：每道指令已執行幾次。</translation>
+    </message>
+    <message>
+        <source>The sources were changed since it was built: this is what is running, not what the editor shows.</source>
+        <translation>原始碼在建置後有修改：這裡顯示的是正在執行的程式，不是編輯器目前的內容。</translation>
+    </message>
+    <message>
+        <source>%1 instruction(s) differ from what the decoder fetched from the EEPROM (marked, see the tooltip of the bytes).</source>
+        <translation>有 %1 道指令與解碼器從 EEPROM 取到的內容不同（已標示，詳見位元組欄的提示）。</translation>
+    </message>
 </context>
 <context>
     <name>MemoryPanel</name>

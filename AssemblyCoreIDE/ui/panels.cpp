@@ -1,4 +1,5 @@
 // The built-in panels. Each is a small widget that listens to the AppContext and shows one aspect of the newest build.
+#include <map>
 #include <QAbstractItemView>
 #include <QCoreApplication>
 #include <QCheckBox>
@@ -238,39 +239,73 @@ private:
 class ListingPanel : public QWidget {
     Q_DECLARE_TR_FUNCTIONS(ListingPanel)
 public:
-    explicit ListingPanel(AppContext& ctx) : ctx_(ctx) {
+    // the columns
+    enum { kMark = 0, kDom, kPc, kBytes, kCyc, kHits, kText, kLine, kColumns };
+
+    // The colours of the rows go with the table, not with the editor: the panels keep the system's (light or dark) look whatever the editor theme is, and the
+    // "Main is here" colour of a dark editor under the black text of a light table cannot be read.
+    static Theme rowColours(const QWidget* w) { return w->palette().color(QPalette::Base).lightness() > 128 ? Theme::light() : Theme::dark(); }
+
+    explicit ListingPanel(AppContext& ctx) : ctx_(ctx), theme_(rowColours(this)) {
         auto* lay = new QVBoxLayout(this);
         lay->setContentsMargins(2, 2, 2, 2);
-        table_ = new QTableWidget(0, 6);
+        // what the listing shows: the newest build, or -- while debugging -- the program that is running, with what the simulator says about it
+        status_ = new QLabel;
+        status_->setObjectName("listingStatus");
+        status_->setWordWrap(true);
+        lay->addWidget(status_);
+        table_ = new QTableWidget(0, kColumns);
         table_->setObjectName("listingTable");
-        table_->setHorizontalHeaderLabels({tr("Dom"), tr("PC"), tr("Bytes"), tr("Cyc"), tr("Instruction"), tr("Line")});
-        table_->horizontalHeader()->setSectionResizeMode(4, QHeaderView::Stretch);
+        table_->setHorizontalHeaderLabels({QString(), tr("Dom"), tr("PC"), tr("Bytes"), tr("Cyc"), tr("Runs"), tr("Instruction"), tr("Line")});
+        table_->horizontalHeaderItem(kMark)->setToolTip(tr("Where Main (M) and Peri (P) are, breakpoints, faults, and code that differs from what the decoder fetched"));
+        table_->horizontalHeaderItem(kCyc)->setToolTip(tr("The assembler's planning figure for the instruction (not measured)"));
+        table_->horizontalHeaderItem(kHits)->setToolTip(tr("How many times the simulator has executed the instruction in this session"));
+        table_->horizontalHeader()->setSectionResizeMode(kText, QHeaderView::Stretch);
         table_->verticalHeader()->hide();
         table_->setSelectionBehavior(QAbstractItemView::SelectRows);
         table_->setEditTriggers(QAbstractItemView::NoEditTriggers);
         table_->setFont(editorFont(ctx.settings));
         lay->addWidget(table_);
         connect(table_, &QTableWidget::cellClicked, this, [this](int row, int) { follow_ = false; open(row); follow_ = true; });
-        conns_.add(ctx.snapshotChanged, [this](SnapshotPtr s) { fill(s); });
+        conns_.add(ctx.snapshotChanged, [this](SnapshotPtr) { refresh(ctx_.debugger.session().view(), false); });
         // the caret of an editor selects the instructions of its line
         conns_.add(ctx.cursorMoved, [this](const std::string& file, int line) { select(file, line); });
-        fill(ctx.snapshot);
+        // the simulator: where the sequencers are, what ran how often, breakpoints, faults, what the decoder fetched
+        conns_.add(ctx.debugger.updated, [this](const SimUpdate& u) { refresh(u.view, u.state == SimState::Paused); });
+        conns_.add(ctx.debugger.focusChanged, [this](asmcore::Domain) { refresh(ctx_.debugger.session().view(), true); });
+        refresh(ctx.debugger.session().view(), false);
     }
 
 private:
     void open(int row) {
-        auto* it = table_->item(row, 5);
+        auto* it = table_->item(row, kLine);
         if (!it) return;
         Location l;
         l.file = toStd(it->data(Qt::UserRole + 1).toString());
         l.line = it->data(Qt::UserRole).toInt();
         if (l.line > 0) ctx_.goTo.fire(l);
     }
+
+    // The program on show: while a session is on, the one that is being debugged (not the newest build, which may be of a later text); else the newest build.
+    SnapshotPtr wanted() const {
+        if (ctx_.debugger.active()) if (SnapshotPtr p = ctx_.debugger.session().program()) return p;
+        return ctx_.snapshot;
+    }
+
     void fill(const SnapshotPtr& s) {
         snap_ = s;
+        rowOf_[0].clear();
+        rowOf_[1].clear();
+        shownHits_.clear();
+        shownMark_.clear();
+        shownLook_.clear();
         table_->setRowCount(0);
         if (!s) return;
-        table_->setRowCount((int)s->result.instrs.size());
+        const int n = (int)s->result.instrs.size();
+        table_->setRowCount(n);
+        shownHits_.assign((size_t)n, -1);
+        shownMark_.assign((size_t)n, QString());
+        shownLook_.assign((size_t)n, 0);
         int r = 0;
         for (const asmcore::InstrInfo& in : s->result.instrs) {
             const asmcore::DomainImage& im = s->result.image(in.domain);
@@ -279,36 +314,157 @@ private:
             QString text = fromStd(in.text);
             if (!in.frames.empty()) text += "    ; " + fromStd(in.frames.back().proc) + " @ line " + QString::number(in.frames.back().callSite.line);
             if (in.synthetic) text += "    ; generated";
-            table_->setItem(r, 0, new QTableWidgetItem(in.domain == asmcore::Domain::Main ? "M" : "P"));
-            table_->setItem(r, 1, new QTableWidgetItem(QString("%1").arg(in.pc, 3, 16, QChar('0')).toUpper()));
-            table_->setItem(r, 2, new QTableWidgetItem(bytes.trimmed()));
-            table_->setItem(r, 3, new QTableWidgetItem(QString::number(in.cycles)));
-            table_->setItem(r, 4, new QTableWidgetItem(text));
+            auto* mark = new QTableWidgetItem;
+            mark->setTextAlignment(Qt::AlignCenter);
+            table_->setItem(r, kMark, mark);
+            table_->setItem(r, kDom, new QTableWidgetItem(in.domain == asmcore::Domain::Main ? "M" : "P"));
+            table_->setItem(r, kPc, new QTableWidgetItem(QString("%1").arg(in.pc, 3, 16, QChar('0')).toUpper()));
+            auto* by = new QTableWidgetItem(bytes.trimmed());
+            by->setData(Qt::UserRole, bytes.trimmed());                    // the build's bytes (the cell shows the fetched ones when they differ)
+            table_->setItem(r, kBytes, by);
+            table_->setItem(r, kCyc, new QTableWidgetItem(QString::number(in.cycles)));
+            auto* hits = new QTableWidgetItem;
+            hits->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
+            table_->setItem(r, kHits, hits);
+            table_->setItem(r, kText, new QTableWidgetItem(text));
             auto* ln = new QTableWidgetItem(QString::number(in.loc.line));
             ln->setData(Qt::UserRole, in.loc.line);
             ln->setData(Qt::UserRole + 1, fromStd(in.loc.file));
-            table_->setItem(r, 5, ln);
+            table_->setItem(r, kLine, ln);
+            rowOf_[in.domain == asmcore::Domain::Main ? 0 : 1][in.pc] = r;
             r++;
         }
         table_->resizeColumnsToContents();
+        // (room for a breakpoint, both sequencers and the "differs" sign on one row, so that the marks are never cut off)
+        table_->setColumnWidth(kMark, QFontMetrics(table_->font()).horizontalAdvance(QString::fromUtf8("\xE2\x97\x8FM\xE2\x96\xB6P\xE2\x96\xB6\xE2\x89\xA0")) + 14);
     }
+
+    // Everything the simulator knows about the rows. Only rows whose look changes are touched (this runs about 30 times a second while the program runs).
+    void refresh(const ViewPtr& view, bool reveal) {
+        const SnapshotPtr want = wanted();
+        if (want != snap_) fill(want);
+        const bool live = ctx_.debugger.active() && view && snap_ && ctx_.debugger.session().program() == snap_;
+        const int n = table_->rowCount();
+        // per row: the marks, how often it ran, how it is drawn (bit 0 Main is here, 1 Peri is here, 2 a fault, 3 never ran, 4 differs from what was fetched)
+        std::vector<QString> mark((size_t)n);
+        std::vector<long long> hits((size_t)n, -1);
+        std::vector<int> look((size_t)n, 0);
+        std::map<int, QString> fetchedBytes, tips;
+        int differs = 0, focusRow = -1;
+        if (live) {
+            for (int d = 0; d < 2; d++) {
+                for (const auto& kv : rowOf_[d]) {
+                    const long long h = kv.first < view->hits[d].size() ? (long long)view->hits[d][kv.first] : 0;
+                    hits[(size_t)kv.second] = h;
+                    if (h == 0) look[(size_t)kv.second] |= 8;
+                }
+                for (const asmcore::sim::DecodedLine& dl : view->decoded[d]) {
+                    if (dl.matches && dl.problemClass() == 0) continue;
+                    const auto it = rowOf_[d].find(dl.pc);
+                    if (it == rowOf_[d].end()) continue;
+                    differs++;
+                    look[(size_t)it->second] |= 16;
+                    mark[(size_t)it->second] += QString::fromUtf8("\xE2\x89\xA0");                          // not equal
+                    QString fb;
+                    for (uint8_t b : dl.bytes) fb += QString("%1 ").arg(b, 2, 16, QChar('0')).toUpper();
+                    fetchedBytes[it->second] = fb.trimmed();
+                    QString tip = tr("The decoder fetched: %1  (%2)").arg(fb.trimmed(), fromStd(dl.text));
+                    if (!dl.problem.empty()) tip += "\n" + fromStd(dl.problem);
+                    if (!dl.specProblem.empty()) tip += "\n" + fromStd(dl.specProblem);
+                    tips[it->second] = tip;
+                }
+            }
+            for (const asmcore::sim::Breakpoint& bp : view->breakpoints) {
+                if (bp.oneShot) continue;
+                const int d = bp.domain == asmcore::Domain::Main ? 0 : 1;
+                const auto it = rowOf_[d].find(bp.pc);
+                if (it != rowOf_[d].end()) mark[(size_t)it->second] += bp.enabled ? QString::fromUtf8("\xE2\x97\x8F") : QString::fromUtf8("\xE2\x97\x8B");      // a dot, hollow when off
+            }
+            for (int d = 0; d < 2; d++) {
+                const auto it = rowOf_[d].find(view->pc[d]);
+                if (it == rowOf_[d].end()) continue;
+                const bool fault = view->faulted[d];
+                look[(size_t)it->second] |= fault ? 4 : (d == 0 ? 1 : 2);
+                // an arrow where it is about to execute, a square when it has stopped for good, a cross on a fault
+                mark[(size_t)it->second] += QString(d == 0 ? "M" : "P") + (fault ? QString::fromUtf8("\xE2\x9C\x96") : view->halted[d] ? QString::fromUtf8("\xE2\x96\xA0") : QString::fromUtf8("\xE2\x96\xB6"));
+                if ((ctx_.debugger.focus() == asmcore::Domain::Main) == (d == 0)) focusRow = it->second;
+            }
+        }
+        const QColor dim = theme_.lineNumberFg, normal = table_->palette().color(QPalette::Text);
+        for (int r = 0; r < n; r++) {
+            const size_t i = (size_t)r;
+            if (hits[i] != shownHits_[i]) {
+                table_->item(r, kHits)->setText(hits[i] < 0 ? QString() : QString::number(hits[i]));
+                shownHits_[i] = hits[i];
+            }
+            if (mark[i] != shownMark_[i]) {
+                table_->item(r, kMark)->setText(mark[i]);
+                shownMark_[i] = mark[i];
+            }
+            if (look[i] != shownLook_[i]) {
+                const int l = look[i];
+                QColor faultBack = theme_.error;
+                faultBack.setAlpha(90);
+                const QBrush back = (l & 4) ? QBrush(faultBack) : (l & 1) ? QBrush(theme_.execMain) : (l & 2) ? QBrush(theme_.execPeri) : QBrush();
+                const QColor fore = (l & 8) && !(l & 7) ? dim : normal;                   // never ran: faded (code that the run did not reach)
+                for (int c = 0; c < kColumns; c++) {
+                    QTableWidgetItem* it = table_->item(r, c);
+                    if (l & 7) it->setSelected(false);
+                    it->setBackground(back);
+                    it->setForeground(c == kBytes && (l & 16) ? theme_.warning : fore);
+                }
+                QTableWidgetItem* by = table_->item(r, kBytes);
+                by->setText((l & 16) && fetchedBytes.count(r) ? fetchedBytes[r] : by->data(Qt::UserRole).toString());
+                const QString tip = (l & 16) && tips.count(r) ? tips[r] + "\n" + tr("The build has: %1").arg(by->data(Qt::UserRole).toString()) : QString();
+                by->setToolTip(tip);
+                table_->item(r, kMark)->setToolTip(tip);
+                shownLook_[i] = l;
+            }
+        }
+        // what is on show, in words
+        QString st;
+        if (!snap_) st = tr("Nothing is built yet.");
+        else if (!live) st = tr("The newest build. Start debugging to see where the program is and what has run.");
+        else {
+            st = tr("The program being debugged, cycle %1. M / P: where Main and Peri are; Runs: how often each instruction has executed.").arg((qulonglong)view->cycle);
+            if (ctx_.debugger.stale()) st += " " + tr("The sources were changed since it was built: this is what is running, not what the editor shows.");
+            if (differs > 0) st += " " + tr("%1 instruction(s) differ from what the decoder fetched from the EEPROM (marked, see the tooltip of the bytes).").arg(differs);
+        }
+        if (st != status_->text()) status_->setText(st);
+        const bool alarm = live && (ctx_.debugger.stale() || differs > 0);
+        if (alarm != alarm_) { alarm_ = alarm; status_->setStyleSheet(alarm ? QString("color: %1; font-weight: bold;").arg(theme_.warning.name()) : QString()); }
+        // stopped: bring the row of the sequencer that is looked at into view
+        if (reveal && focusRow >= 0 && focusRow != revealed_) table_->scrollToItem(table_->item(focusRow, kPc), QAbstractItemView::PositionAtCenter);
+        if (reveal) revealed_ = focusRow;
+    }
+
     void select(const std::string& file, int line) {
         if (!follow_ || !snap_) return;
         table_->clearSelection();
         int first = -1;
         for (int r = 0; r < table_->rowCount(); r++) {
-            auto* it = table_->item(r, 5);
+            auto* it = table_->item(r, kLine);
             if (it && it->data(Qt::UserRole).toInt() == line && toStd(it->data(Qt::UserRole + 1).toString()) == file) {
+                // (not the row a sequencer is on: the selection would paint over the colour that says so -- the editor is taken to that line at every stop)
+                if ((size_t)r < shownLook_.size() && (shownLook_[(size_t)r] & 7)) { if (first < 0) first = r; continue; }
                 table_->selectRow(r);
                 if (first < 0) first = r;
             }
         }
-        if (first >= 0) table_->scrollToItem(table_->item(first, 0));
+        if (first >= 0) table_->scrollToItem(table_->item(first, kDom));
     }
 
     AppContext& ctx_;
+    Theme theme_;
     SnapshotPtr snap_;
+    QLabel* status_;
     QTableWidget* table_;
+    std::map<uint32_t, int> rowOf_[2];                       // pc -> row, [0] Main [1] Peri
+    std::vector<long long> shownHits_;
+    std::vector<QString> shownMark_;
+    std::vector<int> shownLook_;
+    int revealed_ = -1;
+    bool alarm_ = false;
     bool follow_ = true;
     ConnectionBag conns_;
 };
