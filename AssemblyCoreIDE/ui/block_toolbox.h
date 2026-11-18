@@ -1,5 +1,6 @@
 #pragma once
-// The toolbox: the drawers of the catalog (patterns, the instruction drawers, structure, definitions, text, the components), each with its samples. Drag a sample
+// The toolbox: the drawers of the catalog (the instruction drawers, structure, definitions, text, the components -- each sample ONE piece with empty sockets --, then
+// the ready-made combinations: patterns and the hardware drawers, closed at the start), each with its samples. Drag a sample
 // onto the canvas, or double-click it (or press Enter) to put it after the selected block. The search box above filters the samples as you type.
 #include <functional>
 #include <map>

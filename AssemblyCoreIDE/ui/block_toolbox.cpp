@@ -361,7 +361,7 @@ void BlockToolbox::build() {
                 if (pattern) it->setData(0, Qt::UserRole + 6, e->custom ? QString::fromStdString(e->title) : tr2("BlockPattern", e->title));
             }
         }
-        top->setExpanded(pattern || d.name == "Data" || d.name == "Control");
+        top->setExpanded(d.name == "Data" || d.name == "Control");                  // (the patterns and the hardware drawers, the ready-made combinations at the end, start closed)
     }
 }
 

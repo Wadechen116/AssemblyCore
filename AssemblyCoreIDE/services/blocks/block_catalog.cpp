@@ -39,7 +39,8 @@ std::string firstWord(const std::string& s) {
     return s.substr(i, j - i);
 }
 
-// What a fresh instruction says (plain assembler; the importer makes the blocks, with their components). A short placeholder where a real value is needed.
+// What a fresh instruction says (plain assembler; the importer makes the block). Only the block itself is offered: instantiate() takes the components the text
+// brings out again, so that every sample of the toolbox is ONE piece with empty sockets (black holes) where the components go.
 const char* sampleText(const std::string& type) {
     static const std::map<std::string, const char*> m = {
         {"mov", "MOV CONST(0, 2) -> MAIN_SCRATCHPAD[0..1]"},
@@ -54,7 +55,7 @@ const char* sampleText(const std::string& type) {
         {"jmp", "JMP target"},
         {"br_eret", "BR.ERET"},
         {"br_peri", "BR.ALWAYS target"},
-        {"cascade_begin", "CASCADE_BEGIN 0, block0\nblock0: JMP done\n CASCADE_END 0, done\ndone:"},                     // (a BEGIN alone would be a cascade that never ends)
+        {"cascade_begin", "CASCADE_BEGIN 0, block0"},                                // one piece like every other: its CASCADE_END is a block of its own
         {"cascade_end", "CASCADE_END 0, done"},
         {"call", "CALL name"},
         {"ret", "RET"},
@@ -309,15 +310,16 @@ std::vector<BlockCatalog::Drawer> BlockCatalog::drawers() const {
         for (const CatalogEntry& e : entries_) if (e.category == name && e.cls == cls) d.entries.push_back(&e);
         if (!d.entries.empty()) out.push_back(d);
     };
-    drawer("Patterns", "pattern");
-    for (const char* n : kHardwareDrawers) drawer(n, "instruction");                    // what the project's hardware description brings: right after the patterns
-    drawer("Hardware Names", "component");
+    // the single pieces first; the ready-made combinations (patterns, and the blocks of the hardware description, which come assembled) last
     for (const char* n : kInstructionDrawers) drawer(n, "instruction");
     drawer("Structure", "structure");
     drawer("Definitions", "definition");
     drawer("Text", "text");
     for (const char* n : kComponentDrawers) drawer(n, "component");
-    // any drawer a new definition brings that is not listed above
+    drawer("Patterns", "pattern");
+    for (const char* n : kHardwareDrawers) drawer(n, "instruction");                    // what the project's hardware description brings: right after the patterns
+    drawer("Hardware Names", "component");
+    // any drawer a new definition brings that is not listed above (after the combinations: a new definition is rare, and its drawer is easy to find at the end)
     std::set<std::string> seen;
     for (const Drawer& d : out) seen.insert(d.cls + ":" + d.name);
     for (const CatalogEntry& e : entries_)
@@ -364,7 +366,25 @@ std::vector<const CatalogEntry*> BlockCatalog::search(const std::string& query0,
 }
 
 namespace {
-// a component with its parts: numbers where numbers go
+// Take every component out of the sockets of a block: what Editor::unplugValue leaves behind -- a hole, its text mirror emptied, the fields derived from it
+// following (a window's first / last emptied, a composite argument written again from what is left).
+void hollow(Block& b, const Registry& reg) {
+    const BlockDef* d = reg.find(b.type);
+    if (!d) return;
+    for (const InputDef& in : d->inputs) {
+        b.clearValue(in.name);
+        if (b.field(in.name)) b.set(in.name, std::string());
+        if (in.derive.compare(0, 6, "range:") == 0) {
+            const std::string spec = in.derive.substr(6);
+            const size_t comma = spec.find(',');
+            for (const std::string& f : {spec.substr(0, comma), spec.substr(comma + 1)}) b.set(f, std::string());
+        }
+    }
+    for (const InputDef& in : d->inputs)
+        if (in.derive.compare(0, 4, "arg:") == 0) b.set(in.derive.substr(4), partText(b, *d, in.derive.substr(4), reg));
+}
+
+// a component on its own: its own fields (a choice, a name, the value of a number), every socket a hole
 Block makeComponent(Document& doc, const Registry& reg, const std::string& type) {
     Block b = doc.make(type);
     const BlockDef* d = reg.find(type);
@@ -376,16 +396,8 @@ Block makeComponent(Document& doc, const Registry& reg, const std::string& type)
         else if (f.name == "name") b.set("name", "name");
         else if (f.name == "value" && d->semantic == "number") b.set("value", "0");
     }
-    for (const InputDef& in : d->inputs) {
-        bool mirror = false;
-        for (const FieldDef& f : d->fields) if (f.name == in.name) mirror = true;
-        if (mirror) {
-            if (b.get(in.name).empty() && (!in.optional || d->semantic == "region")) b.set(in.name, in.name == "last" ? "1" : "0");      // a range of two bytes: [0..1]
-            continue;
-        }
-        if (in.derive.empty()) { Block n = doc.make("num"); n.set("value", "0"); b.setValue(in.name, n); }
-    }
-    explodeBlock(b, doc, reg);
+    hollow(b, reg);
+    if (d->semantic == "number") b.set("value", "0");                                  // (a number is its value: 0, not a hole)
     return b;
 }
 }  // namespace
@@ -397,24 +409,18 @@ std::vector<Block> BlockCatalog::instantiate(const CatalogEntry& e, Document& do
         return {doc.make("num")};
     }
     if (e.component()) return {makeComponent(doc, reg_, e.type)};
-    if (e.text.empty() && !e.type.empty()) {                                        // no assembler form (a loop): made from the definition, with its slots
+    if (e.text.empty() && !e.type.empty()) {                                        // no assembler form (a loop): made from the definition, with its (empty) slots and holes
         Block b = doc.make(e.type);
-        if (const BlockDef* d = reg_.find(e.type)) {
-            for (const std::string& st : d->stacks) b.stack(st, true);
-            for (const InputDef& in : d->inputs) {                                      // what has to be there comes with a 0 plugged in (a "set" is complete at once)
-                if (in.optional || !in.derive.empty()) continue;
-                bool mirror = false;
-                for (const FieldDef& f : d->fields) if (f.name == in.name) mirror = true;
-                if (mirror) continue;
-                bool numberFits = false;
-                for (const std::string& a : in.accepts) numberFits |= a == kTypeInt;
-                if (numberFits) { Block n = doc.make("num"); n.set("value", "0"); b.setValue(in.name, n); }
-            }
-        }
+        if (const BlockDef* d = reg_.find(e.type)) for (const std::string& st : d->stacks) b.stack(st, true);
+        hollow(b, reg_);
         return {b};
     }
     std::vector<Block> v = blocksFromText(doc, e.text, nullptr);
     if (v.empty()) v.push_back(doc.make(e.type.empty() ? "comment" : e.type));
+    // A block of the toolbox is one piece: the components its sample text brought are taken out again. The ready-made combinations keep everything: a pattern,
+    // the user's own blocks, and the blocks of the hardware description (whose point is the name of the part in them).
+    if (!e.pattern() && !e.custom && !e.hardware)
+        for (Block& b : v) hollow(b, reg_);
     return v;
 }
 

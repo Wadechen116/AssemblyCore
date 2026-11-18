@@ -66,14 +66,16 @@ public:
         std::string name, cls;
         std::vector<const CatalogEntry*> entries;
     };
-    // The drawers in the order of the toolbox: patterns, the instruction drawers, structure, definitions, text, then the components.
+    // The drawers in the order of the toolbox: the instruction drawers, structure, definitions, text, the components, then the ready-made combinations (patterns,
+    // the hardware drawers).
     std::vector<Drawer> drawers() const;
 
     // The entries that match what was typed, best first: by title, type, mnemonic (the first word of the sample), drawer. Nothing for an empty query.
     std::vector<const CatalogEntry*> search(const std::string& query, size_t limit = 12) const;
 
-    // Fresh blocks of an entry, with ids from `doc`: an instruction / structure / definition from its sample text, a component built with its parts, a pattern as
-    // several blocks. Never empty.
+    // Fresh blocks of an entry, with ids from `doc`: an instruction / structure / definition / component is ONE block whose sockets are empty (holes, as after
+    // unplugging); a pattern, a block of the user's own or of the hardware description keeps everything its text says (several blocks, components plugged in).
+    // Never empty.
     std::vector<asmcore::blocks::Block> instantiate(const CatalogEntry& e, asmcore::blocks::Document& doc) const;
 
     // A typed line (or lines) of assembler as blocks (what Typeblock does when the text is not a name). anyRaw: a line was not understood and stays as text.

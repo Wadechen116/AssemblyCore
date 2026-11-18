@@ -643,7 +643,7 @@ static void t_catalog() {
     check(all, "every block definition is in the toolbox (a new definition needs a sample text, or this test says so)", missing);
     // the drawers
     const std::vector<BlockCatalog::Drawer> drawers = cat.drawers();
-    check(!drawers.empty() && drawers[0].name == "Patterns" && drawers[0].cls == "pattern", "the first drawer holds the patterns");
+    check(!drawers.empty() && drawers[0].name == "Data" && drawers[0].cls == "instruction", "the first drawer is an instruction drawer (the single pieces come first)");
     std::set<const CatalogEntry*> inDrawers;
     size_t count = 0;
     for (const auto& d : drawers) for (const CatalogEntry* e : d.entries) { inDrawers.insert(e); count++; }
@@ -651,6 +651,7 @@ static void t_catalog() {
     std::string order;
     for (const auto& d : drawers) order += d.name + " ";
     check(order.find("Data") < order.find("Structure") && order.find("Structure") < order.find("Values") && order.find("Values") < order.find("References"), "instructions first, then structure, definitions, text, then the components", order);
+    check(order.find("References") < order.find("Patterns"), "the patterns (ready-made combinations) come after every drawer of single pieces", order);
     bool pure = true;
     for (const auto& d : drawers) for (const CatalogEntry* e : d.entries) pure = pure && e->cls == d.cls;
     check(pure, "a drawer holds one class only (instructions and components are never mixed)");
@@ -666,16 +667,50 @@ static void t_catalog() {
         s.domain = e.component() ? "floating" : (e.domains == kPeri ? "peri" : e.cls == "definition" ? "" : "main");
         s.blocks = blocks;
         doc.sections.push_back(s);
-        for (const BlockProblem& p : validate(doc)) if (p.kind == "structure" && p.error) { structuralErrors++; if (firstBad.empty()) firstBad = e.id + ": " + p.message; }
+        // A single piece has holes where its components go, so it says "incomplete" in several ways until something is plugged in: that is what it is for.
+        // What must hold for it is checked on the complete form, the sample text the piece is made from (the same blocks with their components).
+        const bool piece = !e.pattern() && !e.custom && !e.hardware;
+        if (piece && !e.text.empty() && e.type != "cascade_begin") {                    // (a cascade begin waits for its CASCADE_END, a piece of its own)
+            Document full;
+            Section fs2;
+            fs2.domain = s.domain;
+            fs2.blocks = cat.fromAssembler(full, e.text, nullptr);
+            full.sections.push_back(fs2);
+            for (const BlockProblem& p : validate(full)) if (p.kind == "structure" && p.error) { structuralErrors++; if (firstBad.empty()) firstBad = e.id + " (complete form): " + p.message; }
+        }
+        if (!piece) for (const BlockProblem& p : validate(doc)) if (p.kind == "structure" && p.error) { structuralErrors++; if (firstBad.empty()) firstBad = e.id + ": " + p.message; }
         std::function<void(const std::vector<Block>&)> walk = [&](const std::vector<Block>& v) { for (const Block& b : v) { if (b.type == "raw" && e.type != "raw") raws++; for (auto& st : b.stacks) walk(st.second); } };
         walk(blocks);
     }
     check(made == (int)cat.entries().size() && structuralErrors == 0 && raws == 0, "every entry makes blocks with no structural error and nothing left as raw text", firstBad);
-    // components are built with their parts
+    // every block of a drawer of single pieces is ONE block with nothing plugged into it (its sockets are holes)
+    {
+        int pieces = 0;
+        std::string notOne;
+        std::function<bool(const Block&)> plugged = [&](const Block& b) {
+            for (const auto& vl : b.values) if (!vl.second.empty()) return true;
+            for (const auto& st : b.stacks) for (const Block& c : st.second) if (plugged(c)) return true;
+            return false;
+        };
+        for (const CatalogEntry& e : cat.entries()) {
+            if (e.pattern() || e.custom || e.hardware) continue;
+            Document pd;
+            const std::vector<Block> bl = cat.instantiate(e, pd);
+            pieces++;
+            if (bl.size() != 1) notOne += e.id + " (" + std::to_string(bl.size()) + " blocks) ";
+            else if (plugged(bl[0])) notOne += e.id + " (has a component plugged in) ";
+        }
+        check(pieces > 40 && notOne.empty(), "every sample of an instruction / structure / definition / component drawer is one piece with empty sockets", notOne);
+    }
     Document d;
     std::vector<Block> reg1 = cat.instantiate(*cat.find("type:region_main_scratchpad"), d), bin = cat.instantiate(*cat.find("type:expr_bin"), d), mov = cat.instantiate(*cat.find("type:mov"), d);
-    check(reg1[0].value("first") && reg1[0].value("last") && bin[0].value("a") && bin[0].value("b") && mov[0].value("src") && mov[0].value("dst"), "a region, an expression and a move come with their parts (numbers, regions) in place");
-    check(generate(Document()).text.empty() && !mov[0].get("src").empty(), "(and the text mirror is filled)");
+    check(!reg1[0].value("first") && !reg1[0].value("last") && !bin[0].value("a") && !bin[0].value("b") && !mov[0].value("src") && !mov[0].value("dst"), "a region, an expression and a move come with holes where their parts go");
+    check(mov[0].get("src").empty() && mov[0].get("dst").empty() && reg1[0].get("first").empty(), "(and the text mirror of a hole is empty, as after unplugging)");
+    {
+        Document cd;
+        const std::vector<Block> cb = cat.instantiate(*cat.find("type:cascade_begin"), cd);
+        check(cb.size() == 1 && cb[0].type == "cascade_begin", "cascade begin is one block (its CASCADE_END is a block of its own)");
+    }
     // patterns
     int patterns = 0, patternErrors = 0;
     std::string patBad;
@@ -791,11 +826,11 @@ static void t_hardware_drawers() {
     const CatalogEntry* wr = cat.find("hw:Hardware CSR/write AE_CTRL");
     const CatalogEntry* rd = cat.find("hw:Hardware Devices/read DEV_IMU");
     check(wr && wr->domains == asmcore::blocks::kBoth && rd && rd->domains == asmcore::blocks::kPeri, "Main-only / Peri-only follows the block (a device is read by Peri)");
-    // they are in the drawers, right after the patterns
+    // they are in the drawers, right after the patterns (both at the end: ready-made combinations)
     std::vector<std::string> order;
     for (const auto& d : cat.drawers()) order.push_back(d.name);
     size_t pat = std::find(order.begin(), order.end(), "Patterns") - order.begin(), csr = std::find(order.begin(), order.end(), "Hardware CSR") - order.begin(), data = std::find(order.begin(), order.end(), "Data") - order.begin();
-    check(csr == pat + 1 && csr < data, "the hardware drawers come right after the patterns");
+    check(csr == pat + 1 && csr > data, "the hardware drawers come right after the patterns, after the drawers of single pieces");
     // every one makes blocks (no Raw), and the line it says assembles with the generated include
     const std::string inc = asmcore::generateInc(hw);
     int made = 0, bad = 0;

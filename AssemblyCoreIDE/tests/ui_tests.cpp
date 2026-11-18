@@ -3291,17 +3291,29 @@ private slots:
         const auto names = tb.drawerNames();
         QVERIFY(std::find(names.begin(), names.end(), "Variables") != names.end() && std::find(names.begin(), names.end(), "Expressions") != names.end());
         for (const char* id : {"type:set", "type:change", "type:v_var", "type:v_bin", "type:v_cmp"}) QVERIFY2(tb.catalogHas(id), id);
-        // a "set" comes complete (0 plugged in) and gives code at once; the bytes it picks keep off the MOV's
+        // a "set" comes as one piece: a hole where its value goes, nothing plugged in
         s.select({s.document().sections[0].blocks[1].id});
         emit tb.activated("type:set");
         std::string setId;
         for (const auto& b : s.document().sections[0].blocks) if (b.type == "set") setId = b.id;
         QVERIFY(!setId.empty());
+        QVERIFY(!s.document().find(setId)->value("value"));
+        QVERIFY2(s.generated().text.find("MOV CONST(0, 2) -> MAIN_SCRATCHPAD[0..1]") == std::string::npos, s.generated().text.c_str());
+        // a number from the toolbox goes into the hole: now it gives code; the bytes it picks keep off the MOV's
+        s.select({setId});
+        emit tb.activated("type:num");
+        QVERIFY(s.document().find(setId)->value("value"));
         QVERIFY2(s.generated().text.find("MOV CONST(0, 2) -> MAIN_SCRATCHPAD[0..1]") != std::string::npos, s.generated().text.c_str());
         QVERIFY(r.ed->errorText().isEmpty());
-        // a calculation dropped on the value: it takes the socket's place, the old 0 goes out
+        // a calculation dropped on the value: it takes the socket's place, the old 0 goes out; it is one piece too, and its two holes take a number each
         s.select({setId});
         emit tb.activated("type:v_bin");
+        const asmcore::blocks::Block* bin = s.document().find(setId)->value("value");
+        QVERIFY(bin && bin->type == "v_bin" && !bin->value("a") && !bin->value("b"));
+        const std::string binId = bin->id;
+        for (int i = 0; i < 2; i++) { s.select({binId}); emit tb.activated("type:num"); }
+        bin = s.document().find(binId);
+        QVERIFY(bin && bin->value("a") && bin->value("b"));
         QVERIFY2(s.generated().text.find("ALU ADD unsigned") != std::string::npos, s.generated().text.c_str());
         // an if, and a comparison into its "test"
         s.select({setId});
@@ -3554,7 +3566,8 @@ private slots:
         QCOMPARE((int)s.document().sections[0].blocks.size(), 4);
         QCOMPARE(s.document().sections[0].blocks[2].type, std::string("alu"));
         QVERIFY(s.isSelected(s.document().sections[0].blocks[2].id));
-        QVERIFY(s.generated().text.find("ALU ADD unsigned") != std::string::npos);
+        for (const auto& vl : s.document().sections[0].blocks[2].values) QVERIFY2(vl.second.empty(), vl.first.c_str());      // one piece: nothing plugged into it
+        QVERIFY2(s.generated().text.find("ALU") != std::string::npos, s.generated().text.c_str());
         // a pattern is several blocks at once
         emit r.ed->toolbox().activated("pattern:add_two");
         QVERIFY((int)s.document().sections[0].blocks.size() >= 4 + 6);
