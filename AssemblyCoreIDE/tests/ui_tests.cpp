@@ -2485,6 +2485,130 @@ private slots:
         QVERIFY(!s.document().sections[0].blocks[0].value("dst"));
     }
 
+    // The joints behave like magnets: a joint that takes the dragged block pulls it in, one that refuses it pushes it away -- and throws it clear when it is let go there.
+    void aJointThatFitsPullsTheBlockInAndOneThatDoesNotPushesItAway() {
+        // ---- it fits: a number near the hole it came out of is drawn docked in the hole, before the mouse is released
+        {
+            DragRig r(".main\n MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]\n");
+            auto& s = r.ed->session();
+            auto& sc = r.sc();
+            QVERIFY(sc.animationsEnabled());
+            const std::string mov = s.document().sections[0].blocks[0].id;
+            const std::string num = s.document().sections[0].blocks[0].value("src")->id;
+            const QPointF hole = r.socketPoint(mov, "src");
+            r.pressAndMove(num, r.center(num) + QPointF(260, 150));
+            QVERIFY(sc.draggingPayload());
+            QVERIFY2(sc.dropTarget().kind == acide::blocks::DropTarget::None && sc.magnetTarget().isNull(), "far from every joint nothing pulls");
+            const QPointF hold = QPointF(sc.blockRect(num).width() / 2 + 14, 9);            // let go 14 right and 9 below the exact place
+            QTest::mouseMove(r.v().viewport(), r.at(hole + hold));
+            QVERIFY(sc.dropTarget().kind == acide::blocks::DropTarget::Socket && sc.dropTarget().fits());
+            const QPointF pull = sc.magnetTarget();
+            QVERIFY2(std::hypot(pull.x(), pull.y()) > 5 && pull.x() < 0 && pull.y() < 0, qPrintable(QString("pulled up and to the left, towards the hole (%1, %2)").arg(pull.x()).arg(pull.y())));
+            auto plugOf = [&] {                                                                // where the plug of the dragged number is drawn
+                for (QGraphicsItem* it : sc.items()) if (auto* si = dynamic_cast<acide::StackItem*>(it)) if (si->index() == sc.payload()) {
+                    const auto& pl = sc.layout().stacks[sc.payload()];
+                    const auto& first = pl.blocks[(size_t)pl.top[0]];
+                    return si->pos() + QPointF(first.rect.x, first.rect.center().y);
+                }
+                return QPointF(-1e9, -1e9);
+            };
+            const double before = QLineF(plugOf(), hole).length();
+            double nearest = before, overshoot = 0;
+            for (int i = 0; i < 90; i++) {
+                sc.advanceEffects(1.0 / 60);
+                const QPointF off = sc.magnetOffset();
+                nearest = std::min(nearest, QLineF(plugOf(), hole).length());
+                overshoot = std::max(overshoot, std::hypot(off.x(), off.y()) - std::hypot(pull.x(), pull.y()));
+            }
+            QVERIFY2(before > 5 && QLineF(plugOf(), hole).length() < 1.0, qPrintable(QString("it comes to rest docked in the hole (%1 -> %2)").arg(before).arg(QLineF(plugOf(), hole).length())));
+            QVERIFY2(overshoot > 0.05 && overshoot < 6, qPrintable(QString("with a small overshoot: it snaps, it does not slide (%1)").arg(overshoot)));
+            r.ed->grab().save(outDir() + "/blocks_magnet_attract.png");
+            // pulled away again: the magnet lets go
+            QTest::mouseMove(r.v().viewport(), r.at(hole + hold + QPointF(200, 120)));
+            QVERIFY(sc.magnetTarget().isNull());
+            QTest::mouseMove(r.v().viewport(), r.at(hole + hold));
+            r.release(hole + hold);
+            QCOMPARE((int)s.document().sections.size(), 1);
+            QVERIFY(s.document().sections[0].blocks[0].value("src") && s.document().sections[0].blocks[0].value("src")->id == num);
+            while (sc.effectsRunning() > 0) sc.advanceEffects(1.0 / 60);
+        }
+        // ---- it does not fit: ALU A can only be written, the "from" socket pushes it off
+        {
+            DragRig r(".main\n MOV MAIN_SCRATCHPAD[0..1] -> ALU_OPA\n");
+            auto& s = r.ed->session();
+            auto& sc = r.sc();
+            const std::string mov = s.document().sections[0].blocks[0].id;
+            const std::string opa = s.document().sections[0].blocks[0].value("dst")->id;
+            const QPointF src = r.socketPoint(mov, "src");
+            const QPointF hold = QPointF(sc.blockRect(opa).width() / 2 + 12, 10);            // below and to the right of the joint
+            r.pressAndMove(opa, src + hold);
+            QVERIFY(sc.draggingPayload() && sc.dropTarget().kind == acide::blocks::DropTarget::Socket && !sc.dropTarget().fits());
+            const QPointF push = sc.magnetTarget();
+            QVERIFY2(std::fabs(std::hypot(push.x(), push.y()) - acide::BlockScene::kRepelDistance) < 0.5 && push.x() > 0 && push.y() > 0,
+                     qPrintable(QString("pushed away from the joint, the way it came (%1, %2)").arg(push.x()).arg(push.y())));
+            double farthest = 0;
+            int swings = 0;
+            double last = 0, lastDelta = 0;
+            for (int i = 0; i < 240; i++) {
+                sc.advanceEffects(1.0 / 60);
+                const QPointF off = sc.magnetOffset();
+                const double d = std::hypot(off.x(), off.y());
+                farthest = std::max(farthest, d);
+                if (i > 0 && lastDelta * (d - last) < 0) swings++;                           // it changes direction: a wobble
+                lastDelta = d - last;
+                last = d;
+            }
+            QVERIFY2(farthest > acide::BlockScene::kRepelDistance + 2 && swings >= 2, qPrintable(QString("it bounces: past its resting distance and back (%1, %2 swings)").arg(farthest).arg(swings)));
+            QVERIFY2(std::fabs(last - acide::BlockScene::kRepelDistance) < 1.0, qPrintable(QString("and rests held off the joint (%1)").arg(last)));
+            r.ed->grab().save(outDir() + "/blocks_magnet_repel.png");
+            // let go there: it is not left lying on the joint. It lands clear of it and flies there with a bounce.
+            r.release(src + hold);
+            QCOMPARE((int)s.document().sections.size(), 2);
+            QVERIFY(!s.document().sections[0].blocks[0].value("dst"));
+            QVERIFY(s.document().sections[1].domain == "floating" && s.document().sections[1].blocks[0].id == opa);
+            const auto& pl = sc.layout().stacks[1];
+            const auto& first = pl.blocks[(size_t)pl.top[0]];
+            const QPointF plug(pl.origin.x + first.rect.x, pl.origin.y + first.rect.center().y);
+            QVERIFY2(std::fabs(QLineF(plug, src).length() - acide::BlockScene::kBounceDistance) < 1.5, qPrintable(QString("it lands %1 from the joint").arg(QLineF(plug, src).length())));
+            QVERIFY(plug.x() > src.x() && plug.y() > src.y());
+            const QPointF start = sc.slideOffset(opa);
+            QVERIFY2(std::hypot(start.x(), start.y()) > 10, "the slide starts where it was let go");
+            double past = 0;
+            int frames = 0;
+            while (sc.effectsRunning() > 0 && frames < 900) {
+                sc.advanceEffects(1.0 / 60);
+                const QPointF o = sc.slideOffset(opa);
+                past = std::max(past, -(o.x() * start.x() + o.y() * start.y()) / std::hypot(start.x(), start.y()));       // how far beyond its place
+                frames++;
+            }
+            QVERIFY2(frames < 900 && past > 1.0 && sc.slideOffset(opa).isNull(), qPrintable(QString("it overshoots its place and settles on it (%1 past, %2 frames)").arg(past).arg(frames)));
+            for (QGraphicsItem* it : sc.items()) if (auto* si = dynamic_cast<acide::StackItem*>(it)) if (si->index() == 1) QCOMPARE(si->pos(), QPointF(pl.origin.x, pl.origin.y));
+            // one undo step for the whole drag, as before
+            QVERIFY(s.undo());
+            QCOMPARE((int)s.document().sections.size(), 1);
+            QVERIFY(s.document().sections[0].blocks[0].value("dst"));
+        }
+        // ---- with the effects switched off nothing is pulled or pushed while dragging; a refused block still lands clear of the joint, at once
+        {
+            DragRig r(".main\n MOV MAIN_SCRATCHPAD[0..1] -> ALU_OPA\n");
+            auto& s = r.ed->session();
+            auto& sc = r.sc();
+            sc.setAnimationsEnabled(false);
+            const std::string mov = s.document().sections[0].blocks[0].id;
+            const std::string opa = s.document().sections[0].blocks[0].value("dst")->id;
+            const QPointF src = r.socketPoint(mov, "src");
+            const QPointF hold = QPointF(sc.blockRect(opa).width() / 2 + 12, 10);
+            r.pressAndMove(opa, src + hold);
+            QVERIFY(!sc.dropTarget().fits() && sc.magnetOffset().isNull() && sc.magnetTarget().isNull());
+            r.release(src + hold);
+            QCOMPARE((int)sc.effectsRunning(), 0);
+            QVERIFY(sc.slideOffset(opa).isNull());
+            const auto& pl = sc.layout().stacks[1];
+            const auto& first = pl.blocks[(size_t)pl.top[0]];
+            QVERIFY(std::fabs(QLineF(QPointF(pl.origin.x + first.rect.x, pl.origin.y + first.rect.center().y), src).length() - acide::BlockScene::kBounceDistance) < 1.5);
+        }
+    }
+
     void escapePutsEverythingBack() {
         DragRig r(".main\n MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]\n ALU ADD unsigned\n JMP x\n");
         auto& s = r.ed->session();

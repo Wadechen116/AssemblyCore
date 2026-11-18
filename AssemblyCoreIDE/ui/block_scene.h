@@ -174,10 +174,20 @@ public:
     bool animationsEnabled() const { return animate_; }
     // The scale a block is drawn with right now (1, 1 if it has no effect), and how many effects are running. advanceEffects steps them (the timer calls it; tests too).
     void effectScale(const std::string& id, double& sx, double& sy) const;
-    size_t effectsRunning() const { return fx_.size() + (tiltActive_ ? 1 : 0); }
+    size_t effectsRunning() const { return fx_.size() + slides_.size() + (tiltActive_ ? 1 : 0) + (magnetActive_ && !(magX_.settled(0.05) && magY_.settled(0.05)) ? 1 : 0); }      // (the magnet counts while it moves the stack)
     void advanceEffects(double dt);
     void popEffect(const std::string& blockId);                          // a block "pops" (squashes in / out with a wobble)
     void stretchEffect(const std::string& blockId, double fromScaleX);   // a block that was wider / narrower springs to its size, anchored at its left edge
+    // The joint "magnet" of a drag. Near a place the dragged stack FITS, it is pulled into the joint (drawn docked, with a small overshoot) before the mouse is
+    // released; near a place that REFUSES it, it is pushed away from the joint and wobbles. magnetOffset: how far the stack is drawn from where the pointer
+    // holds it right now. Visual only while dragging.
+    QPointF magnetOffset() const { return magnetActive_ ? QPointF(magX_.x, magY_.x) : QPointF(); }
+    QPointF magnetTarget() const { return magnetActive_ ? QPointF(magX_.target, magY_.target) : QPointF(); }
+    // Released on a joint that refuses it, the stack is thrown clear of the joint (it is left floating there, not on top of what it cannot join) and slides
+    // to that place with a bounce. slideOffset: how far the stack that starts with the block is drawn from where it lies (0, 0 at rest).
+    QPointF slideOffset(const std::string& firstBlockId) const;
+    static constexpr double kRepelDistance = 30;                          // how far a refused stack is held off the joint while dragging
+    static constexpr double kBounceDistance = 64;                         // how far from the joint it lands when released there
     // Where the stacks being moved would end up; used by the drag and by tests.
     void moveSelectedStacksBy(const QPointF& delta, bool commit);
 
@@ -219,8 +229,15 @@ private:
         blocks::Spring sx, sy;
         int anchor = 0;                                                 // 0 centre, 1 left edge
     };
+    struct Slide {
+        QPointF from;                                                   // where it started, relative to where it lies now
+        blocks::Spring s;                                               // 1 -> 0
+    };
     void startFxTimer();
     void applyTilt();
+    void applySlides();
+    QPointF dockDelta(const QPointF& origin) const;                     // from the dragged stack drawn at `origin` to its joint with dropTarget_
+    void placePayload();
 
     enum class Mode { Idle, PressedBlock, PressedHeader, MoveStacks, Band, DragPayload };
     Mode mode_ = Mode::Idle;
@@ -244,6 +261,11 @@ private:
     std::map<std::string, Fx> fx_;
     QTimer fxTimer_;
     qint64 fxLast_ = 0;
+    std::map<std::string, Slide> slides_;                               // by the first block of the stack
+    blocks::Spring magX_, magY_;                                        // the magnet: the offset of the dragged stack from the pointer's hold (canvas units)
+    bool magnetActive_ = false;
+    QPointF dragBase_;                                                  // where the pointer holds the dragged stack (without the magnet)
+    bool dragBaseValid_ = false;
     blocks::Spring tilt_;                                               // the jelly lean of the stack being dragged (degrees), follows the pointer's speed
     bool tiltActive_ = false;
     QPointF lastPointer_;

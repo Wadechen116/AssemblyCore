@@ -1,5 +1,7 @@
 #include "block_scene.h"
 
+#include <cmath>
+
 #include <QFontMetricsF>
 #include <QGraphicsSceneHoverEvent>
 #include <QGraphicsRectItem>
@@ -205,6 +207,7 @@ void BlockScene::rebuild() {
     const double m = 2000;                                        // a wide margin: the canvas is unbounded in practice
     setSceneRect(QRectF(b.x - m, b.y - m, b.w + 2 * m, b.h + 2 * m));
     rebuilding_ = false;
+    applySlides();                                                // (a stack on its way to its place is drawn where it is on that way, not at its place for one frame)
     rebuilt.fire();
 }
 
@@ -332,7 +335,14 @@ void BlockScene::mousePressEvent(QGraphicsSceneMouseEvent* e) {
 // ---- soft effects --------------------------------------------------------------------------------------------------------------------
 void BlockScene::setAnimationsEnabled(bool on) {
     animate_ = on;
-    if (!on) { fx_.clear(); tiltActive_ = false; fxTimer_.stop(); update(); }
+    if (!on) {
+        const bool sliding = !slides_.empty();
+        fx_.clear(); slides_.clear(); tiltActive_ = false; magnetActive_ = false;
+        if (mode_ == Mode::DragPayload) placePayload();
+        else if (sliding) { fxTimer_.start(); applySlides(); }                // (put back at their places)
+        fxTimer_.stop();
+        update();
+    }
 }
 
 void BlockScene::effectScale(const std::string& id, double& sx, double& sy) const {
@@ -386,8 +396,60 @@ void BlockScene::advanceEffects(double dt) {
         applyTilt();
         if (mode_ != Mode::DragPayload && tilt_.settled(0.05)) tiltActive_ = false;
     }
-    if (fx_.empty() && !tiltActive_) fxTimer_.stop();
+    if (magnetActive_) {
+        if (mode_ == Mode::DragPayload) { magX_.step(dt); magY_.step(dt); placePayload(); }
+        else magnetActive_ = false;
+    }
+    for (auto it = slides_.begin(); it != slides_.end();) {
+        it->second.s.step(dt);
+        if (it->second.s.settled(0.004)) { it->second.s.snap(); it = slides_.erase(it); }
+        else ++it;
+    }
+    applySlides();
+    if (fx_.empty() && slides_.empty() && !tiltActive_ && !magnetActive_) fxTimer_.stop();
     update();
+}
+
+QPointF BlockScene::slideOffset(const std::string& id) const {
+    auto it = slides_.find(id);
+    return it == slides_.end() ? QPointF() : it->second.from * it->second.s.x;
+}
+
+// every stack lies where the layout says, plus what is left of its slide
+void BlockScene::applySlides() {
+    if (slides_.empty() && !fxTimer_.isActive()) return;
+    std::map<size_t, QPointF> off;
+    for (const auto& kv : slides_)
+        if (const blocks::StackLayout* st = layout_.stackOf(kv.first)) off[(size_t)(st - &layout_.stacks[0])] = kv.second.from * kv.second.s.x;
+    for (QGraphicsItem* it : items())
+        if (auto* si = dynamic_cast<StackItem*>(it)) {
+            if (mode_ == Mode::DragPayload && si->index() == payload_) continue;           // (the drag places that one)
+            if (mode_ == Mode::MoveStacks) continue;
+            if (si->index() >= layout_.stacks.size()) continue;
+            const blocks::StackLayout& st = layout_.stacks[si->index()];
+            auto o = off.find(si->index());
+            si->setPos(QPointF(st.origin.x, st.origin.y) + (o == off.end() ? QPointF() : o->second));
+        }
+}
+
+// From the dragged stack, drawn at `origin`, to the joint of dropTarget_: a component meets a socket with the middle of its left edge (its plug), instructions
+// meet a connection point with their top left corner -- the same two points findDropTarget measures the distance from.
+QPointF BlockScene::dockDelta(const QPointF& origin) const {
+    if (dropTarget_.kind == blocks::DropTarget::None || payload_ >= layout_.stacks.size() || layout_.stacks[payload_].top.empty()) return QPointF();
+    const blocks::StackLayout& ps = layout_.stacks[payload_];
+    const blocks::BlockBox& first = ps.blocks[(size_t)ps.top[0]];
+    const QPointF ref(origin.x() + first.rect.x, origin.y() + (dropTarget_.kind == blocks::DropTarget::Socket ? first.rect.center().y : first.rect.y));
+    return QPointF(dropTarget_.marker.x, dropTarget_.marker.y) - ref;
+}
+
+// the stack being dragged is drawn where the pointer holds it, plus the pull / push of the joint it is near
+void BlockScene::placePayload() {
+    if (!dragBaseValid_) return;
+    const QPointF at = dragBase_ + magnetOffset();
+    for (QGraphicsItem* it : items())
+        if (auto* si = dynamic_cast<StackItem*>(it))
+            if (si->index() == payload_) { si->setPos(at); si->setZValue(500); }
+    applyTilt();
 }
 
 // the stack being dragged leans with the pointer's speed (around the point it is held by) and swings back when the pointer stops
@@ -507,6 +569,9 @@ bool BlockScene::beginPayloadDrag(const QPointF& scenePos, bool single) {
         if (layout_.stackOf(hostId, &hb) && hb && hb->rect.w > 0) stretchEffect(hostId, hostWidthBefore / hb->rect.w);
     }
     if (animate_) { tilt_ = blocks::Spring(); tilt_.x = 0; tilt_.target = 0; tilt_.stiffness = 200; tilt_.damping = 9; tiltActive_ = true; lastPointer_ = pressPos_; startFxTimer(); }
+    slides_.clear();
+    magnetActive_ = false;
+    dragBaseValid_ = false;
     (void)scenePos;
     grab_ = pressPos_ - at;                                                         // where the block was held when the pointer went down
     return true;
@@ -519,12 +584,33 @@ void BlockScene::updatePayloadPreview(const QPointF& scenePos, const QPoint& scr
         tilt_.target = std::max(-12.0, std::min(12.0, (scenePos.x() - lastPointer_.x()) * 1.4));
         lastPointer_ = scenePos;
     }
-    for (QGraphicsItem* it : items())
-        if (auto* si = dynamic_cast<StackItem*>(it))
-            if (si->index() == payload_) { si->setPos(o); si->setZValue(500); }
-    applyTilt();
+    dragBase_ = o;
+    dragBaseValid_ = true;
     blocks::DropOptions opt;
-    dropTarget_ = blocks::findDropTarget(session_, layout_, payload_, {o.x(), o.y()}, opt);
+    dropTarget_ = blocks::findDropTarget(session_, layout_, payload_, {o.x(), o.y()}, opt);      // (from where the pointer holds it: the magnet does not feed back)
+    // The magnet. A joint that takes the stack pulls it in: it is drawn docked (quick, with a small overshoot) while the pointer is still a little away.
+    // A joint that refuses it pushes it off, away from the joint, and it wobbles there -- like two magnets with the same pole.
+    if (animate_) {
+        QPointF want;
+        bool refused = false;
+        if (dropTarget_.kind != blocks::DropTarget::None) {
+            const QPointF d = dockDelta(o);
+            if (dropTarget_.fits()) want = d;
+            else {
+                refused = true;
+                const double len = std::hypot(d.x(), d.y());
+                const QPointF away = len < 0.5 ? QPointF(0.6, 0.8) : QPointF(-d.x() / len, -d.y() / len);       // (exactly on it: down and to the right)
+                want = away * kRepelDistance;
+            }
+        }
+        if (!magnetActive_) { magX_ = blocks::Spring(); magY_ = blocks::Spring(); magX_.x = magY_.x = 0; magnetActive_ = true; }
+        magX_.target = want.x();
+        magY_.target = want.y();
+        magX_.stiffness = magY_.stiffness = refused ? 420 : 560;
+        magX_.damping = magY_.damping = refused ? 10 : 24;              // pushed off: it rings; pulled in: one small overshoot, then still
+        startFxTimer();
+    }
+    placePayload();
     showMarker();
     if (dropTarget_.kind != blocks::DropTarget::None && !dropTarget_.reason.empty()) QToolTip::showText(screenPos, QString::fromUtf8(dropTarget_.reason.c_str()));
     else QToolTip::hideText();
@@ -538,6 +624,24 @@ void BlockScene::endPayloadDrag(bool drop) {
     const size_t payload = payload_;
     QPointF where;
     for (QGraphicsItem* it : items()) if (auto* si = dynamic_cast<StackItem*>(it)) if (si->index() == payload) where = si->pos();
+    // Released on a joint that refuses it: it does not stay lying on what it cannot join. It lands clear of the joint, on the side it came from.
+    QPointF landing = where;
+    bool bounced = false;
+    if (drop && dragBaseValid_ && target.kind != blocks::DropTarget::None && !target.fits() && payload < layout_.stacks.size()) {
+        dropTarget_ = target;
+        const QPointF d = dockDelta(dragBase_);
+        dropTarget_ = blocks::DropTarget();
+        const double len = std::hypot(d.x(), d.y());
+        const QPointF away = len < 0.5 ? QPointF(0.6, 0.8) : QPointF(-d.x() / len, -d.y() / len);
+        landing = dragBase_ + d + away * kBounceDistance;               // measured from the joint itself, so it lands equally far however near it was let go
+        const QRectF area = canvasArea();
+        const blocks::Rect& b = layout_.stacks[payload].bounds;
+        landing.setX(std::max(area.left(), std::min(area.right() - b.w, landing.x())));
+        landing.setY(std::max(area.top(), std::min(area.bottom() - b.h, landing.y())));
+        bounced = true;
+    }
+    magnetActive_ = false;
+    dragBaseValid_ = false;
     tiltActive_ = false;
     palette_ = false;
     std::string poppedId;
@@ -557,7 +661,19 @@ void BlockScene::endPayloadDrag(bool drop) {
                 if (layout_.stackOf(target.hostId, &hb) && hb && hb->rect.w > 0) stretchEffect(target.hostId, hostBefore / hb->rect.w);
             }
         }
-        else session_.apply([&](asmcore::blocks::Editor& ed) { return ed.moveSection(payload, where.x(), where.y()); });          // stays where it was put, floating
+        else {
+            session_.apply([&](asmcore::blocks::Editor& ed) { return ed.moveSection(payload, landing.x(), landing.y()); });       // stays floating: where it was put, or thrown clear of a joint that refused it
+            if (bounced && animate_ && !poppedId.empty()) {                 // it flies there from where it was let go, overshoots and wobbles to rest
+                Slide sl;
+                sl.from = where - landing;
+                sl.s.kick(1, 0);
+                sl.s.stiffness = 260;
+                sl.s.damping = 11;
+                slides_[poppedId] = sl;
+                popEffect(poppedId);
+                startFxTimer();
+            }
+        }
     }
     session_.endGroup();
     lifted_ = false;
@@ -573,6 +689,9 @@ bool BlockScene::beginPaletteDrag(std::vector<asmcore::blocks::Block> blocks, co
     payload_ = o.section;
     lifted_ = true;
     palette_ = true;
+    slides_.clear();
+    magnetActive_ = false;
+    dragBaseValid_ = false;
     grab_ = QPointF(16, 12);                                              // the pointer holds it by its top left corner area
     mode_ = Mode::DragPayload;
     const std::string first = layout_.stacks[payload_].blocks[(size_t)layout_.stacks[payload_].top[0]].id;
@@ -595,6 +714,8 @@ void BlockScene::endPaletteDrag(bool drop) {
 void BlockScene::cancelDrag() {
     if (mode_ == Mode::DragPayload) {
         palette_ = false;
+        magnetActive_ = false;
+        dragBaseValid_ = false;
         dropTarget_ = blocks::DropTarget();
         QToolTip::hideText();
         session_.endGroup();
