@@ -2620,6 +2620,81 @@ private slots:
         }
     }
 
+    // The right button on the empty canvas: dragged, the whole picture moves (and no menu opens); clicked, the menu of the canvas opens as before.
+    void theRightButtonDraggedOnTheEmptyCanvasMovesThePicture() {
+        Rig r;
+        BlockView& v = r.ed->view();
+        auto& s = r.ed->session();
+        v.setZoom(1.0);
+        QApplication::processEvents();
+        const std::string before = asmcore::blocks::serializeDocument(s.document());
+        // an empty place: far below and right of every stack
+        QRectF all;
+        for (const auto& st : r.ed->scene().layout().stacks) all |= QRectF(st.origin.x + st.bounds.x, st.origin.y + st.bounds.y, st.bounds.w, st.bounds.h);
+        v.centerOn(all.bottomRight() + QPointF(60, 60));
+        QApplication::processEvents();
+        const QPoint from = v.mapFromScene(all.bottomRight() + QPointF(120, 120));
+        QVERIFY(v.viewport()->rect().contains(from) && !r.ed->scene().itemAt(v.mapToScene(from), v.transform()));
+        int menus = 0;
+        QTimer watch;
+        watch.setInterval(5);
+        QObject::connect(&watch, &QTimer::timeout, [&] { if (auto* m = qobject_cast<QMenu*>(QApplication::activePopupWidget())) { menus++; m->close(); } });
+        watch.start();
+        auto send = [&](QEvent::Type t, QPoint at, Qt::MouseButton b, Qt::MouseButtons held) {
+            QMouseEvent e(t, QPointF(at), QPointF(v.viewport()->mapToGlobal(at)), b, held, Qt::NoModifier);
+            QApplication::sendEvent(v.viewport(), &e);
+        };
+        auto platformMenu = [&](QPoint at) {                                              // what a windowing system sends for a right click, at press or after release
+            QContextMenuEvent e(QContextMenuEvent::Mouse, at, v.viewport()->mapToGlobal(at));
+            QApplication::sendEvent(v.viewport(), &e);
+        };
+        // ---- dragged: the view scrolls by what the pointer moved, the scene point under the pointer stays under it, nothing opens, the document is untouched
+        const QPointF held = v.mapToScene(from);
+        const int h0 = v.horizontalScrollBar()->value(), v0 = v.verticalScrollBar()->value();
+        send(QEvent::MouseButtonPress, from, Qt::RightButton, Qt::RightButton);
+        platformMenu(from);                                                               // (X11: with the press)
+        send(QEvent::MouseMove, from + QPoint(-30, -20), Qt::NoButton, Qt::RightButton);
+        send(QEvent::MouseMove, from + QPoint(-90, -60), Qt::NoButton, Qt::RightButton);
+        QCOMPARE(v.horizontalScrollBar()->value(), h0 + 90);
+        QCOMPARE(v.verticalScrollBar()->value(), v0 + 60);
+        QVERIFY2(QLineF(QPointF(v.mapFromScene(held)), QPointF(from + QPoint(-90, -60))).length() < 2.0, "the canvas follows the pointer");
+        QCOMPARE(v.viewport()->cursor().shape(), Qt::ClosedHandCursor);
+        send(QEvent::MouseButtonRelease, from + QPoint(-90, -60), Qt::RightButton, Qt::NoButton);
+        platformMenu(from + QPoint(-90, -60));                                            // (Windows: after the release)
+        QTest::qWait(60);
+        QCOMPARE(menus, 0);
+        QCOMPARE(v.viewport()->cursor().shape(), Qt::ArrowCursor);
+        QCOMPARE(asmcore::blocks::serializeDocument(s.document()), before);
+        // ---- a tremble of the hand is still a click: the menu of the canvas opens, once, and the view does not move
+        const int h1 = v.horizontalScrollBar()->value(), v1 = v.verticalScrollBar()->value();
+        const QPoint at = v.mapFromScene(held);
+        QVERIFY(v.viewport()->rect().contains(at));
+        send(QEvent::MouseButtonPress, at, Qt::RightButton, Qt::RightButton);
+        send(QEvent::MouseMove, at + QPoint(1, 2), Qt::NoButton, Qt::RightButton);
+        send(QEvent::MouseButtonRelease, at + QPoint(1, 2), Qt::RightButton, Qt::NoButton);   // (the menu runs its own loop here; the timer closes it)
+        platformMenu(at);
+        QTest::qWait(60);
+        QCOMPARE(menus, 1);
+        QCOMPARE(v.horizontalScrollBar()->value(), h1);
+        QCOMPARE(v.verticalScrollBar()->value(), v1);
+        // ---- on a block the right button is the block's menu, dragged or not: the picture stays
+        const std::string first = s.document().sections[0].blocks[0].id;
+        r.ed->view().showBlock(r.ed->scene().blockRect(first));
+        QApplication::processEvents();
+        const QPoint onBlock = v.mapFromScene(r.ed->scene().blockRect(first).center());
+        const int h2 = v.horizontalScrollBar()->value(), v2 = v.verticalScrollBar()->value();
+        send(QEvent::MouseButtonPress, onBlock, Qt::RightButton, Qt::RightButton);
+        send(QEvent::MouseMove, onBlock + QPoint(40, 30), Qt::NoButton, Qt::RightButton);
+        send(QEvent::MouseButtonRelease, onBlock + QPoint(40, 30), Qt::RightButton, Qt::NoButton);
+        QCOMPARE(v.horizontalScrollBar()->value(), h2);
+        QCOMPARE(v.verticalScrollBar()->value(), v2);
+        platformMenu(onBlock);                                                            // the system's menu event reaches the scene as before
+        QTest::qWait(60);
+        QCOMPARE(menus, 2);
+        QVERIFY(s.isSelected(first));
+        QCOMPARE(asmcore::blocks::serializeDocument(s.document()), before);
+    }
+
     void theWheelZoomsTheCanvas() {
         Rig r;
         BlockView& v = r.ed->view();

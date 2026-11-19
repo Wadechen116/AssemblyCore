@@ -1,5 +1,8 @@
 #pragma once
-// The window onto the canvas: zoom (Ctrl + wheel, buttons), panning (middle button, or space + drag), a grid, "fit everything".
+// The window onto the canvas: zoom (Ctrl + wheel, buttons), panning (middle button, space + drag, or the RIGHT button dragged on the empty canvas), a grid,
+// "fit everything". The right button on the empty canvas: dragged, the whole picture moves with the pointer (nothing in the document changes); pressed and
+// released without moving, the context menu of the canvas opens as before. On a block the right button is the block's menu, as it was.
+#include <QElapsedTimer>
 #include <QGraphicsView>
 #include <QString>
 
@@ -38,6 +41,7 @@ protected:
     void mousePressEvent(QMouseEvent* e) override;
     void mouseMoveEvent(QMouseEvent* e) override;
     void mouseReleaseEvent(QMouseEvent* e) override;
+    void contextMenuEvent(QContextMenuEvent* e) override;
     void keyPressEvent(QKeyEvent* e) override;
     void keyReleaseEvent(QKeyEvent* e) override;
     void dragEnterEvent(QDragEnterEvent* e) override;
@@ -49,6 +53,9 @@ protected:
 private:
     double zoom_ = 1.0;
     bool panning_ = false, space_ = false;
+    bool rightDown_ = false, rightMoved_ = false, forwardingMenu_ = false;      // the right button went down on the empty canvas / has been dragged since
+    QPoint rightPress_;
+    QElapsedTimer rightReleased_;                                              // when it came up (the platform's own menu event of that click is not wanted twice)
     QPoint last_;
     QString dragEntry_;
     blocks::BlockTheme theme_ = blocks::BlockTheme::light();

@@ -107,6 +107,7 @@ void BlockView::wheelEvent(QWheelEvent* e) {
 }
 
 void BlockView::mousePressEvent(QMouseEvent* e) {
+    rightReleased_.invalidate();                                 // (a new press: whatever menu event comes now belongs to it, not to the last right click)
     if (e->button() == Qt::MiddleButton || (space_ && e->button() == Qt::LeftButton)) {
         panning_ = true;
         last_ = e->pos();
@@ -114,10 +115,32 @@ void BlockView::mousePressEvent(QMouseEvent* e) {
         e->accept();
         return;
     }
+    // the right button on the empty canvas (the grid: no stack under the pointer): the start of a pan, or of a click that opens the menu
+    if (e->button() == Qt::RightButton && scene() && !scene()->itemAt(mapToScene(e->pos()), transform())) {
+        rightDown_ = true;
+        rightMoved_ = false;
+        rightPress_ = last_ = e->pos();
+        e->accept();
+        return;
+    }
     QGraphicsView::mousePressEvent(e);
 }
 
 void BlockView::mouseMoveEvent(QMouseEvent* e) {
+    if (rightDown_) {
+        if (!rightMoved_ && (e->pos() - rightPress_).manhattanLength() > 4) {          // (a hand that trembles is still a click)
+            rightMoved_ = true;
+            viewport()->setCursor(Qt::ClosedHandCursor);
+        }
+        if (rightMoved_) {
+            const QPoint d = e->pos() - last_;
+            last_ = e->pos();
+            horizontalScrollBar()->setValue(horizontalScrollBar()->value() - d.x());
+            verticalScrollBar()->setValue(verticalScrollBar()->value() - d.y());
+        }
+        e->accept();
+        return;
+    }
     if (panning_) {
         const QPoint d = e->pos() - last_;
         last_ = e->pos();
@@ -130,6 +153,20 @@ void BlockView::mouseMoveEvent(QMouseEvent* e) {
 }
 
 void BlockView::mouseReleaseEvent(QMouseEvent* e) {
+    if (rightDown_ && e->button() == Qt::RightButton) {
+        const bool click = !rightMoved_;
+        rightDown_ = rightMoved_ = false;
+        rightReleased_.start();
+        viewport()->setCursor(space_ ? Qt::OpenHandCursor : Qt::ArrowCursor);
+        e->accept();
+        if (click) {                                                                  // not dragged: the menu of the canvas, as a right click always gave
+            QContextMenuEvent menu(QContextMenuEvent::Mouse, e->pos(), e->globalPosition().toPoint(), e->modifiers());
+            forwardingMenu_ = true;
+            QGraphicsView::contextMenuEvent(&menu);
+            forwardingMenu_ = false;
+        }
+        return;
+    }
     if (panning_) {
         panning_ = false;
         viewport()->setCursor(space_ ? Qt::OpenHandCursor : Qt::ArrowCursor);
@@ -137,6 +174,13 @@ void BlockView::mouseReleaseEvent(QMouseEvent* e) {
         return;
     }
     QGraphicsView::mouseReleaseEvent(e);
+}
+
+// The platform sends its own "context menu" event for a right click: when the button goes down (X11) or after it has come up (Windows). For a right button
+// that this view is handling (the empty canvas) that event is not the one to act on -- the menu opens from the release above, and never after a drag.
+void BlockView::contextMenuEvent(QContextMenuEvent* e) {
+    if (!forwardingMenu_ && e->reason() == QContextMenuEvent::Mouse && (rightDown_ || (rightReleased_.isValid() && rightReleased_.elapsed() < 150))) { e->accept(); return; }
+    QGraphicsView::contextMenuEvent(e);
 }
 
 void BlockView::keyPressEvent(QKeyEvent* e) {
