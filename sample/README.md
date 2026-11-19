@@ -30,6 +30,7 @@ ctest -R sample_projects                         # 在 CMake 建置目錄中（�
 | `10_multi_file` | 專案含多個來源檔（`shared.inc` + Main 檔 + Peri 檔）：專案樹、跨檔重新命名／找參照／跳轉 | 成功，零警告 |
 | `15_eeprom_images` | 測試用的 EEPROM 燒錄檔（範例 14 的正確與故意寫壞的版本）：反組譯檢查、驗證燒錄檔 | （沒有專案） |
 | `16_error_showcase` | **故意出錯，一次呈現各類問題**：建置警告、解碼 A／B（附改壞的燒錄檔，`debug_eeprom` 指定）、執行錯誤 B／C，在問題面板、編輯器、Decoder 面板同時看到 | 成功（有 4 個警告），除錯時有解碼問題與執行錯誤 |
+| `17_alu_busy` | **ALU 一直在忙**：不會結束的迴圈，每圈 9 次 ALU 運算（INC／ADD／SUB／MUL／XOR／AND／SHR／SHL／CMP），其餘幾乎都是進出 ALU 的 MOV；附 `.simparams`，在「模擬器」頁的架構圖上看 ALU 被頻繁使用 | 成功，零警告 |
 
 `common/defs.inc` 是共用的定義檔（CSR 位址是**範例值**，規格只給名稱，不給編號），各專案用 `include_dir = ../common` 引入。
 

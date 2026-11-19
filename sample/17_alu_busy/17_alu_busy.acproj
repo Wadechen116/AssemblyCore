@@ -1,0 +1,10 @@
+# AssemblyCoreIDE project
+name = 17_alu_busy
+source = alu_busy.asm
+include_dir = ../common
+scenario = alu_busy.scn
+simparams = alu_busy.simparams
+call_model = inline
+dataflow = warn
+output_dir = out_sample17
+sample_expect = ok

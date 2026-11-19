@@ -1,0 +1,6 @@
+; Parameters for alu_busy.asm: only what differs from the initial values. Made for watching the ALU on the Simulator page.
+[params]
+fetch.read_mode = instant
+fetch.read_mode.note = for watching: no bus time for fetching each instruction from the EEPROM, so that the cycles are the instructions' own
+sim.speed = 40
+sim.speed.note = for watching: about 15 instructions a second, slow enough to see the ALU box flash with every operation

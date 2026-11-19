@@ -1,0 +1,12 @@
+; Scenario for alu_busy.asm: three laps of eight rounds each. The program itself never ends.
+run until csr[0x150] == 3 max 100000000
+expect scratch[16..17] == 3 :: three laps counted
+expect scratch[0..1] == 0 && scratch[2..3] == 0 :: n and sum were started again for the next lap
+expect scratch[4..5] == 28 :: diff = sum - n of the last round (36 - 8)
+expect scratch[6..7] == 64 :: sq = 8 * 8
+expect scratch[8..9] == 100 :: mix = 36 ^ 64
+expect scratch[10..11] == 100 :: low = mix & 0x00FF
+expect scratch[12..13] == 18 :: half = 36 >> 1
+expect scratch[14..15] == 32 :: quad = 8 << 2
+expect main.halted == 0 :: it goes on: this program never stops by itself
+expect main.faulted == 0
