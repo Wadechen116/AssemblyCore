@@ -725,6 +725,21 @@ static void t_catalog() {
               cat.instantiate(*cat.find("type:proc_ref"), nd)[0].get("name") == "procedure" && cat.instantiate(*cat.find("type:proc"), nd)[0].get("name") == "procedure",
               "a reference says what it refers to (label, procedure, CSR_NAME ...), and the procedure reference names the fresh procedure block");
     }
+    // ... but a choice comes with its default: an instruction without its operation or condition would not be one (only a comment in the program)
+    {
+        auto text = [&](const char* id, const char* domain) {
+            Document gd;
+            Section s;
+            s.domain = domain;
+            s.blocks = cat.instantiate(*cat.find(id), gd);
+            gd.sections.push_back(s);
+            return generate(gd).text;
+        };
+        const std::string alu = text("type:alu", "main"), br = text("type:br_cond", "main"), pbr = text("type:br_peri", "peri"), mov = text("type:mov", "main");
+        check(alu.find("    ALU ADD unsigned") != std::string::npos && alu.find("incomplete") == std::string::npos, "a calculation from the toolbox is a whole instruction: ALU ADD unsigned", alu);
+        check(br.find("BR.COND ALWAYS, ") != std::string::npos && pbr.find("BR.ALWAYS") != std::string::npos, "a branch keeps its condition (ALWAYS); its target is a hole", br + pbr);
+        check(mov.find("(incomplete) MOV") != std::string::npos, "data stays a hole: a move has no source and no destination yet", mov);
+    }
     Document d;
     std::vector<Block> reg1 = cat.instantiate(*cat.find("type:region_main_scratchpad"), d), bin = cat.instantiate(*cat.find("type:expr_bin"), d), mov = cat.instantiate(*cat.find("type:mov"), d);
     check(!reg1[0].value("first") && !reg1[0].value("last") && !bin[0].value("a") && !bin[0].value("b") && !mov[0].value("src") && !mov[0].value("dst"), "a region, an expression and a move come with holes where their parts go");

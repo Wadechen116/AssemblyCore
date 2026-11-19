@@ -1306,6 +1306,19 @@ static void t_isa_layout() {
     check(L.wiresFor(1, "EXEC_XFER READ dev=0, len=1, ptr=0, ext=[0x10]").size() >= 6, "an EXEC_XFER lights the way to the device");
     check(L.wiresFor(0, "BR.COND PERI_RESULT_VALID, take, safe") == L.wiresFor(0, "BR.IF_X"), "BR.COND and BR.* share the BR path (the longest mnemonic that starts the text)");
     check(L.wiresFor(0, "MAIN_NOTHING").empty() && L.wiresFor(1, "ALU ADD").empty(), "an instruction of no path (or of the other side) lights nothing");
+    {   // the units an instruction uses (they flash with it)
+        auto has = [](const std::vector<std::string>& v, const char* id) { return std::find(v.begin(), v.end(), id) != v.end(); };
+        const auto alu = L.boxesFor(0, "ALU ADD unsigned"), cmp = L.boxesFor(0, "ALU CMP.EQ unsigned");
+        check(has(alu, "alu") && has(alu, "flags") && !has(alu, "scratch") && alu == cmp, "an ALU operation uses the ALU and the Status Flag");
+        const auto in = L.boxesFor(0, "MOV MAIN_SCRATCHPAD[0..1] -> ALU_OPA"), out = L.boxesFor(0, "MOV ALU_OUT[0..1] -> MAIN_SCRATCHPAD[4..5]"), k = L.boxesFor(0, "MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]");
+        check(has(in, "scratch") && has(in, "alu") && has(out, "alu") && has(out, "scratch") && has(k, "scratch") && !has(k, "alu"), "a MOV uses the boxes of the regions it reads and writes");
+        check(has(L.boxesFor(0, "EXEC_CSR WRITE8 C, 1"), "csr") && has(L.boxesFor(0, "EXEC_CSR READ8 C -> MAIN_CSR_DATA_BUF[0]"), "csrbuf") && has(L.boxesFor(0, "BR.COND ALU_CMP_TRUE, x"), "flags"),
+              "EXEC_CSR uses the arbiter and the CSRs (a read also its buffer), a branch the Status Flag");
+        check(has(L.boxesFor(1, "EXEC_XFER READ dev=0, addr=0, addrlen=1, ptr=0"), "dev") && has(L.boxesFor(1, "EXEC_PUB service=1, src=0, len=1"), "slot") && L.boxesFor(1, "ALU ADD").empty(),
+              "Peri: a transfer reaches the device, a publish the result slot; Peri has no ALU");
+        IsaLayout bad = parseIsaLayout("canvas 400 300\nbox a 0 0 10 10 data \"A\"\ntouch main ALU = nothere\n");
+        check(!bad.errors.empty() && bad.errors[0].find("unknown box") != std::string::npos, "a touch that names a box the layout does not have is reported", bad.errors.empty() ? "" : bad.errors[0]);
+    }
     // the parser reports what is wrong and keeps the rest
     IsaLayout bad = parseIsaLayout("canvas 500 400\nbox a 0 0 100 50 data \"A\"\nbox b 0 0 100 50 blob \"B\"\nrow a \"x\" pc nowhere\nrow z \"y\" cycle\nrow a \"ok\" cycle\nwire w \"\" 1,1\npath main MOV = ghost\nfoo\n");
     check(bad.boxes.size() == 1 && bad.boxes[0].rows.size() == 1, "a bad box / row is left out, the rest stays");

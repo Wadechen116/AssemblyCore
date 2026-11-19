@@ -413,6 +413,8 @@ void IsaTopView::feed(const SimUpdate& u) {
         if (e.type != asmcore::sim::EventType::Issue || (e.domain != 0 && e.domain != 1)) continue;
         for (const std::string& w : layout_.wiresFor(e.domain, e.what)) lit_[w] = {now, e.domain == 1};
         for (const IsaBox& b : layout_.boxes) if (b.kind == "decoder" && b.domain == e.domain) pulse_[b.id] = {now, e.domain == 1};
+        // the units the instruction uses flash with it: the ALU on an ALU operation, where a MOV reads and writes, the arbiter and the CSRs on EXEC_CSR ...
+        for (const std::string& id : layout_.boxesFor(e.domain, e.what)) pulse_[id] = {now, e.domain == 1};
     }
     refreshValues();
     if (animating() && !timer_.isActive()) timer_.start();

@@ -125,6 +125,25 @@ std::vector<std::string> IsaLayout::wiresFor(int domain, const std::string& text
     return {};
 }
 
+std::vector<std::string> IsaLayout::boxesFor(int domain, const std::string& text) const {
+    std::vector<std::string> out;
+    if (domain < 0 || domain > 1) return out;
+    auto add = [&](const std::string& id) { if (box(id) && std::find(out.begin(), out.end(), id) == out.end()) out.push_back(id); };
+    const std::string t = upper(text);
+    std::string best;
+    const std::vector<std::string>* ids = nullptr;
+    for (const auto& p : touches[(size_t)domain])
+        if (t.compare(0, p.first.size(), p.first) == 0 && p.first.size() > best.size()) { best = p.first; ids = &p.second; }
+    if (ids) for (const std::string& id : *ids) add(id);
+    // the regions the text names (a MOV's source and destination, the buffer a CSR read fills, what a transfer reads into)
+    static const struct { const char* word; const char* boxId; } kRegions[] = {
+        {"MAIN_SCRATCHPAD", "scratch"}, {"MAIN_CSR_DATA_BUF", "csrbuf"}, {"ALU_OPA", "alu"}, {"ALU_OPB", "alu"}, {"ALU_OUT", "alu"}, {"ALU_STATUS", "alu"},
+        {"PERI_RESULT_SLOT", "slot"}, {"PERI_RESULT_META", "slot"}, {"PERI_RX_BUF", "rx"},
+    };
+    for (const auto& r : kRegions) if (t.find(r.word) != std::string::npos) add(r.boxId);
+    return out;
+}
+
 IsaLayout parseIsaLayout(const std::string& text) {
     IsaLayout L;
     std::istringstream in(text);
@@ -193,6 +212,10 @@ IsaLayout parseIsaLayout(const std::string& text) {
             if (w.size() < 5 || (w[1] != "main" && w[1] != "peri") || w[3] != "=") { bad("path needs main|peri MNEMONIC = WIRE..."); continue; }
             std::vector<std::string> ids(w.begin() + 4, w.end());
             L.paths[w[1] == "main" ? 0 : 1].push_back({upper(w[2]), ids});
+        } else if (cmd == "touch") {
+            if (w.size() < 5 || (w[1] != "main" && w[1] != "peri") || w[3] != "=") { bad("touch needs main|peri MNEMONIC = BOX..."); continue; }
+            std::vector<std::string> ids(w.begin() + 4, w.end());
+            L.touches[w[1] == "main" ? 0 : 1].push_back({upper(w[2]), ids});
         } else {
             bad("unknown line '" + cmd + "'");
         }
@@ -201,6 +224,10 @@ IsaLayout parseIsaLayout(const std::string& text) {
         for (const auto& p : L.paths[(size_t)d])
             for (const std::string& id : p.second)
                 if (!L.wire(id)) L.errors.push_back("path " + std::string(d == 0 ? "main " : "peri ") + p.first + ": unknown wire '" + id + "'");
+    for (int d = 0; d < 2; d++)                                   // ... and a touch only boxes that exist
+        for (const auto& p : L.touches[(size_t)d])
+            for (const std::string& id : p.second)
+                if (!L.box(id)) L.errors.push_back("touch " + std::string(d == 0 ? "main " : "peri ") + p.first + ": unknown box '" + id + "'");
     return L;
 }
 
@@ -372,6 +399,16 @@ path peri EXEC_PUB  = w_pcode w_peri_rx w_rx_slot w_slot_main
 path peri EXEC_CSR  = w_pcode w_peri_bus w_bus_arb w_arb_csr
 path peri BR        = w_pcode w_poll_peri
 path peri JMP       = w_pcode
+
+# the units an instruction uses (they flash with it, like its decoder); the regions a MOV names are found from its text
+touch main ALU       = alu flags
+touch main EXEC_CSR  = arb csr
+touch main BR        = flags
+touch main CASCADE   = flags
+touch peri EXEC_XFER = xfer i2ch i2cm dev rx
+touch peri EXEC_PUB  = rx slot
+touch peri EXEC_CSR  = arb csr
+touch peri BR        = poll
 )ISA";
     return text;
 }

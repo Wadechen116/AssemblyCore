@@ -64,6 +64,10 @@ struct IsaLayout {
     const IsaWire* wire(const std::string& id) const;
     // The wires lit by an instruction text ("MOV CONST(..) -> ..." of domain 0 / 1): the longest mnemonic that is the start of the text wins.
     std::vector<std::string> wiresFor(int domain, const std::string& instructionText) const;
+    // The boxes an instruction uses besides its decoder ("touch main ALU = alu flags" lines of the layout, by mnemonic), plus the boxes of the regions its
+    // text names (a MOV: where it reads and where it writes). Only boxes the layout has.
+    std::vector<std::vector<std::pair<std::string, std::vector<std::string>>>> touches{2};   // [domain] -> (mnemonic, box ids)
+    std::vector<std::string> boxesFor(int domain, const std::string& instructionText) const;
     std::string mnemonicOf(int domain, const std::string& instructionText) const;
 };
 

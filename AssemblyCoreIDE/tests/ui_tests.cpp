@@ -1949,10 +1949,40 @@ private slots:
         QVERIFY(std::find(lit.begin(), lit.end(), "w_bus_xfer") == lit.end());                // (a Peri path is not lit by a Main instruction)
         const auto pul = view->pulsingBoxes();
         QVERIFY(std::find(pul.begin(), pul.end(), "main_dec") != pul.end());                             // (the Peri JMP that falls due before the step may pulse its decoder too)
+        // ... and the unit it writes: the scratchpad; the ALU has nothing to do with this MOV
+        QVERIFY(std::find(pul.begin(), pul.end(), "scratch") != pul.end());
+        QVERIFY(std::find(pul.begin(), pul.end(), "alu") == pul.end());
         QCOMPARE(QString::fromStdString(view->valueOf("scratch", "[0..7]")), QString("05 00 00 00 00 00 00 00"));
         const auto flash = view->flashingRows();
         QVERIFY(std::find(flash.begin(), flash.end(), "scratch/[0..7]") != flash.end());
         QCOMPARE(QString::fromStdString(view->valueOf("main_dec", "executed")), QString("1"));
+        // on to the ALU operation (two more MOVs load its operands: the ALU box flashes with them, it is where they write): the ALU box flashes with the
+        // operation itself, and so does the Status Flag it sets
+        r.f.dbg.stepInto();
+        QVERIFY(r.until([&] { return QString::fromStdString(view->valueOf("main_dec", "executed")) == "2"; }));
+        {
+            const auto p2 = view->pulsingBoxes();
+            QVERIFY2(std::find(p2.begin(), p2.end(), "alu") != p2.end(), "MOV ... -> ALU_OPA flashes the ALU");
+        }
+        r.f.dbg.stepInto();
+        QVERIFY(r.until([&] { return QString::fromStdString(view->valueOf("main_dec", "executed")) == "3"; }));
+        QTest::qWait(900);                                                                    // (the flashes of the MOVs are over)
+        QVERIFY(view->pulsingBoxes().empty());
+        QVERIFY2(QString::fromStdString(view->valueOf("main_dec", "next")).startsWith("ALU ADD"), qPrintable(QString::fromStdString(view->valueOf("main_dec", "next"))));
+        r.f.dbg.stepInto();
+        QVERIFY(r.until([&] { return QString::fromStdString(view->valueOf("main_dec", "executed")) == "4"; }));
+        {
+            const auto p3 = view->pulsingBoxes();
+            QVERIFY2(std::find(p3.begin(), p3.end(), "alu") != p3.end() && std::find(p3.begin(), p3.end(), "flags") != p3.end() && std::find(p3.begin(), p3.end(), "scratch") == p3.end(),
+                     "the ALU operation flashes the ALU and the Status Flag, not the scratchpad");
+            QCOMPARE(QString::fromStdString(view->valueOf("alu", "OUT")).left(5), QString("0A 00").left(5));          // 5 + 5
+            view->grab().save(QDir::tempPath() + "/acide_isatop_alu.png");
+        }
+        // (the rest of this test counts from one executed instruction: start again and step once)
+        r.f.dbg.restart();
+        QVERIFY(r.until([&] { return r.f.dbg.session().view() && r.f.dbg.session().view()->cycle == 0 && !r.f.dbg.running(); }));
+        r.f.dbg.stepInto();
+        QVERIFY(r.until([&] { return QString::fromStdString(view->valueOf("main_dec", "executed")) == "1"; }));
         // it fades
         QTest::qWait(1000);
         {   // (the cycle counter of the device box changes with every cycle the slow run still makes: it is allowed to flash)
@@ -4170,8 +4200,8 @@ private slots:
         QCOMPARE((int)s.document().sections[0].blocks.size(), 4);
         QCOMPARE(s.document().sections[0].blocks[2].type, std::string("alu"));
         QVERIFY(s.isSelected(s.document().sections[0].blocks[2].id));
-        for (const auto& vl : s.document().sections[0].blocks[2].values) QVERIFY2(vl.second.empty(), vl.first.c_str());      // one piece: nothing plugged into it
-        QVERIFY2(s.generated().text.find("ALU") != std::string::npos, s.generated().text.c_str());
+        // one piece, and a whole instruction at once: its choices (the operation, unsigned) come with it -- "ALU" with no operation would only be a comment
+        QVERIFY2(s.generated().text.find("    ALU ADD unsigned") != std::string::npos && s.generated().text.find("(incomplete) ALU") == std::string::npos, s.generated().text.c_str());
         // a pattern is several blocks at once
         emit r.ed->toolbox().activated("pattern:add_two");
         QVERIFY((int)s.document().sections[0].blocks.size() >= 4 + 6);

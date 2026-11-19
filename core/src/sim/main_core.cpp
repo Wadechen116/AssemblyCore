@@ -259,6 +259,10 @@ void Simulator::Impl::opMainAlu(OpCtx& oc) {
         emit([&](Event& e) { e.type = EventType::Issue; e.domain = 0; e.pc = pc; e.a = 1; e.what = it != instrAt[0].end() ? it->second->text : "ALU"; });
         m.out = nm.out;
         m.cmp = nm.cmp; m.zero = nm.zero; m.neg = nm.neg; m.carry = nm.carry; m.borrow = nm.borrow; m.ovs = nm.ovs; m.ov16 = nm.ov16;
+        // what the operation wrote, as every other instruction says it (the trace, the events, data watches on ALU_OUT / ALU_STATUS): a compare leaves
+        // ALU_OUT as it was and writes the status only
+        if (cls != 1) noteWrite("out", 0, 4);                                    // (class 1 = CMP)
+        noteWrite("status", 0, 4);
         latency = lat.aluOp(isMul);
 }
 

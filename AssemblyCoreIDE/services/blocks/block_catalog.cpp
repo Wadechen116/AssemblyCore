@@ -40,7 +40,8 @@ std::string firstWord(const std::string& s) {
 }
 
 // What a fresh instruction says (plain assembler; the importer makes the block). Only the block itself is offered: instantiate() takes the components the text
-// brings out again, so that every sample of the toolbox is ONE piece with empty sockets (black holes) where the components go.
+// brings out again, so that every sample of the toolbox is ONE piece with empty sockets (black holes) where the data goes; its choices (an operation, a
+// condition) stay, with the default the sample text says.
 const char* sampleText(const std::string& type) {
     static const std::map<std::string, const char*> m = {
         {"mov", "MOV CONST(0, 2) -> MAIN_SCRATCHPAD[0..1]"},
@@ -368,10 +369,25 @@ std::vector<const CatalogEntry*> BlockCatalog::search(const std::string& query0,
 namespace {
 // Take every component out of the sockets of a block: what Editor::unplugValue leaves behind -- a hole, its text mirror emptied, the fields derived from it
 // following (a window's first / last emptied, a composite argument written again from what is left).
+// A CHOICE stays plugged in (the operation of a calculation, signed / unsigned, the condition of a branch): it has a sensible default, and an instruction
+// that lacks it is not an instruction at all -- "ALU" with no operation is only a comment in the generated program and never runs. What is DATA goes: the
+// numbers, the regions, the names.
+// (told by the socket: one that takes a component of the Options drawer which is a choice -- the sample text may not have been turned into components yet)
+bool takesChoice(const InputDef& in, const Registry& reg) {
+    for (const BlockDef& c : reg.all()) {
+        if (c.category != "Options" || c.valueType.empty()) continue;
+        bool choice = false;
+        for (const FieldDef& f : c.fields) choice = choice || f.kind == FieldKind::Choice;
+        if (!choice) continue;
+        for (const std::string& a : in.accepts) if (a == c.valueType) return true;
+    }
+    return false;
+}
 void hollow(Block& b, const Registry& reg) {
     const BlockDef* d = reg.find(b.type);
     if (!d) return;
     for (const InputDef& in : d->inputs) {
+        if (takesChoice(in, reg) && (b.value(in.name) || !b.get(in.name).empty())) continue;
         b.clearValue(in.name);
         if (b.field(in.name)) b.set(in.name, std::string());
         if (in.derive.compare(0, 6, "range:") == 0) {

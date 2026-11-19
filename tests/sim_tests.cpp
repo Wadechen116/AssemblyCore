@@ -636,6 +636,37 @@ static void t_frontend() {
     }
 }
 
+// An ALU operation says what it wrote, like every other instruction: ALU_OUT and the status (a compare: the status only).
+static void t_alu_writes() {
+    section("the ALU reports what it writes");
+    Result r = assemble1(".main\ns: MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]\n MOV MAIN_SCRATCHPAD[0..1] -> ALU_OPA\n MOV MAIN_SCRATCHPAD[0..1] -> ALU_OPB\n ALU ADD unsigned\n ALU CMP.EQ unsigned\nh: JMP h\n");
+    check(r.ok, "(the program assembles)", diags(r));
+    if (!r.ok) return;
+    std::string e;
+    SimConfig c;
+    c.params.set("fetch.source", "sram", e);
+    struct Sink : EventSink {
+        std::vector<Event> all;
+        void onEvent(const Event& ev) override { all.push_back(ev); }
+    };
+    auto sinkPtr = std::make_shared<Sink>();
+    Sink& sink = *sinkPtr;
+    Simulator sim(r, c);
+    sim.addSink(sinkPtr);
+    RunLimits l; l.maxCycles = 2000;
+    sim.run(l);
+    // the writes that follow each ALU instruction, up to the next instruction
+    std::vector<std::string> afterAdd, afterCmp;
+    std::vector<std::string>* into = nullptr;
+    for (const Event& ev : sink.all) {
+        if (ev.type == EventType::Issue) into = ev.what.find("ALU ADD") == 0 ? &afterAdd : ev.what.find("ALU CMP") == 0 ? &afterCmp : nullptr;
+        else if (ev.type == EventType::RegionWrite && into) into->push_back(ev.what);
+    }
+    check(afterAdd == std::vector<std::string>({"out", "status"}), "ALU ADD: it wrote ALU_OUT and the status", afterAdd.empty() ? "nothing" : afterAdd[0]);
+    check(afterCmp == std::vector<std::string>({"status"}), "ALU CMP: the status only (ALU_OUT stays)", afterCmp.empty() ? "nothing" : afterCmp[0]);
+    check(sim.readRegion("out", 0, 2) == std::vector<uint8_t>({10, 0}) && sim.signal("alu.cmp_true") == 1, "(and the values are right: 5 + 5 = 10, 5 == 5)");
+}
+
 static void t_fetch_timing() {
     section("fetching from the I2C EEPROM: what an instruction reads, how long it takes, the shared bus");
     // 27 MHz / 400 kHz: 607.5 ISA cycles a byte phase; a random read of N bytes is 2 + 2 (address bytes) + N phases, plus 2 cycles a transaction
@@ -1805,6 +1836,7 @@ int main() {
     t_eeprom();
     t_fetch_timing();
     t_frontend();
+    t_alu_writes();
     t_verify_eeprom();
     t_peri_units();
     t_main_units();
