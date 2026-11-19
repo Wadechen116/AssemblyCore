@@ -11,6 +11,7 @@
 
 #include "asmcore/sim.h"
 #include "asmcore/eeprom.h"
+#include "asmcore/sram.h"
 #include "sim/impl.h"
 
 using namespace asmcore;
@@ -513,6 +514,54 @@ static void t_fetch_timing() {
     {
         Simulator sim(r, SimConfig());                                          // the hardware default
         const DecodedLine alu = sim.decodedAt(Domain::Main, 0), jmp = sim.decodedAt(Domain::Main, 1), mov = sim.decodedAt(Domain::Main, 2), csr = sim.decodedAt(Domain::Main, 3);
+        // ---- the two stages: the instruction byte alone, the descriptor it points at, and what both make together
+        {
+            // (the fetch time counts the opcode and its inline bytes as one contiguous read; here they are two entries, in the two Frontend states that read them)
+            auto bytesOf = [](const DecodedLine& L) { uint32_t n = 0; for (const DecodeRead& x : L.reads) n += (uint32_t)x.bytes.size(); return n; };
+            auto total = [](const std::vector<uint32_t>& v) { uint32_t n = 0; for (uint32_t x : v) n += x; return n; };
+            auto field = [](const DecodeRead& x, const std::string& name) { for (const auto& f : x.fields) if (f.first.compare(0, name.size(), name) == 0) return f.second; return std::string("<none>"); };
+            check(bytesOf(alu) == total(alu.fetchBytes) && bytesOf(jmp) == total(jmp.fetchBytes) && bytesOf(mov) == total(mov.fetchBytes) && bytesOf(csr) == total(csr.fetchBytes),
+                  "every byte the fetch time counts is listed (the opcode, the inline bytes, each descriptor, the constants)");
+            // stage 1: one byte, [7:6] the opcode and [5:0] the index -- it does not say what the instruction does
+            check(mov.opcodeName == "MOV" && mov.opcode == 2 && mov.reads.size() == 3 && mov.reads[0].kind == "opcode" && mov.reads[0].state == "CMD_OP_GET" && mov.reads[0].bytes.size() == 1 &&
+                  mov.reads[0].bytes[0] == (uint8_t)((mov.opcode << 6) | mov.arg), "stage 1 of a MOV: the instruction byte, read in CMD_OP_GET", mov.opcodeName);
+            // the descriptor: where it is, its bytes, its fields
+            const DecodeRead& md = mov.reads[1];
+            const DomainImage& im = r.main;
+            uint32_t moveOff = 0, constOff = 0;
+            for (const SectionInfo& sct : im.sections) { if (sct.name == "MainMoveDesc_32b") moveOff = sct.offset; if (sct.name == "MAIN_CONST_POOL") constOff = sct.offset; }
+            check(md.kind == "descriptor" && md.state == "CMD_DESC_GET" && md.table == "MainMoveDesc_32b" && md.index == mov.arg && md.bytes.size() == 4 &&
+                  md.logicalAddr == moveOff + (uint32_t)mov.arg * 4 && md.addressRule == "main_move_desc_offset + index * 4",
+                  "its descriptor: entry `arg` of MainMoveDesc_32b, at main_move_desc_offset + arg * 4, read in CMD_DESC_GET", md.table + " " + std::to_string(md.logicalAddr));
+            bool same = md.present;
+            for (size_t i = 0; same && i < 4; i++) same = md.bytes[i] == im.bytes[md.logicalAddr + i];
+            check(same && field(md, "src_region").find("MAIN_CONST_POOL") != std::string::npos && field(md, "dst_region").find("MAIN_SCRATCHPAD") != std::string::npos &&
+                  field(md, "len_m1").find("2 byte(s)") != std::string::npos && field(md, "dst_off") == "0",
+                  "the descriptor's bytes are the image's, and its fields say what the instruction byte does not: from the const pool to the scratchpad, 2 bytes",
+                  field(md, "src_region") + " -> " + field(md, "dst_region") + ", " + field(md, "len_m1"));
+            // the constants it reads from the pool
+            const DecodeRead& mc = mov.reads[2];
+            check(mc.kind == "const" && mc.table == "MAIN_CONST_POOL" && mc.bytes.size() == 2 && mc.logicalAddr == constOff + (uint32_t)mc.index && ((mc.bytes[0] == 0x34 && mc.bytes[1] == 0x12) || (mc.bytes[0] == 0x12 && mc.bytes[1] == 0x34)),
+                  "and the constant itself, from MAIN_CONST_POOL (0x1234)");
+            // where all of it lies in the one shared SRAM: word = base + (byte >> 2), lane = byte & 3
+            bool placed = true;
+            for (const DecodedLine* L : {&alu, &jmp, &mov, &csr})
+                for (const DecodeRead& x : L->reads) {
+                    if (x.bytes.empty()) continue;
+                    const PhysicalByte a = physicalByte(r.profile, Domain::Main, x.logicalAddr), b = physicalByte(r.profile, Domain::Main, x.logicalAddr + (uint32_t)x.bytes.size() - 1);
+                    placed = placed && x.sramWordFirst == a.word && x.sramWordLast == b.word && x.sramLane == a.lane;
+                }
+            check(placed, "each read knows the SRAM words and the lane it comes from");
+            // the other kinds: a branch names its target, a CSR write has an inline byte and a 12-bit address, an ALU operation a class
+            check(jmp.opcodeName == "BR" && jmp.reads.size() == 2 && jmp.reads[1].table == "MainBranchDesc_16b" && field(jmp.reads[1], "br_type").find("COND") != std::string::npos &&
+                  field(jmp.reads[1], "cond_sel").find("ALWAYS") != std::string::npos && field(jmp.reads[1], "target_pc").find("(s)") != std::string::npos,
+                  "JMP s is a BR whose descriptor says COND, ALWAYS, target s", field(jmp.reads[1], "target_pc"));
+            check(csr.opcodeName == "EXEC_CSR" && csr.reads.size() == 3 && csr.reads[1].kind == "inline" && csr.reads[1].bytes == std::vector<uint8_t>({1}) && csr.reads[2].table == "MainCsrOneByteDesc_16b" &&
+                  field(csr.reads[2], "op").find("WRITE8_IMM") != std::string::npos && field(csr.reads[2], "csr_addr").compare(0, 2, "0x") == 0,
+                  "EXEC_CSR WRITE8: the value is the inline byte, the operation and the address are in the descriptor", field(csr.reads[2], "op") + " " + field(csr.reads[2], "csr_addr"));
+            check(alu.opcodeName == "ALU" && alu.reads.size() == 2 && alu.reads[1].table == "MainAluDesc_8b" && field(alu.reads[1], "class").find("ARITH") != std::string::npos && field(alu.reads[1], "arith_op") == "ADD" &&
+                  field(alu.reads[1], "signed").find("unsigned") != std::string::npos, "ALU ADD unsigned: class, operation and sign come from the 1-byte descriptor");
+        }
         check(alu.fetchBytes == std::vector<uint32_t>({1, 1}) && alu.fetchCycles == 2 * txn(1), "ALU: the opcode, then its 1-byte descriptor: two reads, about 6,080 cycles", std::to_string(alu.fetchCycles));
         check(jmp.fetchBytes == std::vector<uint32_t>({1, 2}) && jmp.fetchCycles == txn(1) + txn(2), "JMP: the opcode and a 2-byte branch descriptor: about 6,687 cycles", std::to_string(jmp.fetchCycles));
         check(mov.fetchBytes == std::vector<uint32_t>({1, 4, 2}) && mov.fetchCycles == txn(1) + txn(4) + txn(2), "MOV CONST(.., 2): the opcode, the 4-byte descriptor, the 2 constants: about 11,549 cycles", std::to_string(mov.fetchCycles));

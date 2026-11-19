@@ -4,6 +4,9 @@
 #include <cstdlib>
 
 #include "asmcore/disasm.h"
+#include "asmcore/sram.h"
+#include "../codec.h"
+#include "../isa.h"
 #include "impl.h"
 
 namespace asmcore {
@@ -74,6 +77,130 @@ std::string withConst(const std::string& t, const ImageView& iv) {
     return out;
 }
 
+// ---- what an entry of a table says, field by field (the bit layouts are codec.h's; the names are the spec's) ----------------------------------------
+const char* tableName(int d, int t) {
+    static const char* mainN[6] = {"MainMoveDesc_32b", "MainBranchDesc_16b", "MainCsrOneByteDesc_16b", "MainCsrMultiByteDesc_16b", "MainAluDesc_8b", "MAIN_CONST_POOL"};
+    static const char* periN[6] = {"PeriXferOneByteDesc_16b", "PeriXferMultiByteDesc_16b", "PeriPublishDesc_16b", "PeriBranchDesc_16b", "PeriCsrOneByteDesc_16b", "DeviceMap"};
+    return t < 0 || t > 5 ? "?" : d == 0 ? mainN[t] : periN[t];
+}
+const char* offsetName(int d, int t) {
+    const char* const* n = layoutFieldNames(d == 0 ? Domain::Main : Domain::Peri);
+    return t < 0 || t > 5 || !n ? "offset" : n[t];
+}
+std::string num(long long v) { return std::to_string(v); }
+std::string hexN(uint32_t v, int digits) { char b[16]; std::snprintf(b, sizeof b, "0x%0*X", digits, v); return b; }
+std::string named(long long v, const std::string& name) { return num(v) + (name.empty() ? "" : " (" + name + ")"); }
+
+std::vector<std::pair<std::string, std::string>> describeEntry(int d, int t, uint32_t v, const Profile& pf, const std::map<uint32_t, std::string>& labels) {
+    std::vector<std::pair<std::string, std::string>> f;
+    auto region = [](int id) { for (const isa::RegionInfo& r : isa::kRegions) if (r.id == id) return std::string(r.name); return std::string("reserved"); };
+    auto target = [&](uint32_t pc) { auto it = labels.find(pc); return hexN(pc, 2) + (it == labels.end() ? "" : " (" + it->second + ")"); };
+    auto rsv = [&](uint32_t bits) { f.push_back({"reserved", num(bits) + (bits ? "  <- must be 0" : "")}); };
+    auto csr1 = [&] {
+        static const char* ops[] = {"WRITE8_IMM", "RMW_SET8_IMM", "RMW_CLR8_IMM", "READ8"};
+        const codec::Csr1 c = codec::unpackCsr1(v);
+        f.push_back({"op [15:14]", named(c.op, ops[c.op & 3])});
+        rsv(c.rsv);
+        f.push_back({"csr_addr [11:0]", hexN(c.addr, 3)});
+        f.push_back({"(inline byte)", "the value / mask / destination offset follows the instruction byte"});
+    };
+    if (d == 0) switch (t) {
+        case MT_MOVE: {
+            const codec::Move m = codec::unpackMove(v);
+            f.push_back({"src_region [31:28]", named(m.srcRegion, region(m.srcRegion))});
+            f.push_back({"dst_region [27:24]", named(m.dstRegion, region(m.dstRegion))});
+            f.push_back({"src_off [23:16]", num(m.srcOff)});
+            f.push_back({"dst_off [15:8]", num(m.dstOff)});
+            rsv(m.rsv);
+            f.push_back({"len_m1 [4:0]", num(m.len - 1) + "  -> " + num(m.len) + " byte(s)"});
+            break;
+        }
+        case MT_BRANCH: {
+            static const char* types[] = {"COND", "CASCADE_BEGIN", "CASCADE_END", "ERET"};
+            const codec::MainBranch b = codec::unpackMainBranch(v);
+            f.push_back({"br_type [15:14]", named(b.type, types[b.type & 3])});
+            std::string what;
+            if (b.type == isa::MB_COND) { for (const isa::NamedCode& c : isa::kMainConds) if (c.code == b.arg) what = c.name; if (what.empty()) what = "reserved condition"; }
+            else if (b.type == isa::MB_CASCADE_BEGIN) what = "selector";
+            else if (b.type == isa::MB_CASCADE_END) what = "block index";
+            f.push_back({b.type == isa::MB_COND ? "cond_sel [13:10]" : "arg [13:10]", named(b.arg, what)});
+            f.push_back({"event_safe [9]", num(b.eventSafe)});
+            rsv(b.rsv);
+            f.push_back({"target_pc [7:0]", target(b.target)});
+            break;
+        }
+        case MT_CSR1: csr1(); break;
+        case MT_CSRM: {
+            const codec::CsrM c = codec::unpackCsrM(v);
+            f.push_back({"op [15:14]", named(c.op, c.op == isa::CSRM_WRITE_SP ? "WRITE_SP" : c.op == isa::CSRM_READ_BUF ? "READ_BUF" : "reserved")});
+            f.push_back({"csr_addr[11:8] [13:10]", num(c.page) + "  (csr_addr[7:0] is the inline byte)"});
+            f.push_back({"len_m1 [9:5]", num(c.len - 1) + "  -> " + num(c.len) + " byte(s)"});
+            f.push_back({"ptr [4:0]", num(c.ptr) + (c.op == isa::CSRM_WRITE_SP ? "  (MAIN_SCRATCHPAD source)" : "  (MAIN_CSR_DATA_BUF destination)")});
+            break;
+        }
+        case MT_ALU: {
+            static const char* cls[] = {"ARITH", "CMP", "LOGIC", "SHIFT"};
+            static const char* arith[] = {"ADD", "SUB", "MUL", "INC", "DEC"};
+            static const char* cmp[] = {"EQ", "NE", "LT", "GE"};
+            static const char* logic[] = {"AND", "OR", "XOR", "NOT"};
+            const codec::Alu a = codec::unpackAlu(v, pf.alu);
+            f.push_back({"class [7:6]", named(a.cls, cls[a.cls & 3])});
+            if (a.cls != isa::A_LOGIC) f.push_back({"signed [5]", named(a.signedMode, a.signedMode ? "signed" : "unsigned")});
+            if (a.cls == isa::A_ARITH) f.push_back({"arith_op [4:0]", a.op < 0 ? "reserved" : std::string(arith[a.op])});
+            if (a.cls == isa::A_CMP) { f.push_back({"cmp_op [4:3]", a.op < 0 ? "reserved" : std::string(cmp[a.op])}); rsv(a.rsv); }
+            if (a.cls == isa::A_LOGIC) { f.push_back({"logic_op [5:3]", a.op < 0 ? "reserved" : std::string(logic[a.op])}); rsv(a.rsv); }
+            if (a.cls == isa::A_SHIFT) { f.push_back({"dir [4]", named(a.dir, a.dir ? "SHR" : "SHL")}); f.push_back({"amount [3:0]", num(a.amt)}); }
+            break;
+        }
+        default: break;
+    } else switch (t) {
+        case PT_XFER1: {
+            const codec::Xfer1 x = codec::unpackXfer1(v);
+            f.push_back({"rw [15]", named(x.rw, x.rw ? "READ" : "WRITE")});
+            f.push_back({"dev [14:12]", num(x.dev) + "  (DeviceMap entry)"});
+            f.push_back({"addr_len [11:10]", num(x.addrLen) + (x.addrLen == 3 ? "  <- reserved" : " byte(s)")});
+            f.push_back({"addr [9:0]", hexN(x.addr, 3)});
+            break;
+        }
+        case PT_XFERM: {
+            const codec::XferM x = codec::unpackXferM(v);
+            f.push_back({"rw [15]", named(x.rw, x.rw ? "READ" : "WRITE")});
+            f.push_back({"dev [14:12]", num(x.dev) + "  (DeviceMap entry)"});
+            f.push_back({"addr_len [11:10]", num(x.addrLen) + (x.addrLen == 3 ? "  <- reserved" : " byte(s)")});
+            f.push_back({"len_m1 [9:5]", num(x.len - 1) + "  -> " + num(x.len) + " byte(s)"});
+            f.push_back({"ptr [4:0]", num(x.ptr)});
+            break;
+        }
+        case PT_PUB: {
+            const codec::Pub p = codec::unpackPub(v);
+            f.push_back({"service_id [15:12]", num(p.service)});
+            f.push_back({"src_ptr [11:7]", num(p.src)});
+            f.push_back({"len_m1 [6:2]", num(p.len - 1) + "  -> " + num(p.len) + " byte(s)"});
+            rsv(p.rsv);
+            break;
+        }
+        case PT_BRANCH: {
+            const codec::PeriBranch b = codec::unpackPeriBranch(v);
+            std::string what = b.type == isa::PB_ERET ? "ERET" : "";
+            for (const isa::NamedCode& c : isa::kPeriConds) if (c.code == b.type) what = c.name;
+            f.push_back({"br_type [15:12]", named(b.type, what.empty() ? "reserved" : what)});
+            f.push_back({"event_safe [11]", num(b.eventSafe)});
+            rsv(b.rsv);
+            f.push_back({"target_pc [7:0]", target(b.target)});
+            break;
+        }
+        case PT_CSR1: csr1(); break;
+        case PT_DEVMAP: {
+            const codec::DevEntry e = codec::unpackDev(pf, v);
+            f.push_back({"bus_type", named(e.busType, e.busType == isa::BUS_I2C ? "I2C" : "reserved")});
+            f.push_back({"i2c_addr_7b", hexN((uint32_t)e.addr7, 2)});
+            break;
+        }
+        default: break;
+    }
+    return f;
+}
+
 }  // namespace
 
 DecodedLine Simulator::Impl::decode(int d, uint32_t pc) const {
@@ -112,6 +239,69 @@ DecodedLine Simulator::Impl::decode(int d, uint32_t pc) const {
     {
         uint32_t c0 = 0, c1 = 0;
         if (d == 0 && constRange(L.text, c0, c1) && c1 >= c0) L.fetchBytes.push_back(c1 - c0 + 1);     // the constants
+    }
+    // ---- the same reads, each with what it is and what it holds
+    {
+        static const char* mainOp[4] = {"EXEC_CSR", "BR", "MOV", "ALU"};
+        static const char* periOp[4] = {"EXEC_CSR", "BR", "EXEC_PUB", "EXEC_XFER"};
+        const uint32_t ib = iv.u8(pc);
+        L.opcode = (int)(ib >> 6);
+        L.arg = (int)(ib & 63);
+        L.opcodeName = d == 0 ? mainOp[L.opcode] : periOp[L.opcode];
+        auto place = [&](DecodeRead& r, uint32_t logical, uint32_t n) {
+            r.logicalAddr = logical;
+            r.eepromAddr = iv.eeprom ? iv.eepromAddressOf(logical) : logical;
+            const PhysicalByte a = physicalByte(pf, dom, logical), b = physicalByte(pf, dom, logical + (n ? n - 1 : 0));
+            r.sramWordFirst = a.word; r.sramWordLast = b.word; r.sramLane = a.lane;
+            for (uint32_t i = 0; i < n; i++) r.bytes.push_back((uint8_t)iv.u8(logical + i));
+        };
+        DecodeRead op;
+        op.kind = "opcode"; op.state = "CMD_OP_GET";
+        place(op, pc, 1);
+        op.value = ib;
+        L.reads.push_back(op);
+        if (L.length > 1) {
+            DecodeRead in;
+            in.kind = "inline"; in.state = "CMD_DESC_GET";
+            place(in, pc + 1, L.length - 1);
+            L.reads.push_back(in);
+        }
+        auto entry = [&](int t, int width, uint32_t idx) {
+            DecodeRead r;
+            const bool dev = d == 1 && t == PT_DEVMAP;
+            r.kind = dev ? "devmap" : "descriptor"; r.state = "CMD_DESC_GET";
+            r.table = tableName(d, t);
+            r.index = (int)idx;
+            r.addressRule = std::string(offsetName(d, t)) + " + " + (dev ? "dev" : "index") + " * " + std::to_string(width);
+            uint32_t v = 0;
+            r.present = iv.entry(t, idx, width, v);
+            place(r, iv.off[t] + idx * (uint32_t)width, r.present ? (uint32_t)width : 0);
+            r.value = v;
+            if (r.present) r.fields = describeEntry(d, t, v, pf, labelAt[d]);
+            L.reads.push_back(r);
+            return v;
+        };
+        bool haveDev = false;
+        uint32_t xferDesc = 0;
+        int xferTable = -1;
+        for (const auto& e : reads.entries) {
+            const int t = e.first / 1000, w = e.first % 1000;
+            const uint32_t v = entry(t, w, e.second);
+            if (d == 1 && t == PT_DEVMAP) haveDev = true;
+            if (d == 1 && (t == PT_XFER1 || t == PT_XFERM)) { xferDesc = v; xferTable = t; }
+        }
+        if (d == 1 && L.opcode == 3 && !haveDev && xferTable >= 0)             // EXEC_XFER: the DeviceMap entry its descriptor names
+            entry(PT_DEVMAP, pf.deviceMapEntryBytes, (uint32_t)(xferTable == PT_XFER1 ? codec::unpackXfer1(xferDesc).dev : codec::unpackXferM(xferDesc).dev));
+        uint32_t c0 = 0, c1 = 0;
+        if (d == 0 && constRange(L.text, c0, c1) && c1 >= c0) {
+            DecodeRead r;
+            r.kind = "const"; r.state = "CMD_DESC_GET";
+            r.table = tableName(0, MT_CONST);
+            r.index = (int)c0;
+            r.addressRule = std::string(offsetName(0, MT_CONST)) + " + src_off";
+            place(r, iv.off[MT_CONST] + c0, c1 - c0 + 1);
+            L.reads.push_back(r);
+        }
     }
     L.fetchCycles = fetchTimed() ? fetchCost(L.fetchBytes) : 0;
     auto src = instrAt[d].find(pc);

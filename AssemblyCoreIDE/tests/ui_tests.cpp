@@ -734,6 +734,111 @@ private slots:
         QVERIFY(status->text().contains("newest build"));
     }
 
+    // What the EEPROM / the program SRAM holds is not yet the instruction: the Frontend reads the instruction byte (stage 1), looks up its descriptor, and
+    // only both together are what is executed (stage 2). The decoder panel shows the three layers; the SRAM panel shows the words and which bytes are read.
+    void theDecoderShowsHowAnInstructionIsFormedAndTheSramShowsWhereItIsRead() {
+        Rig r(".csr C = 0x120\n.main\nstart: MOV CONST(0x1234, 2) -> MAIN_SCRATCHPAD[4..5]\n    EXEC_CSR WRITE8 C, 7\nh: JMP h\n");
+        QVERIFY(r.f.ctx.snapshot && r.f.ctx.snapshot->result.ok);
+        r.w->dock("decoder")->show();
+        r.w->dock("sram")->show();
+        auto* detail = r.find<QTreeWidget>("decoder", "decoderDetail");
+        auto* dtable = r.find<QTableWidget>("decoder", "decoderTable");
+        auto* sram = r.find<QTableWidget>("sram", "sramTable");
+        auto* sstatus = r.find<QLabel>("sram", "sramStatus");
+        QVERIFY(detail && dtable && sram && sstatus);
+        enum { kAddr = 0, kWord, kB0, kB1, kB2, kB3, kDom, kLogical, kSection, kUse };
+        // ---- before a session: the SRAM as boot loads it -- every word of the build's image, with its image and section
+        const asmcore::Result& res = r.f.ctx.snapshot->result;
+        QVERIFY(res.main.present && !res.main.words.empty());
+        QVERIFY2(sstatus->text().contains("shared 32-bit program SRAM") && sstatus->text().contains("Main: words"), qPrintable(sstatus->text()));
+        std::map<uint32_t, int> rowOf;
+        for (int i = 0; i < sram->rowCount(); i++) if (!sram->item(i, kWord)->text().isEmpty()) rowOf[sram->item(i, kAddr)->text().toUInt()] = i;
+        for (size_t i = 0; i < res.main.words.size(); i++) {
+            const auto it = rowOf.find(res.main.baseWord + (uint32_t)i);
+            QVERIFY(it != rowOf.end());
+            QCOMPARE(sram->item(it->second, kWord)->text().toUInt(nullptr, 16), res.main.words[i]);
+            QCOMPARE(sram->item(it->second, kDom)->text(), QString("Main"));
+            for (int k = 0; k < 4; k++)                                                       // lane k of the word is byte +k of the logical image
+                if (i * 4 + k < res.main.bytes.size()) QCOMPARE(sram->item(it->second, kB0 + k)->text().toUInt(nullptr, 16), (uint)res.main.bytes[i * 4 + k]);
+            QVERIFY(sram->item(it->second, kUse)->text().isEmpty());
+        }
+        QVERIFY(sram->item(rowOf[res.main.baseWord], kSection)->text().contains("code"));
+        QCOMPARE(detail->topLevelItemCount(), 0);
+        // ---- stopped at the first instruction (the MOV)
+        r.clickGutter(3);
+        r.w->debugAction("start")->trigger();
+        QVERIFY2(r.waitStops(1), "no stop after F5");
+        QVERIFY(r.until([&] { return detail->topLevelItemCount() >= 4; }));
+        const ViewPtr v = r.f.dbg.session().view();
+        const asmcore::sim::DecodedLine* L = nullptr;
+        for (const auto& x : v->decoded[0]) if (x.pc == v->pc[0]) L = &x;
+        QVERIFY(L && L->opcodeName == "MOV");
+        auto child = [](QTreeWidgetItem* top, const QString& startsWith) { for (int i = 0; i < top->childCount(); i++) if (top->child(i)->text(0).startsWith(startsWith)) return top->child(i)->text(1); return QString("<none>"); };
+        // stage 1: the instruction byte alone
+        QTreeWidgetItem* s1 = detail->topLevelItem(0);
+        QVERIFY2(s1->text(0).startsWith("Stage 1") && s1->data(0, Qt::UserRole).toString() == "stage1", qPrintable(s1->text(0)));
+        QVERIFY2(child(s1, "opcode").contains("MOV") && child(s1, "arg").startsWith(QString::number(L->arg)) && child(s1, "Read in") == "CMD_OP_GET", qPrintable(child(s1, "opcode") + " / " + child(s1, "arg")));
+        // the descriptor: its table and entry, its bytes, its fields
+        QTreeWidgetItem* desc = detail->topLevelItem(1);
+        QVERIFY2(desc->text(0) == QString("Descriptor: MainMoveDesc_32b[%1]").arg(L->arg) && desc->data(0, Qt::UserRole).toString() == "descriptor", qPrintable(desc->text(0)));
+        QVERIFY2(child(desc, "src_region").contains("MAIN_CONST_POOL") && child(desc, "dst_region").contains("MAIN_SCRATCHPAD") && child(desc, "dst_off") == "4" && child(desc, "len_m1").contains("2 byte(s)"),
+                 qPrintable(child(desc, "src_region") + " / " + child(desc, "dst_region") + " / " + child(desc, "dst_off")));
+        QVERIFY2(child(desc, "Read in") == "CMD_DESC_GET" && child(desc, "Logical byte address").contains("main_move_desc_offset"), qPrintable(child(desc, "Logical byte address")));
+        QTreeWidgetItem* cst = detail->topLevelItem(2);
+        QVERIFY2(cst->text(0).startsWith("Constants: MAIN_CONST_POOL[") && (cst->text(1) == "34 12" || cst->text(1) == "12 34"), qPrintable(cst->text(0) + " = " + cst->text(1)));
+        // stage 2: what both make together
+        QTreeWidgetItem* s2 = detail->topLevelItem(detail->topLevelItemCount() - 1);
+        QVERIFY2(s2->text(0).startsWith("Stage 2") && s2->text(1).startsWith("MOV MAIN_CONST_POOL") && s2->text(1).contains("MAIN_SCRATCHPAD[4..5]"), qPrintable(s2->text(1)));
+        QVERIFY(child(s2, "The source line").contains("MOV CONST(0x1234, 2)"));
+        // ---- the SRAM: exactly the bytes of those reads are marked, the opcode byte in bold, and the row says what they are read for
+        int markedCells = 0, boldCells = 0;
+        for (int i = 0; i < sram->rowCount(); i++) for (int k = 0; k < 4; k++) if (sram->item(i, kB0 + k) && sram->item(i, kB0 + k)->background().style() != Qt::NoBrush) { markedCells++; if (sram->item(i, kB0 + k)->font().bold()) boldCells++; }
+        int want = 0;
+        for (const auto& x : L->reads) want += (int)x.bytes.size();
+        QCOMPARE(markedCells, want);                                                          // 1 opcode + 4 descriptor + 2 constants
+        QCOMPARE(boldCells, 1);
+        {
+            const auto& op = L->reads[0];
+            const int row = rowOf[op.sramWordFirst];
+            QVERIFY(sram->item(row, kB0 + op.sramLane)->font().bold() && sram->item(row, kUse)->text().contains("M: opcode"));
+            const auto& d = L->reads[1];
+            QVERIFY2(sram->item(rowOf[d.sramWordFirst], kUse)->text().contains(QString("M: MainMoveDesc_32b[%1]").arg(L->arg)), qPrintable(sram->item(rowOf[d.sramWordFirst], kUse)->text()));
+            QVERIFY(sram->item(rowOf[d.sramWordFirst], kSection)->text().contains("MainMoveDesc_32b"));
+        }
+        QVERIFY2(sstatus->text().contains("Main at PC 0x00: MOV"), qPrintable(sstatus->text()));
+        r.w->resize(1500, 950);
+        QApplication::processEvents();
+        r.w->dock("decoder")->raise();
+        QApplication::processEvents();
+        r.w->grab().save(QDir::tempPath() + "/acide_decode_stages.png");
+        r.w->dock("sram")->raise();
+        QApplication::processEvents();
+        r.w->grab().save(QDir::tempPath() + "/acide_program_sram.png");
+        // ---- a step: the next instruction (EXEC_CSR WRITE8) -- an inline byte, another table; the marks in the SRAM move with it
+        r.w->debugAction("over")->trigger();
+        QVERIFY(r.waitStops(2));
+        QVERIFY(r.until([&] { return detail->topLevelItemCount() >= 3 && detail->topLevelItem(1)->text(0).startsWith("Descriptor: MainCsrOneByteDesc_16b["); }));
+        QVERIFY2(child(detail->topLevelItem(0), "Inline byte(s)") == "07" && child(detail->topLevelItem(1), "op").contains("WRITE8_IMM") && child(detail->topLevelItem(1), "csr_addr").contains("0x120"),
+                 qPrintable(child(detail->topLevelItem(0), "Inline byte(s)") + " / " + child(detail->topLevelItem(1), "csr_addr")));
+        QVERIFY(detail->topLevelItem(detail->topLevelItemCount() - 1)->text(1).startsWith("EXEC_CSR WRITE8"));
+        markedCells = 0;
+        for (int i = 0; i < sram->rowCount(); i++) for (int k = 0; k < 4; k++) if (sram->item(i, kB0 + k) && sram->item(i, kB0 + k)->background().style() != Qt::NoBrush) markedCells++;
+        QCOMPARE(markedCells, 4);                                                             // opcode + inline byte + a 2-byte descriptor
+        // ---- another instruction picked in the list: the detail is that one's, whatever the sequencers do
+        int jmpRow = -1;
+        for (int i = 0; i < dtable->rowCount(); i++) if (dtable->item(i, 5)->text().startsWith("JMP")) jmpRow = i;
+        QVERIFY(jmpRow >= 0);
+        dtable->selectRow(jmpRow);
+        QVERIFY(r.until([&] { return detail->topLevelItemCount() >= 3 && detail->topLevelItem(1)->text(0).startsWith("Descriptor: MainBranchDesc_16b["); }));
+        QVERIFY2(child(detail->topLevelItem(1), "target_pc").contains("(h)") && child(detail->topLevelItem(1), "cond_sel").contains("ALWAYS"), qPrintable(child(detail->topLevelItem(1), "target_pc")));
+        // ---- the session ends: nothing is read any more
+        r.w->debugAction("stop")->trigger();
+        QVERIFY(r.until([&] { return detail->topLevelItemCount() == 0; }));
+        markedCells = 0;
+        for (int i = 0; i < sram->rowCount(); i++) for (int k = 0; k < 4; k++) if (sram->item(i, kB0 + k) && sram->item(i, kB0 + k)->background().style() != Qt::NoBrush) markedCells++;
+        QCOMPARE(markedCells, 0);
+    }
+
     // ---- the simulator parameters and the execution view
     static QTreeWidgetItem* paramRow(QTreeWidget* t, const char* key) {
         for (QTreeWidgetItemIterator it(t); *it; ++it) if ((*it)->data(0, Qt::UserRole).toString() == key) return *it;

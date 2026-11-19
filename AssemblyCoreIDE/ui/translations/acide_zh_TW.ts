@@ -1013,6 +1013,134 @@ The assembler produced:  %2</source>
         <source>B, a legal encoding that breaks a rule of the spec (the hardware faults when it executes it): %1</source>
         <translation>B，編碼合法但違反規格（硬體執行到時會報錯）：%1</translation>
     </message>
+    <message>
+        <source>How the instruction is formed</source>
+        <translation>指令是如何組成的</translation>
+    </message>
+    <message>
+        <source>Value</source>
+        <translation>值</translation>
+    </message>
+    <message>
+        <source>Read in</source>
+        <translation>讀取的狀態</translation>
+    </message>
+    <message>
+        <source>Logical byte address</source>
+        <translation>邏輯位元組位址</translation>
+    </message>
+    <message>
+        <source>Program SRAM</source>
+        <translation>程式 SRAM</translation>
+    </message>
+    <message>
+        <source>word %1, from lane %2</source>
+        <translation>第 %1 個 word，從 lane %2 開始</translation>
+    </message>
+    <message>
+        <source>words %1..%2, from lane %3 (crosses a word boundary: two reads)</source>
+        <translation>第 %1..%2 個 word，從 lane %3 開始（跨越 word 邊界：要讀兩次）</translation>
+    </message>
+    <message>
+        <source>EEPROM address</source>
+        <translation>EEPROM 位址</translation>
+    </message>
+    <message>
+        <source>Stage 1: the instruction byte at %1 PC 0x%2</source>
+        <translation>第一階段：%1 PC 0x%2 的指令位元組</translation>
+    </message>
+    <message>
+        <source>Instruction byte</source>
+        <translation>指令位元組</translation>
+    </message>
+    <message>
+        <source>opcode [7:6]</source>
+        <translation>opcode [7:6]</translation>
+    </message>
+    <message>
+        <source>arg [5:0]</source>
+        <translation>arg [5:0]</translation>
+    </message>
+    <message>
+        <source>%1: arg[5] = %2 (%3), template index arg[4:0] = %4</source>
+        <translation>%1：arg[5] = %2（%3），樣板索引 arg[4:0] = %4</translation>
+    </message>
+    <message>
+        <source>MultiByte form</source>
+        <translation>多位元組形式</translation>
+    </message>
+    <message>
+        <source>OneByte form</source>
+        <translation>單位元組形式</translation>
+    </message>
+    <message>
+        <source>%1: the index of its descriptor</source>
+        <translation>%1：它的描述子索引</translation>
+    </message>
+    <message>
+        <source>Inline byte(s) after it</source>
+        <translation>緊接在後的 inline 位元組</translation>
+    </message>
+    <message>
+        <source>By itself</source>
+        <translation>單看這個位元組</translation>
+    </message>
+    <message>
+        <source>only which kind of instruction and which entry of a table; what it does is in the descriptor</source>
+        <translation>只知道是哪一類指令、用表中的第幾筆；實際要做什麼寫在描述子裡</translation>
+    </message>
+    <message>
+        <source>Constants: %1[%2..%3]</source>
+        <translation>常數：%1[%2..%3]</translation>
+    </message>
+    <message>
+        <source>DeviceMap entry: %1[%2]</source>
+        <translation>DeviceMap 項目：%1[%2]</translation>
+    </message>
+    <message>
+        <source>Descriptor: %1[%2]</source>
+        <translation>描述子：%1[%2]</translation>
+    </message>
+    <message>
+        <source>outside the table: the decoder faults</source>
+        <translation>超出表的範圍：解碼器會 fault</translation>
+    </message>
+    <message>
+        <source>Stage 2: the instruction the decoder forms (CMD_DEC)</source>
+        <translation>第二階段：解碼器組成的指令（CMD_DEC）</translation>
+    </message>
+    <message>
+        <source>The source line</source>
+        <translation>原始碼的那一行</translation>
+    </message>
+    <message>
+        <source>Fetched for it</source>
+        <translation>為它讀取的資料</translation>
+    </message>
+    <message>
+        <source>%1 byte(s) in %2 read(s); %3 ISA cycle(s) with the fetch parameters now</source>
+        <translation>共 %1 個位元組，分 %2 次讀取；以目前的取指參數計為 %3 個 ISA 週期</translation>
+    </message>
+    <message>
+        <source>The assembler produced</source>
+        <translation>組譯器產生的是</translation>
+    </message>
+    <message>
+        <source>A: not a legal encoding</source>
+        <translation>A：不是合法的編碼</translation>
+    </message>
+    <message>
+        <source>B: breaks a rule of the spec</source>
+        <translation>B：違反規格的規則</translation>
+    </message>
+    <message>
+        <source>Then</source>
+        <translation>接著</translation>
+    </message>
+    <message>
+        <source>CMD_FIRE hands it to the execution engine, CMD_EXEC waits for it to complete; only then the PC moves on</source>
+        <translation>CMD_FIRE 把它交給執行引擎，CMD_EXEC 等它完成；完成後 PC 才前進</translation>
+    </message>
 </context>
 <context>
     <name>EepromTool</name>
@@ -2136,6 +2264,10 @@ The decoder made of the bytes: %4</source>
         <source>Decoder</source>
         <translation>Decoder 解碼</translation>
     </message>
+    <message>
+        <source>Program SRAM</source>
+        <translation>程式 SRAM</translation>
+    </message>
 </context>
 <context>
     <name>QuickParams</name>
@@ -2271,6 +2403,93 @@ The decoder made of the bytes: %4</source>
     <message>
         <source>Simulator</source>
         <translation>模擬器</translation>
+    </message>
+</context>
+<context>
+    <name>SramPanel</name>
+    <message>
+        <source>Word</source>
+        <translation>Word</translation>
+    </message>
+    <message>
+        <source>Data [31:0]</source>
+        <translation>資料 [31:0]</translation>
+    </message>
+    <message>
+        <source>Image</source>
+        <translation>映像</translation>
+    </message>
+    <message>
+        <source>Byte</source>
+        <translation>位元組</translation>
+    </message>
+    <message>
+        <source>Section</source>
+        <translation>區段</translation>
+    </message>
+    <message>
+        <source>Read now for</source>
+        <translation>目前讀取的用途</translation>
+    </message>
+    <message>
+        <source>The 32-bit word as it is written: byte +0 is bits [7:0], byte +3 is bits [31:24]</source>
+        <translation>寫入的 32 位元 word：位元組 +0 是 bits [7:0]，位元組 +3 是 bits [31:24]</translation>
+    </message>
+    <message>
+        <source>The byte offset of lane +0 in the logical image of its domain (word address - base word) * 4</source>
+        <translation>lane +0 在該 domain 邏輯映像中的位元組偏移：（word 位址 - 起始 word）× 4</translation>
+    </message>
+    <message>
+        <source>While debugging: what the Frontend of Main (M) and of Peri (P) reads from this word to form the instruction it is at</source>
+        <translation>除錯時：Main（M）與 Peri（P）的 Frontend 為了組成目前這道指令，從這個 word 讀取的內容</translation>
+    </message>
+    <message>
+        <source>Nothing is built yet.</source>
+        <translation>尚未建置。</translation>
+    </message>
+    <message>
+        <source>%1 word(s) of the window reserved for this image: not written by boot</source>
+        <translation>保留給這個映像的範圍中還有 %1 個 word：開機載入時不會寫入</translation>
+    </message>
+    <message>
+        <source>%1: words %2..%3 (%4 bytes; window of %5 words)</source>
+        <translation>%1：第 %2..%3 個 word（%4 個位元組；保留範圍 %5 個 word）</translation>
+    </message>
+    <message>
+        <source>One shared 32-bit program SRAM of %1 words, as boot loads it from the ROM; read-only while the program runs.</source>
+        <translation>一顆共用的 32 位元程式 SRAM，共 %1 個 word，內容為開機時從 ROM 載入的結果；程式執行期間只讀不寫。</translation>
+    </message>
+    <message>
+        <source>The placement breaks a rule (overlap, depth or capacity): see memory_proof.json.</source>
+        <translation>配置違反規則（重疊、深度或容量）：請看 memory_proof.json。</translation>
+    </message>
+    <message>
+        <source>%1 at PC 0x%2: %3</source>
+        <translation>%1 在 PC 0x%2：%3</translation>
+    </message>
+    <message>
+        <source>opcode</source>
+        <translation>opcode</translation>
+    </message>
+    <message>
+        <source>inline byte(s)</source>
+        <translation>inline 位元組</translation>
+    </message>
+    <message>
+        <source>constants</source>
+        <translation>常數</translation>
+    </message>
+    <message>
+        <source>Read now (bold: the opcode byte): %1</source>
+        <translation>目前讀取（粗體為 opcode 位元組）：%1</translation>
+    </message>
+    <message>
+        <source>Start debugging to see which bytes each Frontend reads for the instruction it is at.</source>
+        <translation>開始除錯後，會標出各 Frontend 為目前的指令讀取哪些位元組。</translation>
+    </message>
+    <message>
+        <source>(fetch.source = sram: the decoders read these words directly)</source>
+        <translation>（fetch.source = sram：解碼器直接讀這些 word）</translation>
     </message>
 </context>
 <context>

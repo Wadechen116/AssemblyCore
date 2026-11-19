@@ -176,6 +176,25 @@ struct Breakpoint {
     bool oneShot = false;
     uint64_t hits = 0;
 };
+// One thing the Frontend reads from the program storage to form an instruction (spec v31, Frontend-001): the opcode byte in CMD_OP_GET; the inline bytes,
+// the descriptor, the DeviceMap entry and the constants in CMD_DESC_GET. The instruction byte alone ("stage 1") says only WHICH kind of instruction and
+// WHICH entry of a table; what it does -- regions, offsets, lengths, the branch target, the CSR address -- is in the entry ("the descriptor"), and only
+// both together are the instruction that is executed ("stage 2", the normalized command of CMD_DEC).
+struct DecodeRead {
+    std::string kind;                 // "opcode" | "inline" | "descriptor" | "devmap" | "const"
+    std::string state;                // the Frontend state that makes the read: "CMD_OP_GET" | "CMD_DESC_GET"
+    std::string table;                // "MainMoveDesc_32b" ... "DeviceMap", "MAIN_CONST_POOL"; "" for the code bytes
+    int index = -1;                   // the entry of the table (the const pool: the first byte)
+    std::string addressRule;          // how the Frontend finds it: "main_move_desc_offset + arg * 4"; "" for the code bytes
+    uint32_t logicalAddr = 0;         // byte offset in the logical image of the domain
+    uint32_t eepromAddr = 0;          // where that byte is in the EEPROM (= logicalAddr with fetch.source = sram)
+    uint32_t sramWordFirst = 0, sramWordLast = 0;      // the physical words of the shared program SRAM that hold it
+    int sramLane = 0;                 // the byte lane of its first byte in sramWordFirst (0..3)
+    std::vector<uint8_t> bytes;       // as fetched
+    uint32_t value = 0;               // a descriptor / DeviceMap entry as one number (in the byte order of the profile)
+    bool present = true;              // false: the entry lies outside its table (the decoder faults)
+    std::vector<std::pair<std::string, std::string>> fields;   // the fields of the entry, in the order of the bits: name -> value in words
+};
 // One instruction as the decoder sees it.
 struct DecodedLine {
     Domain domain = Domain::Main;
@@ -194,6 +213,10 @@ struct DecodedLine {
     // What the decoder reads from the EEPROM to make this instruction, in order: the code bytes, each descriptor (and DeviceMap entry), the
     // constants -- one contiguous read each (fetch.read_mode decides whether each is one I2C transaction or one per byte).
     std::vector<uint32_t> fetchBytes;
+    // The same reads, with what each one is and holds (see DecodeRead): stage 1, the descriptor, the constants.
+    int opcode = 0, arg = 0;          // the instruction byte: [7:6], [5:0]
+    std::string opcodeName;           // "MOV", "EXEC_CSR" ...
+    std::vector<DecodeRead> reads;
     uint64_t fetchCycles = 0;         // what reading them over the I2C bus takes with the parameters now (0 with fetch.read_mode = instant)
 };
 // Checking a burned EEPROM image against the program it should hold (verifyEepromImage).

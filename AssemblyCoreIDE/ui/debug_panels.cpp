@@ -1,5 +1,7 @@
 // Debugging panels. Each one listens to the Debugger of the AppContext, shows one aspect of the simulator state and, where it makes
 // sense, lets the user change it (poke memory, set a signal, write a CSR, edit a breakpoint condition).
+#include <algorithm>
+#include <map>
 #include <set>
 
 #include <QAbstractItemView>
@@ -22,9 +24,11 @@
 #include <QTableView>
 #include <QTableWidget>
 #include <QTreeWidget>
+#include <QSplitter>
 #include <QVBoxLayout>
 
 #include "asmcore/diagnostics.h"
+#include "asmcore/sram.h"
 #include "panel_registry.h"
 #include "text_util.h"
 #include "theme.h"
@@ -391,9 +395,26 @@ public:
         table_->setEditTriggers(QAbstractItemView::NoEditTriggers);
         table_->setFont(editorFont(ctx.settings));
         table_->setMinimumHeight(30);                                            // (a panel at the bottom can be made small)
-        lay->addWidget(table_);
+        // Under the list: how the Frontend forms the chosen instruction. Stage 1 is the instruction byte in the program storage (which kind, which entry);
+        // then every descriptor / constant it looks up, field by field; stage 2 is the instruction both make together (what is executed).
+        detail_ = new QTreeWidget;
+        detail_->setObjectName("decoderDetail");
+        detail_->setHeaderLabels({tr("How the instruction is formed"), tr("Value")});
+        detail_->setFont(editorFont(ctx.settings));
+        detail_->setRootIsDecorated(true);
+        detail_->setMinimumHeight(30);
+        auto* split = new QSplitter(Qt::Horizontal);
+        split->setObjectName("decoderSplit");
+        split->addWidget(table_);
+        split->addWidget(detail_);
+        split->setStretchFactor(0, 3);
+        split->setStretchFactor(1, 2);
+        split->setChildrenCollapsible(false);
+        lay->addWidget(split, 1);
         connect(table_, &QTableWidget::cellDoubleClicked, this, [this](int row, int) { open(row); });
+        connect(table_, &QTableWidget::itemSelectionChanged, this, [this] { showDetail(ctx_.debugger.session().view()); });
         conns_.add(ctx.debugger.updated, [this](const SimUpdate& u) { fill(u.view); });
+        conns_.add(ctx.debugger.focusChanged, [this](asmcore::Domain) { showDetail(ctx_.debugger.session().view()); });
         fill(ctx.debugger.session().view());
     }
 
@@ -405,8 +426,92 @@ private:
         const DebugLocation l = ctx_.debugger.locationForPc(d, (uint32_t)it->data(Qt::UserRole).toUInt());
         if (l.valid) { Location loc; loc.file = l.file; loc.line = l.line; ctx_.goTo.fire(loc); }
     }
+    static QString hexBytes(const std::vector<uint8_t>& b) {
+        QString t;
+        for (uint8_t x : b) t += QString("%1 ").arg(x, 2, 16, QChar('0')).toUpper();
+        return t.trimmed();
+    }
+    // The instruction on show: the selected row, else the one the sequencer in focus is at.
+    void showDetail(const ViewPtr& v) {
+        const asmcore::sim::DecodedLine* L = nullptr;
+        if (v) {
+            int d = -1;
+            uint32_t pc = 0;
+            const QList<QTableWidgetItem*> sel = table_->selectedItems();
+            if (!sel.isEmpty()) {
+                auto* it = table_->item(sel.first()->row(), 2);
+                d = it->data(Qt::UserRole + 1).toInt();
+                pc = (uint32_t)it->data(Qt::UserRole).toUInt();
+            } else {
+                d = ctx_.debugger.focus() == asmcore::Domain::Main ? 0 : 1;
+                pc = v->pc[d];
+            }
+            if (d >= 0) for (const auto& x : v->decoded[d]) if (x.pc == pc) L = &x;
+        }
+        std::string key = L ? std::to_string((int)L->domain) + ":" + std::to_string(L->pc) + ":" + L->text + ":" + std::to_string(L->fetchCycles) : std::string();
+        if (L) for (const auto& r : L->reads) { key += '|'; for (uint8_t b : r.bytes) key += (char)('a' + (b >> 4)), key += (char)('a' + (b & 15)); }
+        if (key == detailKey_) return;
+        detailKey_ = key;
+        detail_->clear();
+        if (!L) return;
+        auto add = [](QTreeWidgetItem* parent, const QString& a, const QString& b) { auto* it = new QTreeWidgetItem(parent, QStringList{a, b}); return it; };
+        auto bold = [](QTreeWidgetItem* it) { QFont f = it->font(0); f.setBold(true); it->setFont(0, f); it->setFont(1, f); };
+        auto where = [&](QTreeWidgetItem* p, const asmcore::sim::DecodeRead& r) {
+            add(p, tr("Read in"), fromStd(r.state));
+            add(p, tr("Logical byte address"), QString("0x%1").arg(r.logicalAddr, 3, 16, QChar('0')).toUpper().replace("0X", "0x") + (r.addressRule.empty() ? QString() : "   = " + fromStd(r.addressRule)));
+            add(p, tr("Program SRAM"), r.sramWordFirst == r.sramWordLast ? tr("word %1, from lane %2").arg(r.sramWordFirst).arg(r.sramLane)
+                                                                        : tr("words %1..%2, from lane %3 (crosses a word boundary: two reads)").arg(r.sramWordFirst).arg(r.sramWordLast).arg(r.sramLane));
+            if (r.eepromAddr != r.logicalAddr) add(p, tr("EEPROM address"), QString("0x%1").arg(r.eepromAddr, 4, 16, QChar('0')));
+        };
+        const QString dom = L->domain == asmcore::Domain::Main ? "Main" : "Peri";
+        // ---- stage 1
+        auto* s1 = new QTreeWidgetItem(detail_, QStringList{tr("Stage 1: the instruction byte at %1 PC 0x%2").arg(dom).arg(L->pc, 2, 16, QChar('0')), hexBytes(L->bytes)});
+        s1->setData(0, Qt::UserRole, "stage1");
+        bold(s1);
+        for (const auto& r : L->reads) {
+            if (r.kind == "opcode") {
+                const uint8_t b = r.bytes.empty() ? 0 : r.bytes[0];
+                add(s1, tr("Instruction byte"), QString("0x%1 = %2 %3").arg(b, 2, 16, QChar('0')).arg(b >> 6, 2, 2, QChar('0')).arg(b & 63, 6, 2, QChar('0')));
+                add(s1, tr("opcode [7:6]"), QString("%1 (%2)").arg(L->opcode).arg(fromStd(L->opcodeName)));
+                const bool forms = L->opcodeName == "EXEC_CSR" || L->opcodeName == "EXEC_XFER";
+                add(s1, tr("arg [5:0]"), forms ? tr("%1: arg[5] = %2 (%3), template index arg[4:0] = %4").arg(L->arg).arg((L->arg >> 5) & 1).arg((L->arg & 32) ? tr("MultiByte form") : tr("OneByte form")).arg(L->arg & 31)
+                                               : tr("%1: the index of its descriptor").arg(L->arg));
+                where(s1, r);
+            } else if (r.kind == "inline") {
+                auto* in = add(s1, tr("Inline byte(s) after it"), hexBytes(r.bytes));
+                where(in, r);
+            }
+        }
+        add(s1, tr("By itself"), tr("only which kind of instruction and which entry of a table; what it does is in the descriptor"));
+        // ---- what it looks up
+        for (const auto& r : L->reads) {
+            if (r.kind == "opcode" || r.kind == "inline") continue;
+            const QString title = r.kind == "const" ? tr("Constants: %1[%2..%3]").arg(fromStd(r.table)).arg(r.index).arg(r.index + (int)r.bytes.size() - 1)
+                                  : r.kind == "devmap" ? tr("DeviceMap entry: %1[%2]").arg(fromStd(r.table)).arg(r.index) : tr("Descriptor: %1[%2]").arg(fromStd(r.table)).arg(r.index);
+            auto* top = new QTreeWidgetItem(detail_, QStringList{title, !r.present ? tr("outside the table: the decoder faults") : r.kind == "const" ? hexBytes(r.bytes)
+                                                                           : hexBytes(r.bytes) + QString("   = 0x%1").arg(r.value, (int)r.bytes.size() * 2, 16, QChar('0'))});
+            top->setData(0, Qt::UserRole, fromStd(r.kind));
+            bold(top);
+            where(top, r);
+            for (const auto& f : r.fields) add(top, fromStd(f.first), fromStd(f.second));
+        }
+        // ---- stage 2
+        auto* s2 = new QTreeWidgetItem(detail_, QStringList{tr("Stage 2: the instruction the decoder forms (CMD_DEC)"), fromStd(L->text)});
+        s2->setData(0, Qt::UserRole, "stage2");
+        bold(s2);
+        if (!L->source.empty()) add(s2, tr("The source line"), fromStd(L->source).trimmed());
+        uint32_t bytes = 0;
+        for (const auto& r : L->reads) bytes += (uint32_t)r.bytes.size();
+        add(s2, tr("Fetched for it"), tr("%1 byte(s) in %2 read(s); %3 ISA cycle(s) with the fetch parameters now").arg(bytes).arg(L->fetchBytes.size()).arg((qulonglong)L->fetchCycles));
+        if (!L->matches) add(s2, tr("The assembler produced"), fromStd(L->expected))->setForeground(1, QColor("#d04040"));
+        if (!L->valid) add(s2, tr("A: not a legal encoding"), fromStd(L->problem))->setForeground(1, QColor("#d04040"));
+        if (!L->specProblem.empty()) add(s2, tr("B: breaks a rule of the spec"), fromStd(L->specProblem))->setForeground(1, QColor("#d08020"));
+        add(s2, tr("Then"), tr("CMD_FIRE hands it to the execution engine, CMD_EXEC waits for it to complete; only then the PC moves on"));
+        detail_->expandAll();
+        detail_->resizeColumnToContents(0);
+    }
     void fill(const ViewPtr& v) {
-        if (!v) { table_->setRowCount(0); summary_->setText(tr("Start debugging to see what the decoders fetch.")); return; }
+        if (!v) { table_->setRowCount(0); detailKey_.clear(); detail_->clear(); summary_->setText(tr("Start debugging to see what the decoders fetch.")); return; }
         // the table is rebuilt only when what it shows changed (the decoded lines rarely do; the cursors move all the time)
         std::string key;
         for (int d = 0; d < 2; d++) for (const auto& L : v->decoded[d]) { key += L.text; key += L.matches ? '1' : '0'; key += L.problemClass(); key += std::to_string(L.eepromAddr); key += std::to_string(L.fetchCycles); key += '|'; }
@@ -453,6 +558,7 @@ private:
                                 .arg(QChar(asmcore::sim::faultClass(v->fault[d].code))).arg(fromStd(v->fault[d].code), fromStd(v->fault[d].msg));
         summary_->setText(s);
         summary_->setStyleSheet(differ || invalid || spec || v->hasFault[0] || v->hasFault[1] ? "color: #d04040;" : QString());
+        showDetail(v);
     }
     void rebuild(const SimView& v) {
         table_->setRowCount(0);
@@ -496,7 +602,8 @@ private:
     AppContext& ctx_;
     QLabel* summary_;
     QTableWidget* table_;
-    std::string key_;
+    QTreeWidget* detail_ = nullptr;
+    std::string key_, detailKey_;
     ConnectionBag conns_;
 };
 
@@ -880,6 +987,186 @@ private:
     ConnectionBag conns_;
 };
 
+// ---- the shared program SRAM ---------------------------------------------------------------------------------------------------------------
+// Spec v31 3.1: ONE 32-bit synchronous SRAM holds the logical images of both domains (code, descriptor tables, const pool / DeviceMap). Boot packs the
+// images read from the ROM into words and writes them; from then on it is read-only, and the two Frontends fetch from it. This panel shows the words as
+// boot loads them, which image and section every byte belongs to, and -- while debugging -- the bytes each sequencer's Frontend reads for the instruction
+// it is at: the opcode, the inline bytes, the descriptor, the constants.
+class SramPanel : public QWidget {
+    Q_DECLARE_TR_FUNCTIONS(SramPanel)
+public:
+    enum { kAddr = 0, kWord, kB0, kB1, kB2, kB3, kDom, kLogical, kSection, kUse, kColumns };
+
+    explicit SramPanel(AppContext& ctx) : ctx_(ctx) {
+        auto* lay = new QVBoxLayout(this);
+        lay->setContentsMargins(2, 2, 2, 2);
+        status_ = new QLabel;
+        status_->setObjectName("sramStatus");
+        status_->setWordWrap(true);
+        status_->setMinimumHeight(0);
+        lay->addWidget(status_);
+        table_ = new QTableWidget(0, kColumns);
+        table_->setObjectName("sramTable");
+        table_->setHorizontalHeaderLabels({tr("Word"), tr("Data [31:0]"), "+0", "+1", "+2", "+3", tr("Image"), tr("Byte"), tr("Section"), tr("Read now for")});
+        table_->horizontalHeaderItem(kWord)->setToolTip(tr("The 32-bit word as it is written: byte +0 is bits [7:0], byte +3 is bits [31:24]"));
+        table_->horizontalHeaderItem(kLogical)->setToolTip(tr("The byte offset of lane +0 in the logical image of its domain (word address - base word) * 4"));
+        table_->horizontalHeaderItem(kUse)->setToolTip(tr("While debugging: what the Frontend of Main (M) and of Peri (P) reads from this word to form the instruction it is at"));
+        table_->horizontalHeader()->setSectionResizeMode(kUse, QHeaderView::Stretch);
+        table_->verticalHeader()->hide();
+        table_->setSelectionBehavior(QAbstractItemView::SelectRows);
+        table_->setEditTriggers(QAbstractItemView::NoEditTriggers);
+        table_->setFont(editorFont(ctx.settings));
+        table_->setMinimumHeight(30);
+        lay->addWidget(table_, 1);
+        const bool light = palette().color(QPalette::Base).lightness() > 128;
+        theme_ = light ? Theme::light() : Theme::dark();
+        conns_.add(ctx.snapshotChanged, [this](SnapshotPtr) { refresh(ctx_.debugger.session().view(), false); });
+        conns_.add(ctx.debugger.updated, [this](const SimUpdate& u) { refresh(u.view, u.state == SimState::Paused); });
+        conns_.add(ctx.debugger.focusChanged, [this](asmcore::Domain) { refresh(ctx_.debugger.session().view(), true); });
+        refresh(ctx.debugger.session().view(), false);
+    }
+
+private:
+    SnapshotPtr wanted() const {
+        if (ctx_.debugger.active()) if (SnapshotPtr p = ctx_.debugger.session().program()) return p;
+        return ctx_.snapshot;
+    }
+    static QString sectionAt(const asmcore::DomainImage& im, uint32_t byte) {
+        for (const asmcore::SectionInfo& s : im.sections) if (byte >= s.offset && byte < s.offset + s.size) return fromStd(s.name);
+        return byte < im.bytes.size() ? QStringLiteral("padding") : QString();
+    }
+    void fill(const SnapshotPtr& s) {
+        snap_ = s;
+        rowOf_.clear();
+        marked_.clear();
+        table_->setRowCount(0);
+        if (!s || (!s->result.main.present && !s->result.peri.present)) { status_->setText(tr("Nothing is built yet.")); return; }
+        const asmcore::Result& r = s->result;
+        const asmcore::MemoryProof proof = asmcore::memoryProof(r, r.profile);
+        struct Row { uint32_t word; uint32_t data; int dom; uint32_t logical; QString section; bool gap; uint32_t gapWords; };
+        std::vector<Row> rows;
+        for (int d = 0; d < 2; d++) {
+            const asmcore::DomainImage& im = d == 0 ? r.main : r.peri;
+            if (!im.present) continue;
+            for (size_t i = 0; i < im.words.size(); i++) {
+                Row x{im.baseWord + (uint32_t)i, im.words[i], d, (uint32_t)i * 4, QString(), false, 0};
+                QStringList secs;
+                for (uint32_t k = 0; k < 4; k++) { const QString n = sectionAt(im, x.logical + k); if (!n.isEmpty() && !secs.contains(n)) secs << n; }
+                x.section = secs.join(" / ");
+                rows.push_back(x);
+            }
+            if (im.reservedWords > im.words.size())                                 // the rest of the window reserved for this image: never written
+                rows.push_back(Row{im.baseWord + (uint32_t)im.words.size(), 0, d, 0, QString(), true, im.reservedWords - (uint32_t)im.words.size()});
+        }
+        std::sort(rows.begin(), rows.end(), [](const Row& a, const Row& b) { return a.word < b.word; });
+        table_->setRowCount((int)rows.size());
+        QColor faint = theme_.lineNumberFg;
+        for (int i = 0; i < (int)rows.size(); i++) {
+            const Row& x = rows[(size_t)i];
+            auto put = [&](int c, const QString& t) { auto* it = new QTableWidgetItem(t); table_->setItem(i, c, it); return it; };
+            put(kAddr, x.gap ? QString("%1..%2").arg(x.word).arg(x.word + x.gapWords - 1) : QString::number(x.word));
+            put(kDom, x.dom == 0 ? "Main" : "Peri");
+            if (x.gap) {
+                put(kWord, QString());
+                for (int k = 0; k < 4; k++) put(kB0 + k, QString());
+                put(kLogical, QString());
+                put(kSection, tr("%1 word(s) of the window reserved for this image: not written by boot").arg(x.gapWords));
+                put(kUse, QString());
+                for (int c = 0; c < kColumns; c++) table_->item(i, c)->setForeground(faint);
+                continue;
+            }
+            put(kWord, QString("%1").arg(x.data, 8, 16, QChar('0')).toUpper());
+            for (int k = 0; k < 4; k++) put(kB0 + k, QString("%1").arg((x.data >> (8 * k)) & 255, 2, 16, QChar('0')).toUpper())->setTextAlignment(Qt::AlignCenter);
+            put(kLogical, QString("0x%1").arg(x.logical, 3, 16, QChar('0')));
+            put(kSection, x.section);
+            put(kUse, QString());
+            rowOf_[x.word] = i;
+        }
+        table_->resizeColumnsToContents();
+        auto window = [&](const asmcore::MemoryProof::Window& w) { return tr("%1: words %2..%3 (%4 bytes; window of %5 words)").arg(fromStd(w.domain)).arg(w.baseWord).arg(w.baseWord + (w.occupiedWords ? w.occupiedWords - 1 : 0)).arg(w.logicalBytes).arg(w.reservedWords); };
+        base_ = tr("One shared 32-bit program SRAM of %1 words, as boot loads it from the ROM; read-only while the program runs.").arg(proof.depthWords) + "\n" +
+                (r.main.present ? window(proof.main) : QString()) + (r.main.present && r.peri.present ? QString::fromUtf8("  \xC2\xB7  ") : QString()) + (r.peri.present ? window(proof.peri) : QString());
+        if (!proof.ok()) base_ += "\n" + tr("The placement breaks a rule (overlap, depth or capacity): see memory_proof.json.");
+        placementBad_ = !proof.ok();
+    }
+
+    void refresh(const ViewPtr& view, bool reveal) {
+        const SnapshotPtr want = wanted();
+        if (want != snap_) fill(want);
+        if (!snap_ || table_->rowCount() == 0) return;
+        const bool live = ctx_.debugger.active() && view && ctx_.debugger.session().program() == snap_;
+        // what each Frontend reads now: cell -> (domain bit, strong); row -> text
+        std::map<std::pair<int, int>, int> cells;                       // (row, lane) -> 1 Main, 2 Peri, +4 the opcode byte
+        std::map<int, QStringList> uses;
+        int focusRow = -1;
+        QString nowText;
+        if (live) {
+            for (int d = 0; d < 2; d++) {
+                const asmcore::DomainImage& im = d == 0 ? snap_->result.main : snap_->result.peri;
+                if (!im.present) continue;
+                const asmcore::sim::DecodedLine* L = nullptr;
+                for (const auto& x : view->decoded[d]) if (x.pc == view->pc[d]) L = &x;
+                if (!L) continue;
+                const QString who = d == 0 ? "M" : "P";
+                nowText += (nowText.isEmpty() ? QString() : QString::fromUtf8("  \xC2\xB7  ")) + tr("%1 at PC 0x%2: %3").arg(d == 0 ? "Main" : "Peri").arg(L->pc, 2, 16, QChar('0')).arg(fromStd(L->text));
+                for (const auto& r : L->reads) {
+                    const QString what = r.kind == "opcode" ? tr("opcode") : r.kind == "inline" ? tr("inline byte(s)") : r.kind == "const" ? tr("constants")
+                                         : QString("%1[%2]").arg(fromStd(r.table)).arg(r.index);
+                    for (size_t i = 0; i < r.bytes.size(); i++) {
+                        const uint32_t logical = r.logicalAddr + (uint32_t)i;
+                        const auto it = rowOf_.find(im.baseWord + (logical >> 2));
+                        if (it == rowOf_.end()) continue;
+                        cells[{it->second, (int)(logical & 3)}] |= (d == 0 ? 1 : 2) | (r.kind == "opcode" ? 4 : 0);
+                        const QString u = who + ": " + what;
+                        if (!uses[it->second].contains(u)) uses[it->second] << u;
+                        if (r.kind == "opcode" && (ctx_.debugger.focus() == asmcore::Domain::Main) == (d == 0)) focusRow = it->second;
+                    }
+                }
+            }
+        }
+        // repaint only what changed
+        std::map<std::pair<int, int>, int> all = marked_;
+        for (const auto& kv : cells) all[kv.first];
+        for (const auto& kv : all) {
+            const auto now = cells.find(kv.first), was = marked_.find(kv.first);
+            const int n = now == cells.end() ? 0 : now->second, w = was == marked_.end() ? 0 : was->second;
+            if (n == w) continue;
+            QTableWidgetItem* it = table_->item(kv.first.first, kB0 + kv.first.second);
+            it->setBackground(n == 0 ? QBrush() : (n & 1) ? QBrush(theme_.execMain) : QBrush(theme_.execPeri));
+            QFont f = it->font();
+            f.setBold((n & 4) != 0);
+            it->setFont(f);
+        }
+        std::set<int> rowsTouched;
+        for (const auto& kv : all) rowsTouched.insert(kv.first.first);
+        for (int row : rowsTouched) {
+            const QString t = uses.count(row) ? uses[row].join("   ") : QString();
+            if (table_->item(row, kUse)->text() != t) table_->item(row, kUse)->setText(t);
+        }
+        marked_ = cells;
+        QString st = base_;
+        if (live && !nowText.isEmpty()) st += "\n" + tr("Read now (bold: the opcode byte): %1").arg(nowText);
+        else if (!live) st += "\n" + tr("Start debugging to see which bytes each Frontend reads for the instruction it is at.");
+        if (live && view && !view->fromEeprom) st += "\n" + tr("(fetch.source = sram: the decoders read these words directly)");
+        if (st != status_->text()) status_->setText(st);
+        status_->setStyleSheet(placementBad_ ? QString("color: %1; font-weight: bold;").arg(theme_.error.name()) : QString());
+        if (reveal && focusRow >= 0 && focusRow != revealed_) table_->scrollToItem(table_->item(focusRow, kAddr), QAbstractItemView::PositionAtCenter);
+        if (reveal) revealed_ = focusRow;
+    }
+
+    AppContext& ctx_;
+    Theme theme_;
+    SnapshotPtr snap_;
+    QLabel* status_;
+    QTableWidget* table_;
+    std::map<uint32_t, int> rowOf_;                           // physical word -> row
+    std::map<std::pair<int, int>, int> marked_;
+    QString base_;
+    bool placementBad_ = false;
+    int revealed_ = -1;
+    ConnectionBag conns_;
+};
+
 }  // namespace
 
 // ---- auto debug -------------------------------------------------------------------------------------------------------------------
@@ -1133,6 +1420,7 @@ void registerDebugPanels(PanelRegistry& r) {
     r.add({"csrs", QT_TRANSLATE_NOOP("QObject", "CSRs"), Qt::RightDockWidgetArea, false, [](AppContext& c) -> QWidget* { return new CsrPanel(c); }});
     r.add({"watch", QT_TRANSLATE_NOOP("QObject", "Watch"), Qt::RightDockWidgetArea, false, [](AppContext& c) -> QWidget* { return new WatchPanel(c); }});
     r.add({"decoder", QT_TRANSLATE_NOOP("QObject", "Decoder"), Qt::BottomDockWidgetArea, false, [](AppContext& c) -> QWidget* { return new DecoderPanel(c); }});
+    r.add({"sram", QT_TRANSLATE_NOOP("QObject", "Program SRAM"), Qt::BottomDockWidgetArea, false, [](AppContext& c) -> QWidget* { return new SramPanel(c); }});
     r.add({"callstack", QT_TRANSLATE_NOOP("QObject", "Call Stack"), Qt::BottomDockWidgetArea, false, [](AppContext& c) -> QWidget* { return new CallStackPanel(c); }});
     r.add({"breakpoints", QT_TRANSLATE_NOOP("QObject", "Breakpoints"), Qt::BottomDockWidgetArea, false, [](AppContext& c) -> QWidget* { return new BreakpointsPanel(c); }});
     r.add({"events", QT_TRANSLATE_NOOP("QObject", "Events"), Qt::BottomDockWidgetArea, false, [](AppContext& c) -> QWidget* { return new EventsPanel(c); }});
