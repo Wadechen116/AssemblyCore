@@ -47,6 +47,7 @@ add_library(asmcore STATIC
   core/src/sim/peri_core.cpp
   core/src/sim/debug.cpp
   core/src/sim/decode.cpp
+  core/src/sim/frontend.cpp
   core/src/sim/scenario.cpp)
 target_include_directories(asmcore PUBLIC core/include)
 

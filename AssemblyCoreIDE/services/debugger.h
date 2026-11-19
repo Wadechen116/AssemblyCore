@@ -97,6 +97,8 @@ public:
     void stepInto() { session_.step(focus_); }
     void stepOver() { session_.stepOver(focus_); }
     void stepOut() { session_.stepOut(focus_); }
+    // One ISA cycle (or `cycles`) and stop, whatever the sequencers are doing: what shows the Frontend going through its states and boot loading the SRAM.
+    void stepCycles(asmcore::sim::Cycle cycles = 1);
     // Runs to the first address of the line (in the focused sequencer if the line has code in both). False if the line has no code.
     bool runToLine(const std::string& file, int line, std::string& why);
     // Auto debug: the newest build is run in a simulator of its own at full speed (with the parameters of the Simulator page) and searched for what is wrong

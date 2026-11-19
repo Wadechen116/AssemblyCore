@@ -91,6 +91,8 @@ struct SimSession::Worker {
         for (int i = 0; i < 2; i++) v->decoded[i] = sim->decodedProgram(i == 0 ? Domain::Main : Domain::Peri);
         for (int i = 0; i < asmcore::ER_COUNT; i++) v->regionAddr[i] = (uint32_t)sim->signal(asmcore::eepromRegisterName(i));
         v->fromEeprom = sim->params().get("fetch.source") == 0;
+        for (int i = 0; i < 2; i++) v->frontend[i] = sim->frontendStatus(i == 0 ? Domain::Main : Domain::Peri);
+        v->boot = sim->bootStatus();
         for (const std::string& e : watchExprs) {
             WatchValue w;
             w.expr = e;

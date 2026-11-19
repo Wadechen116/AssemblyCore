@@ -207,6 +207,8 @@ DecodedLine Simulator::Impl::decode(int d, uint32_t pc) const {
     const_cast<Impl*>(this)->syncFetch();
     // the cache holds as long as the bytes and the registers are the same
     std::vector<uint64_t> key{(uint64_t)(uintptr_t)(fetchEeprom && st.eeprom ? st.eeprom.get() : nullptr)};
+    for (int i = 0; i < 2; i++) key.push_back((uint64_t)(uintptr_t)(fetchFrontend && st.sram[i] ? st.sram[i].get() : nullptr));
+    for (int64_t v : {(int64_t)fetchFrontend, (int64_t)sramLatency, (int64_t)sramPolicy, (int64_t)feHold, (int64_t)feDec, (int64_t)feFire}) key.push_back((uint64_t)v);
     for (int i = 0; i < 2; i++) for (int k = 0; k < 3; k++) key.push_back(img[i].regionBase[k]);
     for (int64_t v : {(int64_t)fetchMode, (int64_t)fetchOverhead, (int64_t)fetchEeprom, (int64_t)lat.i2cHz, (int64_t)lat.cpuHz, (int64_t)i2cAck, (int64_t)i2cStretch}) key.push_back((uint64_t)v);      // (the fetch time)
     if (key != decodeKey) { decodeKey = key; decodeCache[0].clear(); decodeCache[1].clear(); }
@@ -227,7 +229,7 @@ DecodedLine Simulator::Impl::decode(int d, uint32_t pc) const {
     L.problem = x.problem;
     L.specProblem = x.specProblem;
     L.text = d == 0 ? withConst(withLabel(x, labelAt[d]), iv) : withLabel(x, labelAt[d]);
-    L.eepromAddr = iv.eeprom ? iv.eepromAddressOf(pc) : pc;
+    L.eepromAddr = iv.eeprom || iv.loaded ? iv.eepromAddressOf(pc) : pc;
     for (uint32_t i = 0; i < L.length; i++) L.bytes.push_back((uint8_t)iv.u8(pc + i));
     L.fetchBytes.push_back(L.length);                                     // the code bytes (opcode and inline bytes)
     for (const auto& e : reads.entries) L.fetchBytes.push_back((uint32_t)(e.first % 1000));      // each descriptor / DeviceMap entry
@@ -250,7 +252,7 @@ DecodedLine Simulator::Impl::decode(int d, uint32_t pc) const {
         L.opcodeName = d == 0 ? mainOp[L.opcode] : periOp[L.opcode];
         auto place = [&](DecodeRead& r, uint32_t logical, uint32_t n) {
             r.logicalAddr = logical;
-            r.eepromAddr = iv.eeprom ? iv.eepromAddressOf(logical) : logical;
+            r.eepromAddr = iv.eeprom || iv.loaded ? iv.eepromAddressOf(logical) : logical;
             const PhysicalByte a = physicalByte(pf, dom, logical), b = physicalByte(pf, dom, logical + (n ? n - 1 : 0));
             r.sramWordFirst = a.word; r.sramWordLast = b.word; r.sramLane = a.lane;
             for (uint32_t i = 0; i < n; i++) r.bytes.push_back((uint8_t)iv.u8(logical + i));
@@ -304,11 +306,17 @@ DecodedLine Simulator::Impl::decode(int d, uint32_t pc) const {
         }
     }
     L.fetchCycles = fetchTimed() ? fetchCost(L.fetchBytes) : 0;
+    if (fetchFrontend) {                                                  // through the Frontend, with nobody else at the SRAM port: CMD_HOLD .. CMD_FIRE
+        decodeCache[d][pc] = L;                                           // (the plan reads the line: let it find it)
+        const State::FeRun plan = const_cast<Impl*>(this)->planFrontend(d, pc, 0, false);
+        L.fetchCycles = (uint64_t)plan.exec;
+    }
     auto src = instrAt[d].find(pc);
     if (src != instrAt[d].end()) L.source = src->second->text;
-    if (iv.eeprom) {                                                     // what the assembler's image holds at the same place, decoded the same way
+    if (iv.eeprom || iv.loaded) {                                        // what the assembler's image holds at the same place, decoded the same way
         ImageView plain = iv;
         plain.eeprom = nullptr;
+        plain.loaded = nullptr;
         Reads r2;
         const DecodedInstr y = decodeOne(plain, dom, pc, pf, condDefined, constSize, r2);
         L.expected = d == 0 ? withConst(withLabel(y, labelAt[d]), plain) : withLabel(y, labelAt[d]);
@@ -361,6 +369,7 @@ uint64_t Simulator::Impl::fetchCost(const std::vector<uint32_t>& bytes) const {
 
 // The decoder reads the instruction at its pc from the EEPROM over the I2C bus. The bus is shared (the other decoder, EXEC_XFER): taken, it waits.
 bool Simulator::Impl::beginFetch(int who) {
+    if (fetchFrontend) return beginFrontend(who);
     const uint32_t pc = who == 0 ? st.m.pc : st.p.pc;
     Cycle& ready = who == 0 ? st.m.readyAt : st.p.readyAt;
     if (!img[who].present || pc >= img[who].codeLimit) { st.fetched[who] = true; return false; }       // (the step faults on it)

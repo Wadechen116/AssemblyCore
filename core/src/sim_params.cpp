@@ -87,9 +87,21 @@ std::vector<ParamDef> build() {
     choice("sim.fault_stops", "Scheduling", {"domain", "all"}, 0, "a fault stops only its own sequencer, or both", "", true);
 
     // ---- where the decoders fetch from
-    choice("fetch.source", "Program store", {"eeprom", "sram"}, 0,
+    choice("fetch.source", "Program store", {"eeprom", "sram", "frontend"}, 0,
            "where the two decoders read the code, the descriptor tables, the const pool and the DeviceMap. eeprom (the hardware): the I2C EEPROM, at the addresses its six region registers (main_code_addr ... peri_devmap_addr) hold now -- a wrong address or a wrong byte in the EEPROM is a wrong instruction, and an EXEC_XFER write to the EEPROM changes what is fetched. sram: the assembled images directly (the earlier model)",
            "", true);
+
+    // ---- fetch.source = frontend: boot loads the ROM into the shared program SRAM, the seven-state Frontend of each sequencer reads it (spec v31 3.1, Frontend-001)
+    choice("boot.load", "Program store", {"instant", "i2c"}, 1,
+           "fetch.source = frontend: how long boot takes to read the two images from the ROM into the program SRAM. i2c: the bus time of reading the six regions (one sequential read each); instant: no time. Both sequencers are held until it is done",
+           "from the end of reset to the first instruction, against the size of the images", true);
+    add("frontend.sram_latency", "Program store", "SRAM cycles", 1, 1, 16, "fetch.source = frontend: SRAM cycles (2 per ISA cycle) from a word read request to its response. The spec leaves it to the RTL profile (planning value)", "the SRAM macro's read latency in the RTL", true);
+    choice("frontend.sram_policy", "Program store", {"shared", "slots"}, 0,
+           "fetch.source = frontend: how the two Frontends share the one SRAM port. shared: one read per SRAM cycle, first come first served, Main first on a tie; slots: each ISA cycle has one SRAM slot for Main and one for Peri (no waiting for the other). The spec leaves it to the RTL profile (planning value)",
+           "two programs running side by side: the fetch time of one with and without the other", true);
+    add("frontend.hold_cycles", "Program store", "ISA cycles", 0, 0, 1000, "fetch.source = frontend: cycles in CMD_HOLD before the next instruction is fetched (planning value)", "RTL: CMD_HOLD to CMD_OP_GET", true);
+    add("frontend.dec_cycles", "Program store", "ISA cycles", 1, 0, 1000, "fetch.source = frontend: cycles in CMD_DEC -- the checks, forming the normalized command (planning value)", "RTL: CMD_DEC", true);
+    add("frontend.fire_cycles", "Program store", "ISA cycles", 1, 0, 1000, "fetch.source = frontend: cycles in CMD_FIRE until the execution engine accepts the request (planning value)", "RTL: CMD_FIRE, req_valid to req_ready", true);
 
     choice("fetch.read_mode", "Program store", {"sequential", "per_byte", "instant"}, 0,
            "how a decoder reads an instruction from the I2C EEPROM before it executes it (fetch.source = eeprom). sequential (read A): one transaction per contiguous piece -- the code bytes, each descriptor, the DeviceMap entry, the constants -- each a random read of N bytes: address+W, the memory address (eeprom_address_bytes), address+R, N data bytes. per_byte (read B): every byte its own random read. instant: no bus time (the model before the EEPROM). The decoders and EXEC_XFER share the one I2C bus: first come first served, Main first when both arrive together (a fixed rule of the hardware, whatever sim.tie_order says)",

@@ -62,6 +62,9 @@ struct SimView {
     std::vector<asmcore::sim::DecodedLine> decoded[2];
     uint32_t regionAddr[asmcore::ER_COUNT] = {0, 0, 0, 0, 0, 0};       // the region registers now (main_code_addr ... peri_devmap_addr)
     bool fromEeprom = true;                                    // fetch.source = eeprom
+    // fetch.source = frontend: where the seven-state Frontend of each sequencer is at this cycle, and how far boot has come (inactive otherwise)
+    asmcore::sim::FrontendStatus frontend[2];
+    asmcore::sim::BootStatus boot;
     asmcore::Domain domainOf(int i) const { return i == 0 ? asmcore::Domain::Main : asmcore::Domain::Peri; }
 };
 using ViewPtr = std::shared_ptr<const SimView>;

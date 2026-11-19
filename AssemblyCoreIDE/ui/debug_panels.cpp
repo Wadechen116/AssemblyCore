@@ -386,6 +386,59 @@ public:
         summary_->setWordWrap(true);
         summary_->setMinimumHeight(0);
         lay->addWidget(summary_);
+        // ---- the Frontend (fetch.source = frontend): boot's progress, the seven states of each sequencer with the one it is in now, one cycle at a time
+        {
+            auto* row = new QHBoxLayout;
+            row->setSpacing(6);
+            useFrontend_ = new QCheckBox(tr("Frontend model"));
+            useFrontend_->setObjectName("decoderUseFrontend");
+            useFrontend_->setToolTip(tr("Spec v31: boot loads the ROM into the one program SRAM, and every instruction goes through the seven states of the Frontend "
+                                        "(parameter fetch.source = frontend). The lengths of the states and the SRAM timing are planning values (frontend.* parameters) until the RTL gives them. "
+                                        "Changing it restarts the simulator from cycle 0."));
+            row->addWidget(useFrontend_);
+            stepCycle_ = new QPushButton(tr("Step 1 cycle"));
+            stepCycle_->setObjectName("decoderStepCycle");
+            stepCycle_->setToolTip(tr("Advance one ISA cycle and stop: the Frontends move through their states, boot goes on loading"));
+            row->addWidget(stepCycle_);
+            boot_ = new QLabel;
+            boot_->setObjectName("decoderBoot");
+            row->addWidget(boot_, 1);
+            lay->addLayout(row);
+            static const char* names[7] = {"CMD_HOLD", "CMD_OP_GET", "CMD_DESC_GET", "CMD_DEC", "CMD_FIRE", "CMD_EXEC", "CMD_FAULT"};
+            for (int d = 0; d < 2; d++) {
+                auto* fr = new QHBoxLayout;
+                fr->setSpacing(3);
+                auto* who = new QLabel(d == 0 ? "Main" : "Peri");
+                who->setMinimumWidth(34);
+                fr->addWidget(who);
+                for (int k = 0; k < 7; k++) {
+                    chip_[d][k] = new QLabel(names[k]);
+                    chip_[d][k]->setObjectName(QString("frontend%1_%2").arg(d == 0 ? "Main" : "Peri", names[k]));
+                    chip_[d][k]->setAlignment(Qt::AlignCenter);
+                    chip_[d][k]->setMargin(2);
+                    fr->addWidget(chip_[d][k]);
+                }
+                feText_[d] = new QLabel;
+                feText_[d]->setObjectName(d == 0 ? "frontendMainText" : "frontendPeriText");
+                fr->addWidget(feText_[d], 1);
+                feRow_[d] = new QWidget;
+                feRow_[d]->setLayout(fr);
+                fr->setContentsMargins(0, 0, 0, 0);
+                lay->addWidget(feRow_[d]);
+            }
+            connect(stepCycle_, &QPushButton::clicked, this, [this] { if (ctx_.debugger.active() && !ctx_.debugger.running()) ctx_.debugger.stepCycles(1); });
+            connect(useFrontend_, &QCheckBox::clicked, this, [this](bool on) {
+                std::string err;
+                ctx_.debugger.simParams().set("fetch.source", on ? "frontend" : "eeprom", err);
+                if (ctx_.debugger.active()) {                                 // the program store is part of the machine: it starts again from cycle 0
+                    std::string why;
+                    ctx_.debugger.stop();
+                    if (!ctx_.debugger.start(why)) ctx_.status.fire(fromStd(why));
+                    else ctx_.status.fire(on ? tr("Restarted from cycle 0 with the Frontend model") : tr("Restarted from cycle 0 with the decoders reading the EEPROM"));
+                }
+                showFrontend(ctx_.debugger.session().view());
+            });
+        }
         table_ = new QTableWidget(0, 8);
         table_->setObjectName("decoderTable");
         table_->setHorizontalHeaderLabels({"", tr("Dom"), tr("PC"), tr("EEPROM"), tr("Bytes"), tr("Decoded from the EEPROM"), tr("Source"), tr("Fetch cycles")});
@@ -425,6 +478,50 @@ private:
         const asmcore::Domain d = it->data(Qt::UserRole + 1).toInt() == 1 ? asmcore::Domain::Peri : asmcore::Domain::Main;
         const DebugLocation l = ctx_.debugger.locationForPc(d, (uint32_t)it->data(Qt::UserRole).toUInt());
         if (l.valid) { Location loc; loc.file = l.file; loc.line = l.line; ctx_.goTo.fire(loc); }
+    }
+    // The seven states of each Frontend with the one it is in now; what it is forming; the words it reads; boot.
+    void showFrontend(const ViewPtr& v) {
+        const bool wanted = ctx_.debugger.simParams().params().get("fetch.source") == 2;
+        if (useFrontend_->isChecked() != wanted) useFrontend_->setChecked(wanted);
+        const bool on = v && v->boot.active;
+        stepCycle_->setEnabled(ctx_.debugger.active() && !ctx_.debugger.running());
+        for (int d = 0; d < 2; d++) feRow_[d]->setVisible(on);
+        if (!on) {
+            boot_->setText(wanted ? tr("Start debugging to see boot and the Frontends.") : tr("Tick it to see boot load the program SRAM and each instruction pass through the seven states."));
+            return;
+        }
+        const asmcore::sim::BootStatus& b = v->boot;
+        const uint32_t all = b.mainWords + b.periWords;
+        boot_->setText(b.done ? tr("Boot: %1 words loaded into the program SRAM by cycle %2; write path locked, both sequencers released.").arg(all).arg((qulonglong)b.periEnd)
+                              : tr("Boot: %1 -- %2 of %3 words written (Main until cycle %4, Peri until %5); both sequencers are held.")
+                                    .arg(b.phase == "loading Main image" ? tr("loading the Main image") : tr("loading the Peri image")).arg(b.wordsWritten).arg(all).arg((qulonglong)b.mainEnd).arg((qulonglong)b.periEnd));
+        static const char* names[7] = {"CMD_HOLD", "CMD_OP_GET", "CMD_DESC_GET", "CMD_DEC", "CMD_FIRE", "CMD_EXEC", "CMD_FAULT"};
+        const bool light = palette().color(QPalette::Base).lightness() > 128;
+        const Theme th = light ? Theme::light() : Theme::dark();
+        for (int d = 0; d < 2; d++) {
+            const asmcore::sim::FrontendStatus& f = v->frontend[d];
+            const asmcore::sim::Cycle at[7] = {f.hold, f.opGet, f.descGet, f.dec, f.fire, f.exec, 0};
+            for (int k = 0; k < 7; k++) {
+                const bool here = f.state == names[k];
+                const QColor back = here ? (k == 6 ? th.error : d == 0 ? th.execMain : th.execPeri) : QColor();
+                chip_[d][k]->setStyleSheet(here ? QString("background: %1; color: %2; font-weight: bold; border: 1px solid %2; border-radius: 3px;").arg(back.name(), th.foreground.name())
+                                                : QString("color: %1; border: 1px solid %1; border-radius: 3px;").arg(th.lineNumberFg.name()));
+                chip_[d][k]->setProperty("current", here);
+                chip_[d][k]->setToolTip(f.forming && k < 6 ? tr("entered at cycle %1").arg((qulonglong)at[k]) : QString());
+            }
+            QString t;
+            if (f.state == "RESET") t = tr("held in reset while boot loads");
+            else if (!f.forming) t = v->halted[d] ? tr("not running (no program, or it rests on a jump to itself)") : tr("waiting for the next instruction");
+            else {
+                int read = 0, buffered = 0, waiting = 0;
+                for (const auto& w : f.words) { if (w.buffered) buffered++; else if (w.done <= v->cycle) read++; else waiting++; }
+                t = tr("PC 0x%1: %2 of %3 SRAM word(s) read").arg(f.pc, 2, 16, QChar('0')).arg(read).arg(read + waiting);
+                if (buffered) t += tr(", %1 already in the opcode buffer").arg(buffered);
+                if (f.state == "CMD_EXEC" && f.done) t += tr("; the engine completes at cycle %1").arg((qulonglong)f.done);
+                else if (f.state != "CMD_EXEC" && f.state != "CMD_FAULT") t += tr("; executes at cycle %1").arg((qulonglong)f.exec);
+            }
+            feText_[d]->setText(t);
+        }
     }
     static QString hexBytes(const std::vector<uint8_t>& b) {
         QString t;
@@ -511,6 +608,7 @@ private:
         detail_->resizeColumnToContents(0);
     }
     void fill(const ViewPtr& v) {
+        showFrontend(v);
         if (!v) { table_->setRowCount(0); detailKey_.clear(); detail_->clear(); summary_->setText(tr("Start debugging to see what the decoders fetch.")); return; }
         // the table is rebuilt only when what it shows changed (the decoded lines rarely do; the cursors move all the time)
         std::string key;
@@ -543,7 +641,11 @@ private:
         const std::string img = ctx_.debugger.eepromImagePath();
         if (v->fromEeprom) s = img.empty() ? tr("EEPROM: the image of the build") : tr("EEPROM: %1 (a burned image)").arg(QFileInfo(fromStd(img)).fileName());
         s += "\n";
-        if (!v->fromEeprom) s = tr("The decoders read the assembled image directly (fetch.source = sram), not the EEPROM.");
+        if (v->boot.active) s = tr("Frontend model: boot loaded the EEPROM into the one program SRAM; the Frontends read the SRAM (fetch.source = frontend).") + "\n" +
+                                tr("Loaded from: Main code 0x%1, tables 0x%2, const pool 0x%3 \xC2\xB7 Peri code 0x%4, tables 0x%5, DeviceMap 0x%6")
+                                    .arg(v->regionAddr[0], 4, 16, QChar('0')).arg(v->regionAddr[1], 4, 16, QChar('0')).arg(v->regionAddr[2], 4, 16, QChar('0'))
+                                    .arg(v->regionAddr[3], 4, 16, QChar('0')).arg(v->regionAddr[4], 4, 16, QChar('0')).arg(v->regionAddr[5], 4, 16, QChar('0'));
+        else if (!v->fromEeprom) s = tr("The decoders read the assembled image directly (fetch.source = sram), not the EEPROM.");
         else s += tr("Main code at 0x%1, descriptor tables at 0x%2, const pool at 0x%3 \xC2\xB7 Peri code at 0x%4, tables at 0x%5, DeviceMap at 0x%6")
                      .arg(v->regionAddr[0], 4, 16, QChar('0')).arg(v->regionAddr[1], 4, 16, QChar('0')).arg(v->regionAddr[2], 4, 16, QChar('0'))
                      .arg(v->regionAddr[3], 4, 16, QChar('0')).arg(v->regionAddr[4], 4, 16, QChar('0')).arg(v->regionAddr[5], 4, 16, QChar('0'));
@@ -603,6 +705,12 @@ private:
     QLabel* summary_;
     QTableWidget* table_;
     QTreeWidget* detail_ = nullptr;
+    QCheckBox* useFrontend_ = nullptr;
+    QPushButton* stepCycle_ = nullptr;
+    QLabel* boot_ = nullptr;
+    QLabel* chip_[2][7] = {};
+    QLabel* feText_[2] = {};
+    QWidget* feRow_[2] = {};
     std::string key_, detailKey_;
     ConnectionBag conns_;
 };

@@ -1141,6 +1141,94 @@ The assembler produced:  %2</source>
         <source>CMD_FIRE hands it to the execution engine, CMD_EXEC waits for it to complete; only then the PC moves on</source>
         <translation>CMD_FIRE 把它交給執行引擎，CMD_EXEC 等它完成；完成後 PC 才前進</translation>
     </message>
+    <message>
+        <source>Frontend model</source>
+        <translation>Frontend 模型</translation>
+    </message>
+    <message>
+        <source>Spec v31: boot loads the ROM into the one program SRAM, and every instruction goes through the seven states of the Frontend (parameter fetch.source = frontend). The lengths of the states and the SRAM timing are planning values (frontend.* parameters) until the RTL gives them. Changing it restarts the simulator from cycle 0.</source>
+        <translation>規格 v31：開機時把 ROM 載入唯一的程式 SRAM，之後每道指令都經過 Frontend 的七個狀態（參數 fetch.source = frontend）。各狀態的長度與 SRAM 時序在 RTL 提供數值前是規劃值（frontend.* 參數）。切換後模擬器會從第 0 週期重新開始。</translation>
+    </message>
+    <message>
+        <source>Step 1 cycle</source>
+        <translation>前進 1 週期</translation>
+    </message>
+    <message>
+        <source>Advance one ISA cycle and stop: the Frontends move through their states, boot goes on loading</source>
+        <translation>前進一個 ISA 週期後停下：Frontend 依序走過各狀態，開機載入也繼續進行</translation>
+    </message>
+    <message>
+        <source>Restarted from cycle 0 with the Frontend model</source>
+        <translation>已用 Frontend 模型從第 0 週期重新開始</translation>
+    </message>
+    <message>
+        <source>Restarted from cycle 0 with the decoders reading the EEPROM</source>
+        <translation>已改為解碼器直接讀 EEPROM，從第 0 週期重新開始</translation>
+    </message>
+    <message>
+        <source>Start debugging to see boot and the Frontends.</source>
+        <translation>開始除錯後，會顯示開機載入與兩個 Frontend 的狀態。</translation>
+    </message>
+    <message>
+        <source>Tick it to see boot load the program SRAM and each instruction pass through the seven states.</source>
+        <translation>勾選後，可以看到開機載入程式 SRAM，以及每道指令經過七個狀態的過程。</translation>
+    </message>
+    <message>
+        <source>Boot: %1 words loaded into the program SRAM by cycle %2; write path locked, both sequencers released.</source>
+        <translation>開機：%1 個 word 已在第 %2 週期前載入程式 SRAM；寫入路徑已鎖定，兩個 sequencer 已放行。</translation>
+    </message>
+    <message>
+        <source>Boot: %1 -- %2 of %3 words written (Main until cycle %4, Peri until %5); both sequencers are held.</source>
+        <translation>開機：%1，已寫入 %2／%3 個 word（Main 到第 %4 週期，Peri 到第 %5 週期）；兩個 sequencer 暫停中。</translation>
+    </message>
+    <message>
+        <source>loading the Main image</source>
+        <translation>正在載入 Main 映像</translation>
+    </message>
+    <message>
+        <source>loading the Peri image</source>
+        <translation>正在載入 Peri 映像</translation>
+    </message>
+    <message>
+        <source>entered at cycle %1</source>
+        <translation>第 %1 週期進入</translation>
+    </message>
+    <message>
+        <source>held in reset while boot loads</source>
+        <translation>開機載入期間停在 reset</translation>
+    </message>
+    <message>
+        <source>not running (no program, or it rests on a jump to itself)</source>
+        <translation>沒有在執行（沒有程式，或停在跳到自己的指令）</translation>
+    </message>
+    <message>
+        <source>waiting for the next instruction</source>
+        <translation>等待下一道指令</translation>
+    </message>
+    <message>
+        <source>PC 0x%1: %2 of %3 SRAM word(s) read</source>
+        <translation>PC 0x%1：已讀取 %2／%3 個 SRAM word</translation>
+    </message>
+    <message>
+        <source>, %1 already in the opcode buffer</source>
+        <translation>，另有 %1 個已在 opcode 緩衝中</translation>
+    </message>
+    <message>
+        <source>; the engine completes at cycle %1</source>
+        <translation>；執行引擎在第 %1 週期完成</translation>
+    </message>
+    <message>
+        <source>; executes at cycle %1</source>
+        <translation>；在第 %1 週期開始執行</translation>
+    </message>
+    <message>
+        <source>Frontend model: boot loaded the EEPROM into the one program SRAM; the Frontends read the SRAM (fetch.source = frontend).</source>
+        <translation>Frontend 模型：開機時已把 EEPROM 載入唯一的程式 SRAM；Frontend 從 SRAM 讀取（fetch.source = frontend）。</translation>
+    </message>
+    <message>
+        <source>Loaded from: Main code 0x%1, tables 0x%2, const pool 0x%3 · Peri code 0x%4, tables 0x%5, DeviceMap 0x%6</source>
+        <translation>載入來源：Main 程式碼 0x%1、描述子表 0x%2、常數池 0x%3 · Peri 程式碼 0x%4、描述子表 0x%5、DeviceMap 0x%6</translation>
+    </message>
 </context>
 <context>
     <name>EepromTool</name>

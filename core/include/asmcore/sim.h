@@ -219,6 +219,34 @@ struct DecodedLine {
     std::vector<DecodeRead> reads;
     uint64_t fetchCycles = 0;         // what reading them over the I2C bus takes with the parameters now (0 with fetch.read_mode = instant)
 };
+// fetch.source = frontend. The seven-state Frontend of one sequencer (spec v31, Frontend-001) at this cycle: which state it is in, the instruction it is
+// forming, when it entered each state, and the words of the program SRAM it reads for it. The cycle counts of the states come from the frontend.*
+// parameters, which are planning values until the RTL gives them.
+struct FrontendWord {
+    uint32_t word = 0;                // physical word of the shared program SRAM
+    bool forOpcode = false;           // read in CMD_OP_GET (else CMD_DESC_GET)
+    bool buffered = false;            // no read: it is the word the opcode buffer already holds
+    Cycle requested = 0, done = 0;    // ISA cycles: when the Frontend asked for it, when the response was captured
+    uint32_t waitedSramCycles = 0;    // SRAM cycles it waited for the port (the other Frontend's reads)
+};
+struct FrontendStatus {
+    bool active = false;              // fetch.source = frontend
+    std::string state;                // "RESET" (boot is loading) | "CMD_HOLD" | "CMD_OP_GET" | "CMD_DESC_GET" | "CMD_DEC" | "CMD_FIRE" | "CMD_EXEC" | "CMD_FAULT"
+    bool forming = false;             // an instruction is being formed or executed: the fields below are its
+    uint32_t pc = 0;
+    Cycle hold = 0, opGet = 0, descGet = 0, dec = 0, fire = 0, exec = 0;     // the cycle each state was / will be entered
+    Cycle done = 0;                   // the cycle the execution engine completes it (0: not known yet)
+    std::vector<FrontendWord> words;
+    uint64_t sramReads = 0, sramWaitCycles = 0;      // since reset: word reads of this Frontend, SRAM cycles it waited for the port
+};
+// Boot: the two images are read from the ROM and written into the program SRAM; then the write path is locked and both sequencers are released.
+struct BootStatus {
+    bool active = false;              // fetch.source = frontend
+    std::string phase;                // "loading Main image" | "loading Peri image" | "locked, running"
+    Cycle start = 0, mainEnd = 0, periEnd = 0;       // ISA cycles (periEnd: both images valid, the sequencers are released)
+    uint32_t mainWords = 0, periWords = 0, wordsWritten = 0;   // 32-bit words of each image, and how many of all are written by now
+    bool done = false;
+};
 // Checking a burned EEPROM image against the program it should hold (verifyEepromImage).
 struct EepromByteDiff {
     int region = -1;                  // EepromRegionId
@@ -297,6 +325,9 @@ public:
     // What the decoder makes of the bytes it fetches (from the EEPROM through the region registers, or the image with fetch.source = sram):
     // the instruction at `pc`, and the whole code of a domain. Each line says whether it is what the assembler produced for that place.
     DecodedLine decodedAt(Domain d, uint32_t pc) const;
+    // fetch.source = frontend: where each Frontend is in its seven states now, and how far boot has come (inactive with the other sources).
+    FrontendStatus frontendStatus(Domain d) const;
+    BootStatus bootStatus() const;
     std::vector<DecodedLine> decodedProgram(Domain d) const;
     // The I2C EEPROM the decoders fetch from, as it is now (an EXEC_XFER write changes it). 0 / 0xFF outside it.
     size_t eepromSize() const;

@@ -132,4 +132,24 @@ IDE 中可以看到這個過程：
 - **Decoder 面板**右側「指令是如何組成的」：選一道指令（沒選時跟著目前關注的 sequencer），分三層顯示——第一階段（指令位元組拆成 opcode 與 arg）、查到的每一筆描述子／DeviceMap／常數（哪張表第幾筆、位址的算法、原始位元組、每個欄位的值、在 SRAM 的哪個 word）、第二階段（組合後的指令，與原始碼對照）。
 - **Program SRAM 面板**（View 選單）：以 32-bit word 顯示整顆共用 SRAM 開機載入後的內容，標示每個 word 屬於 Main 或 Peri、哪個區段。除錯時標出兩個 Frontend 為目前這道指令讀取的每個位元組（opcode 以粗體），右側說明用途。
 
-目前的限制：模擬器把一道指令的取指當成一段時間（`fetch` 參數），沒有逐狀態推進，所以面板顯示的是「這道指令會讀哪些東西」，不是「此刻停在七個狀態的哪一個」；開機載入（ROM → SRAM）的過程也沒有模擬。SRAM 面板的內容由建置結果算出。
+## Frontend 模型（`fetch.source = frontend`）
+
+依規格 v31 的程式儲存方式執行：**開機**時兩個 sequencer 暫停，Boot 從 ROM（I2C EEPROM，依重置時的六個位址暫存器）讀出兩份映像、寫入唯一的程式 SRAM，寫完後鎖定寫入並同時放行；之後 ROM 的內容不再影響執行。**每道指令**都經過 Frontend-001 的七個狀態：
+
+`CMD_HOLD → CMD_OP_GET（opcode 所在的 word）→ CMD_DESC_GET（inline 位元組、描述子、DeviceMap 項目、常數）→ CMD_DEC → CMD_FIRE → CMD_EXEC`，出錯時為 `CMD_FAULT`。
+
+SRAM 只有一個埠、時脈是 ISA 的 2 倍（每個 ISA 週期兩個 SRAM 週期）；回應在下一個 ISA 邊緣被擷取。opcode 緩衝保留一個 word，落在其中的程式碼位元組不再重讀。
+
+| 參數 | 預設 | 意義 |
+|---|---|---|
+| `fetch.source` | `eeprom` | 設為 `frontend` 啟用本模型（預設不變，舊的模擬結果不受影響） |
+| `boot.load` | `i2c` | 開機載入花的時間：`i2c` = 讀六個區域的匯流排時間；`instant` = 不花時間 |
+| `frontend.sram_latency` | 1 | 從發出讀取到回應的 SRAM 週期數 |
+| `frontend.sram_policy` | `shared` | 兩個 Frontend 共用埠的方式：`shared` = 每個 SRAM 週期一次讀取，先到先服務、同時到達 Main 優先；`slots` = 每個 ISA 週期 Main、Peri 各有一個 SRAM 週期 |
+| `frontend.hold_cycles` / `dec_cycles` / `fire_cycles` | 0 / 1 / 1 | `CMD_HOLD`、`CMD_DEC`、`CMD_FIRE` 各停留的 ISA 週期數 |
+
+**這些數值規格交給 RTL profile 決定，目前都是規劃值。** 拿到 RTL 的數字後改參數即可。
+
+IDE：Decoder 面板勾選「Frontend 模型」（會從第 0 週期重新開始）；面板顯示開機進度、Main／Peri 各自的七個狀態與目前所在的狀態、這道指令已讀取幾個 SRAM word；「前進 1 週期」每次前進一個 ISA 週期。命令列：`asmsim --param fetch.source=frontend`。
+
+限制：執行引擎仍以整道指令為單位（`CMD_EXEC` 期間不細分）；PC 在指令開始執行時就前進（硬體是完成後才更新）；開機載入的進度是依時間比例估算的，沒有逐次寫入的模擬；SRAM 面板的內容仍由建置結果算出。

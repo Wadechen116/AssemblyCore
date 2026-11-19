@@ -287,7 +287,7 @@ RunResult Simulator::Impl::runLoop(const RunLimits& lim, int stepDomain, bool, u
             Domain d = who == 0 ? Domain::Main : Domain::Peri;
             uint32_t pcBefore = who == 0 ? st.m.pc : st.p.pc;
             // first the decoder reads the instruction from the EEPROM (over the shared I2C bus); it executes when that is done
-            if (fetchTimed() && !st.fetched[who] && beginFetch(who)) { takeSnapshotIfDue(); continue; }
+            if ((fetchTimed() || fetchFrontend) && !st.fetched[who] && beginFetch(who)) { takeSnapshotIfDue(); continue; }
             if (!suppressStops) {
                 int id = -1;
                 bool skip = skipValid && skipDomain == who && skipPc == pcBefore;
@@ -309,6 +309,7 @@ RunResult Simulator::Impl::runLoop(const RunLimits& lim, int stepDomain, bool, u
                   (who == 0 ? (st.m.halted || st.m.faulted) : (st.p.halted || st.p.faulted)) != stoppedBefore;
             if (ran) {
                 st.fetched[who] = false;                                             // executed: the next one is fetched
+                if (fetchFrontend && st.fe[who].valid) st.fe[who].done = who == 0 ? st.m.readyAt : st.p.readyAt;      // CMD_EXEC until the engine completes it
                 afterInstruction(d, pcBefore);
                 executed++;
                 std::vector<uint32_t>& h = st.hits[who];

@@ -247,7 +247,7 @@ canvas 1200 740
 box main_code   20  20 180  72 code    "ISA Main Code"                 domain=main target=code help="The Main program: assembly, descriptor tables and the constant pool."
 row main_code "PC" pc main
 row main_code "image" text "tables + pool"
-box main_dec   250  20 240 132 decoder "Main-instruction Decoder"      domain=main target=code help="Executes MOV, ALU, EXEC_CSR and BR. Click: the line it is at." params="main.fetch_cycles csr.access_main reset.boot_cycles"
+box main_dec   250  20 240 132 decoder "Main-instruction Decoder"      domain=main target=code help="Executes MOV, ALU, EXEC_CSR and BR. Click: the line it is at." params="main.fetch_cycles csr.access_main reset.boot_cycles frontend.sram_latency frontend.sram_policy frontend.hold_cycles frontend.dec_cycles frontend.fire_cycles"
 row main_dec "PC" pc main
 row main_dec "next" instr main
 row main_dec "executed" count main
@@ -289,7 +289,7 @@ row main_timer "restarts" signal main_timer.gen
 box peri_code   20 450 180  72 code    "ISA Peri Code"                 domain=peri target=code help="The Peri program."
 row peri_code "PC" pc peri
 row peri_code "image" text "descriptors"
-box peri_dec   250 450 240 152 decoder "Peri-instruction Decoder"      domain=peri target=code help="Executes EXEC_XFER, EXEC_PUB, EXEC_CSR and BR. Click: the line it is at." params="peri.fetch_cycles csr.access_peri reset.boot_cycles"
+box peri_dec   250 450 240 152 decoder "Peri-instruction Decoder"      domain=peri target=code help="Executes EXEC_XFER, EXEC_PUB, EXEC_CSR and BR. Click: the line it is at." params="peri.fetch_cycles csr.access_peri reset.boot_cycles frontend.sram_latency frontend.sram_policy frontend.hold_cycles frontend.dec_cycles frontend.fire_cycles"
 row peri_dec "PC" pc peri
 row peri_dec "next" instr peri
 row peri_dec "executed" count peri
@@ -330,7 +330,7 @@ box xfer       830 440 150  60 shared  "Data Xfer"                     help="The
 row xfer "busy" flag xfer.busy
 box i2ch      1020 440 160  60 shared  "i2ch"                          help="CSR -> i2ch -> i2cm_top: parameter i2ch.overhead." params="i2ch.overhead"
 box i2cm       830 540 150  60 shared  "i2cm_top"                      help="The I2C master: parameters i2c.ack_delay, i2c.stretch, i2c.turnaround." params="clock.i2c_hz i2c.ack_delay i2c.stretch i2c.turnaround"
-box dev       1020 540 160  92 device  "I2C device / EEPROM"           help="The I2C devices of the environment file ([device ...]) and the EEPROM the two decoders fetch the program from (its code, descriptor tables, const pool and DeviceMap)." params="fetch.source fetch.read_mode fetch.transaction_overhead"
+box dev       1020 540 160  92 device  "I2C device / EEPROM"           help="The I2C devices of the environment file ([device ...]) and the EEPROM the two decoders fetch the program from (its code, descriptor tables, const pool and DeviceMap)." params="fetch.source fetch.read_mode fetch.transaction_overhead boot.load"
 row dev "bus" text "I2C"
 row dev "cycle" cycle
 

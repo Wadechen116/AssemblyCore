@@ -37,5 +37,6 @@ CORE_SOURCES = \
     $$ASMCORE_DIR/src/sim/peri_core.cpp \
     $$ASMCORE_DIR/src/sim/debug.cpp \
     $$ASMCORE_DIR/src/sim/decode.cpp \
+    $$ASMCORE_DIR/src/sim/frontend.cpp \
     $$ASMCORE_DIR/src/sim/scenario.cpp
 CONFIG += c++17

@@ -112,6 +112,14 @@ void Debugger::runLive(const std::string& until) { session_.run(liveSpec(until))
 
 void Debugger::restart() { session_.reset(); }
 
+void Debugger::stepCycles(asmcore::sim::Cycle cycles) {
+    RunSpec s;
+    s.maxCycles = cycles < 1 ? 1 : cycles;
+    s.maxMillis = 0;
+    s.stopOnIdle = false;                                  // (a cycle passes also when nothing is left to run)
+    session_.run(s);
+}
+
 bool Debugger::autoDebug(const AutoDebugOptions& opt, AutoDebugReport& out, std::string& why, SnapshotPtr program) {
     SnapshotPtr prog = program;
     std::string env;

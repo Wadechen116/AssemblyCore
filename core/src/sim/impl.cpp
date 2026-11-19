@@ -102,6 +102,13 @@ void Simulator::Impl::applyParams() {
     sampleDelay[0] = (int)get("flag.sample_delay_main");
     sampleDelay[1] = (int)get("flag.sample_delay_peri");
     fetchEeprom = get("fetch.source") == 0;
+    fetchFrontend = get("fetch.source") == 2;
+    bootLoad = (int)get("boot.load");
+    sramLatency = (int)get("frontend.sram_latency");
+    sramPolicy = (int)get("frontend.sram_policy");
+    feHold = (int)get("frontend.hold_cycles");
+    feDec = (int)get("frontend.dec_cycles");
+    feFire = (int)get("frontend.fire_cycles");
     fetchMode = (int)get("fetch.read_mode");
     fetchOverhead = (int)get("fetch.transaction_overhead");
     flagPolicy = (int)get("flag.arbiter_policy");
@@ -272,6 +279,7 @@ void Simulator::Impl::resetState() {
     st.seq += injSorted.size();
     st.m.readyAt = (Cycle)bootCycles;                  // from the end of reset to the first instruction of each sequencer
     st.p.readyAt = (Cycle)bootCycles;
+    if (fetchFrontend) bootLoadSram();                 // (the sequencers start when boot has loaded and locked the program SRAM)
     if (!img[0].present) { st.m.halted = true; st.m.readyAt = kNever; }
     if (!img[1].present) { st.p.halted = true; st.p.readyAt = kNever; }
     nextSnap = 0;
@@ -521,7 +529,8 @@ void Simulator::Impl::syncFetch() {
     const bool on = fetchEeprom && st.eeprom;
     for (int d = 0; d < 2; d++) {
         img[d].eeprom = on ? st.eeprom.get() : nullptr;
-        if (!on) continue;
+        img[d].loaded = fetchFrontend && st.sram[d] ? st.sram[d].get() : nullptr;       // what boot loaded: the ROM as it is now does not matter
+        if (!on && !(fetchFrontend && st.eeprom)) continue;
         for (int k = 0; k < 3; k++) {
             const int id = regionSig[d * 3 + k];
             img[d].regionBase[k] = id >= 0 ? (uint32_t)signal(sigs[(size_t)id].name) : emap.region[d * 3 + k].addr;

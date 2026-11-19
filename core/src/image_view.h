@@ -22,10 +22,14 @@ struct ImageView {
     // regionBase[k] + (o - regionStart[k]) of the EEPROM, wrapping at its size. The table offsets (off/end) keep their logical meaning.
     const std::vector<uint8_t>* eeprom = nullptr;
     uint32_t regionStart[3] = {0, 0, 0}, regionBase[3] = {0, 0, 0};
+    // Or at what boot loaded into the program SRAM (fetch.source = frontend): the logical image as it was read from the ROM at power-on, byte for byte.
+    // What the ROM holds afterwards does not matter any more. (regionBase still says where each byte came from.)
+    const std::vector<uint8_t>* loaded = nullptr;
 
     bool load(const DomainImage& im, const Profile& pf, std::string& error);
     uint32_t u8(uint32_t o) const {
         if (o >= bytes.size()) return 0;
+        if (loaded) return o < loaded->size() ? (*loaded)[o] : 0;
         if (!eeprom) return bytes[o];
         const int k = o >= regionStart[2] ? 2 : o >= regionStart[1] ? 1 : 0;
         const size_t n = eeprom->size();

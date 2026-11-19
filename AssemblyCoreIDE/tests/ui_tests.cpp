@@ -840,6 +840,92 @@ private slots:
         QCOMPARE(markedCells, 0);
     }
 
+    // The Frontend model: boot loads the SRAM, every instruction goes through the seven states, one ISA cycle at a time.
+    void theFrontendGoesThroughItsStatesOneCycleAtATime() {
+        Rig r(".csr C = 0x120\n.main\nstart: ALU ADD unsigned\n    EXEC_CSR WRITE8 C, 7\nh: JMP h\n");
+        r.w->dock("decoder")->show();
+        auto* use = r.find<QCheckBox>("decoder", "decoderUseFrontend");
+        auto* stepBtn = r.find<QPushButton>("decoder", "decoderStepCycle");
+        auto* boot = r.find<QLabel>("decoder", "decoderBoot");
+        auto* mainText = r.find<QLabel>("decoder", "frontendMainText");
+        QVERIFY(use && stepBtn && boot && mainText);
+        auto chip = [&](const char* state) { return r.find<QLabel>("decoder", (QString("frontendMain_") + state).toUtf8().constData()); };
+        auto current = [&] { QString c; for (const char* n : {"CMD_HOLD", "CMD_OP_GET", "CMD_DESC_GET", "CMD_DEC", "CMD_FIRE", "CMD_EXEC", "CMD_FAULT"}) if (chip(n) && chip(n)->property("current").toBool()) c += QString(c.isEmpty() ? "" : "+") + n; return c; };
+        // not ticked, no session: nothing of the Frontend is shown, the button is off
+        QVERIFY(!use->isChecked() && !stepBtn->isEnabled() && chip("CMD_HOLD") && !chip("CMD_HOLD")->isVisibleTo(r.w->dock("decoder")->widget()));
+        // ticked: the parameter is set; starting a session shows boot loading the SRAM with both sequencers held
+        use->click();
+        QCOMPARE((int)r.f.dbg.simParams().params().get("fetch.source"), 2);
+        r.f.dbg.simParams().set("sim.speed", "0", *new std::string);
+        r.clickGutter(3);
+        r.w->debugAction("start")->trigger();
+        QVERIFY(r.until([&] { const ViewPtr v = r.f.dbg.session().view(); return v && v->boot.active; }));
+        r.f.dbg.pause();
+        QVERIFY(r.until([&] { return !r.f.dbg.running(); }));
+        r.f.dbg.restart();                                                                  // from cycle 0, stopped
+        QVERIFY(r.until([&] { const ViewPtr v = r.f.dbg.session().view(); return v && v->cycle == 0 && v->boot.active; }));
+        {
+            const ViewPtr v = r.f.dbg.session().view();
+            QVERIFY(!v->boot.done && v->boot.periEnd > 0 && v->frontend[0].state == "RESET");
+            QVERIFY(r.until([&] { return boot->text().contains("loading the Main image"); }));
+            QVERIFY2(boot->text().contains("held") && mainText->text().contains("held in reset") && current().isEmpty(), qPrintable(boot->text() + " / " + current()));
+            QVERIFY(chip("CMD_HOLD")->isVisibleTo(r.w->dock("decoder")->widget()) && stepBtn->isEnabled());
+        }
+        // one cycle: time moves by exactly one, boot goes on, nothing executes
+        stepBtn->click();
+        QVERIFY(r.until([&] { const ViewPtr v = r.f.dbg.session().view(); return v && v->cycle == 1 && !r.f.dbg.running(); }));
+        QCOMPARE((int)r.f.dbg.session().view()->instrs[0], 0);
+        // to the end of boot: the breakpoint on the first line stops the run when its instruction has come through the Frontend
+        const int stopsBefore = r.stops;
+        r.f.dbg.runLive();
+        QVERIFY2(r.waitStops(stopsBefore + 1), "no stop at the breakpoint");
+        QVERIFY(r.until([&] { const ViewPtr v = r.f.dbg.session().view(); return v && v->boot.done && v->frontend[0].forming && !r.f.dbg.running(); }));
+        const ViewPtr atBp = r.f.dbg.session().view();
+        QVERIFY(atBp->boot.done && atBp->frontend[0].forming && atBp->frontend[0].pc == 0);
+        const asmcore::sim::FrontendStatus f0 = atBp->frontend[0];
+        QVERIFY2(f0.opGet == atBp->boot.periEnd && f0.exec == f0.opGet + 4 && atBp->cycle == f0.exec, qPrintable(QString("%1 %2 %3").arg(f0.opGet).arg(f0.exec).arg(atBp->cycle)));
+        QVERIFY(r.until([&] { return boot->text().contains("locked") && current() == "CMD_FIRE"; }));      // handed over, not yet executed
+        QCOMPARE((int)atBp->instrs[0], 0);
+        // ---- from cycle 0 again without the load time, one cycle at a time through the first instruction
+        r.f.dbg.simParams().set("boot.load", "instant", *new std::string);
+        r.f.dbg.clearLineBreakpoints();
+        r.f.dbg.stop();
+        r.w->debugAction("start")->trigger();
+        QVERIFY(r.until([&] { const ViewPtr v = r.f.dbg.session().view(); return v && v->boot.active; }));
+        r.f.dbg.pause();
+        QVERIFY(r.until([&] { return !r.f.dbg.running(); }));
+        r.f.dbg.restart();
+        QVERIFY(r.until([&] { const ViewPtr v = r.f.dbg.session().view(); return v && v->cycle == 0 && v->boot.done; }));
+        QStringList seen;
+        std::vector<quint64> instrs;
+        for (int c = 1; c <= 6; c++) {
+            stepBtn->click();
+            QVERIFY(r.until([&] { const ViewPtr v = r.f.dbg.session().view(); return v && v->cycle == (asmcore::sim::Cycle)c && !r.f.dbg.running(); }));
+            QVERIFY(r.until([&] { return !current().isEmpty(); }));
+            seen << current();
+            instrs.push_back(r.f.dbg.session().view()->instrs[0]);
+            if (c == 2) {
+                r.w->resize(1500, 950);
+                r.w->dock("decoder")->raise();
+                QApplication::processEvents();
+                r.w->grab().save(QDir::tempPath() + "/acide_frontend_states.png");
+            }
+        }
+        // cycle 1 CMD_DESC_GET, 2 CMD_DEC, 3 CMD_FIRE, 4 CMD_EXEC (the ALU executes at 4), then the next instruction starts
+        QVERIFY2(seen.size() == 6 && seen[0] == "CMD_DESC_GET" && seen[1] == "CMD_DEC" && seen[2] == "CMD_FIRE", qPrintable(seen.join(" ")));
+        QVERIFY2(instrs[2] == 0 && instrs[4] >= 1, qPrintable(QString("%1 %2").arg(instrs[2]).arg(instrs[4])));
+        QVERIFY2(seen.contains("CMD_EXEC") || seen[4] == "CMD_OP_GET" || seen[4] == "CMD_DESC_GET", qPrintable(seen.join(" ")));
+        QVERIFY2(mainText->text().contains("SRAM word(s) read"), qPrintable(mainText->text()));
+        // the listing, the decoder's detail and the SRAM panel go with it as before
+        QVERIFY(r.find<QTreeWidget>("decoder", "decoderDetail")->topLevelItemCount() >= 3);
+        // unticked: back to the decoders reading the EEPROM, the session starts again and the strip goes away
+        use->click();
+        QCOMPARE((int)r.f.dbg.simParams().params().get("fetch.source"), 0);
+        QVERIFY(r.until([&] { const ViewPtr v = r.f.dbg.session().view(); return v && !v->boot.active; }));
+        QVERIFY(r.until([&] { return !chip("CMD_HOLD")->isVisibleTo(r.w->dock("decoder")->widget()); }));
+        r.f.dbg.stop();
+    }
+
     // ---- the simulator parameters and the execution view
     static QTreeWidgetItem* paramRow(QTreeWidget* t, const char* key) {
         for (QTreeWidgetItemIterator it(t); *it; ++it) if ((*it)->data(0, Qt::UserRole).toString() == key) return *it;

@@ -115,6 +115,24 @@ struct State {
     struct SharedRes { Cycle freeAt = 0, grantAt = 0; int next = -1, last = -1; };
     SharedRes arb, xfer, flag, bus;                                         // CSR arbiter, Data Xfer, Status Flag unit, the I2C bus (EEPROM fetches, EXEC_XFER)
     bool fetched[2] = {false, false};                                       // the instruction at the pc has been read from the EEPROM (it executes next)
+    // fetch.source = frontend (frontend.cpp): what boot loaded into the program SRAM (the logical image of each domain, shared between snapshots), when boot
+    // is done, the instruction each Frontend is forming, and the one SRAM port they share.
+    std::shared_ptr<const std::vector<uint8_t>> sram[2];
+    Cycle bootStart = 0, bootMainEnd = 0, bootPeriEnd = 0;
+    struct FeRun {
+        bool valid = false;
+        uint32_t pc = 0;
+        Cycle hold = 0, opGet = 0, descGet = 0, dec = 0, fire = 0, exec = 0, done = 0;
+        std::vector<FrontendWord> words;
+    };
+    FeRun fe[2];
+    uint32_t feOpWord[2] = {0, 0};                                          // the word each opcode buffer holds
+    bool feOpValid[2] = {false, false};
+    // The SRAM cycles (2 per ISA cycle) in which a read is already issued on the shared port, sorted; the past is dropped. (A Frontend lays out all the reads
+    // of its instruction when it starts it: the other one takes the cycles in between that are still free, as it would in the hardware.)
+    std::vector<uint64_t> sramTaken;
+    uint64_t sramSlotFree[2] = {0, 0};                                      // frontend.sram_policy = slots: the next SRAM cycle of each domain's own slot
+    uint64_t sramReads[2] = {0, 0}, sramWaits[2] = {0, 0};
     uint64_t fetches[2] = {0, 0}, fetchCycles[2] = {0, 0}, busWaits[2] = {0, 0}, busWaitCycles[2] = {0, 0};
     uint64_t stalls[2] = {0, 0}, stallCycles[2] = {0, 0};                  // how often and how long each decoder was held back
     // the value of each stored signal before its last change, and when it changed (flag.sample_delay_*)
@@ -223,6 +241,13 @@ struct Simulator::Impl : public ExprBinder, public ExprEnv, public ActionContext
     std::vector<uint8_t> eepromReset;
     int regionSig[ER_COUNT] = {-1, -1, -1, -1, -1, -1};
     bool fetchEeprom = false;
+    // fetch.source = frontend: boot loads the ROM into the program SRAM, each Frontend goes through its seven states for every instruction (frontend.cpp)
+    bool fetchFrontend = false;
+    int bootLoad = 1, sramLatency = 1, sramPolicy = 0, feHold = 0, feDec = 1, feFire = 1;
+    void bootLoadSram();                               // at reset: the images as the ROM holds them, into st.sram; both sequencers held until it is done
+    bool beginFrontend(int who);                       // an instruction starts through the Frontend: its states are scheduled, it executes after CMD_FIRE
+    // The states of the instruction at `pc` from cycle `start`. commit: the SRAM port is taken (else: what it would be with nobody else reading).
+    State::FeRun planFrontend(int who, uint32_t pc, Cycle start, bool commit);
     int fetchMode = 0;                                 // fetch.read_mode: 0 sequential (one transaction per region read), 1 per_byte, 2 instant (no bus time)
     int fetchOverhead = 2;                             // fetch.transaction_overhead
     bool fetchTimed() const { return fetchEeprom && fetchMode != 2 && st.eeprom; }

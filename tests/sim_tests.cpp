@@ -503,6 +503,139 @@ static void t_verify_eeprom() {
     }
 }
 
+// fetch.source = frontend: boot loads the ROM into the one program SRAM, and every instruction goes through the seven states of the Frontend.
+static void t_frontend() {
+    section("the Frontend: boot loads the SRAM, seven states for every instruction");
+    const std::string prog = std::string(kDefs) + ".main\ns: ALU ADD unsigned\n MOV CONST(0x1234, 2) -> MAIN_SCRATCHPAD[0..1]\n EXEC_CSR WRITE8 MARK, 1\nh: JMP h\n";
+    Result r = assemble1(prog);
+    check(r.ok, "(the program assembles)", diags(r));
+    if (!r.ok) return;
+    auto cfgWith = [&](std::initializer_list<std::pair<const char*, const char*>> kv) {
+        SimConfig c;
+        std::string e;
+        c.params.set("fetch.source", "frontend", e);
+        for (const auto& p : kv) c.params.set(p.first, p.second, e);
+        return c;
+    };
+    {   // the other sources know nothing of it
+        Simulator plain(r, SimConfig());
+        check(!plain.frontendStatus(Domain::Main).active && !plain.bootStatus().active, "with the other fetch sources there is no Frontend status and no boot");
+    }
+    // ---- boot: both sequencers are held while the ROM is read; then the SRAM is locked and they are released together
+    {
+        Simulator sim(r, cfgWith({}));                                                // boot.load = i2c (the default)
+        const BootStatus b0 = sim.bootStatus();
+        check(b0.active && !b0.done && b0.phase == "loading Main image" && b0.wordsWritten == 0 && b0.mainWords == (uint32_t)r.main.words.size() && b0.periEnd > b0.mainEnd - 1 && b0.mainEnd > b0.start,
+              "at power-on boot is loading the Main image; nothing is written yet", b0.phase + " " + std::to_string(b0.mainEnd));
+        check(sim.frontendStatus(Domain::Main).state == "RESET" && !sim.frontendStatus(Domain::Main).forming, "the Frontend is held in reset while boot loads");
+        RunLimits half; half.maxCycles = (b0.mainEnd - b0.start) / 2; half.stopOnIdle = false;
+        sim.run(half);
+        const BootStatus b1 = sim.bootStatus();
+        check(!b1.done && b1.wordsWritten > 0 && b1.wordsWritten < b1.mainWords && sim.instructions(Domain::Main) == 0, "half way through: some of the words are written, no instruction has run",
+              std::to_string(b1.wordsWritten) + " of " + std::to_string(b1.mainWords));
+        RunLimits rest; rest.maxCycles = b0.periEnd - sim.now(); rest.stopOnIdle = false;
+        sim.run(rest);
+        check(sim.now() == b0.periEnd && sim.bootStatus().done && sim.bootStatus().phase == "locked, running" && sim.bootStatus().wordsWritten == b0.mainWords + b0.periWords,
+              "at the end of the load every word is written and the SRAM is locked");
+        // the bus time of the load: one sequential read per region
+        auto txn = [](int n) { return (uint64_t)((9LL * (4 + n) * 27000000 + 400000 - 1) / 400000) + 2; };
+        uint64_t want = 0;
+        const EepromMap map = sim.eepromMap();
+        for (int k = 0; k < 3; k++) if (map.region[k].size) want += txn((int)map.region[k].size);
+        check(b0.mainEnd - b0.start == (Cycle)want, "the Main image takes the bus time of reading its three regions from the ROM", std::to_string(b0.mainEnd - b0.start) + " vs " + std::to_string(want));
+    }
+    // ---- the states of one instruction (boot.load = instant, so that cycle 0 is the first instruction)
+    {
+        Simulator sim(r, cfgWith({{"boot.load", "instant"}}));
+        check(sim.bootStatus().done && sim.bootStatus().periEnd == 0, "boot.load = instant: the SRAM is loaded at once");
+        auto runTo = [&](Cycle c) { if (c > sim.now()) { RunLimits l; l.maxCycles = c - sim.now(); l.stopOnIdle = false; sim.run(l); } };
+        auto stateAt = [&](Cycle c) { runTo(c); return sim.frontendStatus(Domain::Main).state; };
+        // ALU ADD at pc 0: the opcode word (1 read, 1 SRAM cycle: captured on the next ISA edge), its 1-byte descriptor, CMD_DEC 1, CMD_FIRE 1
+        RunLimits one; one.maxCycles = 1; one.stopOnIdle = false;
+        sim.run(one);                                                             // (cycle 1: the Frontend has started)
+        const FrontendStatus f = sim.frontendStatus(Domain::Main);
+        check(f.active && f.forming && f.pc == 0 && f.hold == 0 && f.opGet == 0 && f.descGet == 1 && f.dec == 2 && f.fire == 3 && f.exec == 4,
+              "ALU ADD: CMD_OP_GET at 0, CMD_DESC_GET at 1, CMD_DEC at 2, CMD_FIRE at 3, executed at 4",
+              std::to_string(f.opGet) + " " + std::to_string(f.descGet) + " " + std::to_string(f.dec) + " " + std::to_string(f.fire) + " " + std::to_string(f.exec));
+        check(f.state == "CMD_DESC_GET" && sim.instructions(Domain::Main) == 0, "at cycle 1 it is in CMD_DESC_GET and nothing has executed", f.state);
+        check(f.words.size() == 2 && f.words[0].forOpcode && !f.words[0].buffered && f.words[0].done == 1 && !f.words[1].forOpcode && f.words[1].done == 2,
+              "two words read: the opcode's in CMD_OP_GET, the descriptor's in CMD_DESC_GET");
+        check(f.words[0].word == physicalByte(r.profile, Domain::Main, 0).word, "the opcode word is the SRAM word of logical byte 0");
+        check(stateAt(2) == "CMD_DEC" && stateAt(3) == "CMD_FIRE" && sim.instructions(Domain::Main) == 0, "then CMD_DEC, CMD_FIRE -- still not executed");
+        const DecodedLine alu = sim.decodedAt(Domain::Main, 0);
+        check(alu.fetchCycles == 4, "the listing's fetch time of the instruction is the four cycles to CMD_EXEC", std::to_string(alu.fetchCycles));
+        runTo(5);
+        check(sim.instructions(Domain::Main) >= 1 && sim.pcHits(Domain::Main)[0] == 1, "it has executed once the Frontend handed it over");
+        // the next instruction (MOV at pc 1): its opcode byte lies in the word the opcode buffer holds -- no read in CMD_OP_GET
+        const FrontendStatus g = sim.frontendStatus(Domain::Main);
+        check(g.forming && g.pc == 1 && !g.words.empty() && g.words[0].forOpcode && g.words[0].buffered, "the next opcode is in the buffered word: CMD_OP_GET reads nothing", g.state + " pc " + std::to_string(g.pc));
+        size_t descWords = 0;
+        for (const FrontendWord& w : g.words) if (!w.forOpcode && !w.buffered) descWords++;
+        check(descWords >= 2 && g.dec > g.descGet, "its descriptor (4 bytes) and the constants are read in CMD_DESC_GET", std::to_string(descWords) + " words");
+        // run to the end: the program does what it does with the other sources
+        RunLimits l; l.maxCycles = 5000;
+        sim.run(l);
+        Simulator ref(r, SimConfig());
+        std::string e;
+        SimConfig sr; sr.params.set("fetch.source", "sram", e);
+        Simulator plain(r, sr);
+        plain.run(l);
+        check(sim.halted(Domain::Main) && sim.readRegion("scratch", 0, 2) == plain.readRegion("scratch", 0, 2) && sim.instructions(Domain::Main) == plain.instructions(Domain::Main),
+              "the program ends in the same state as with fetch.source = sram (only the time differs)");
+        check(sim.now() > plain.now(), "...and takes longer: every instruction passes through the Frontend", std::to_string(sim.now()) + " vs " + std::to_string(plain.now()));
+        check(sim.frontendStatus(Domain::Main).sramReads >= 6, "the reads of the SRAM are counted", std::to_string(sim.frontendStatus(Domain::Main).sramReads));
+    }
+    // ---- the parameters: a slower SRAM, longer states
+    {
+        Simulator sim(r, cfgWith({{"boot.load", "instant"}, {"frontend.sram_latency", "4"}, {"frontend.dec_cycles", "3"}, {"frontend.hold_cycles", "2"}}));
+        RunLimits one; one.maxCycles = 1; one.stopOnIdle = false;
+        sim.run(one);
+        const FrontendStatus f = sim.frontendStatus(Domain::Main);
+        // hold 2 -> OP_GET at 2: issued in SRAM cycle 4, response 8, captured at ISA 4; DESC_GET at 4: issued 8, response 12, captured 6; DEC 3 -> 9; FIRE 1 -> 10
+        check(f.state == "CMD_HOLD" && f.opGet == 2 && f.descGet == 4 && f.dec == 6 && f.fire == 9 && f.exec == 10, "a 4-cycle SRAM, 2 cycles of hold and 3 of decode move every state accordingly",
+              std::to_string(f.opGet) + " " + std::to_string(f.descGet) + " " + std::to_string(f.dec) + " " + std::to_string(f.fire) + " " + std::to_string(f.exec));
+    }
+    // ---- two Frontends on the one port: "shared" makes one wait for the other, "slots" never
+    {
+        const std::string both = std::string(kDefs) + ".main\ns: ALU ADD unsigned\nh: JMP h\n.peri\np: BR.ALWAYS p2\np2: BR.ALWAYS p2\n";
+        Result rb = assemble1(both);
+        check(rb.ok, "(a program with both domains assembles)", diags(rb));
+        if (rb.ok) {
+            auto first = [&](const char* policy, Domain d) {
+                Simulator sim(rb, cfgWith({{"boot.load", "instant"}, {"frontend.sram_policy", policy}}));
+                RunLimits one; one.maxCycles = 1; one.stopOnIdle = false;
+                sim.run(one);
+                return sim.frontendStatus(d);
+            };
+            const FrontendStatus ms = first("shared", Domain::Main), ps = first("shared", Domain::Peri);
+            check(ms.forming && ps.forming && ms.words[0].waitedSramCycles == 0 && ps.words[0].waitedSramCycles == 1 && ps.sramWaitCycles >= 1,
+                  "shared: both ask in the same cycle -- Main is served first, Peri waits one SRAM cycle", std::to_string(ps.words[0].waitedSramCycles));
+            const FrontendStatus mt = first("slots", Domain::Main), pt = first("slots", Domain::Peri);
+            check(mt.forming && pt.forming && mt.sramWaitCycles == 0 && pt.words[0].done >= 1, "slots: each has its own SRAM cycle of the ISA cycle", std::to_string(pt.sramWaitCycles));
+        }
+    }
+    // ---- what is in the SRAM is what boot read: a ROM changed afterwards does not change the program; a ROM that was wrong at boot does
+    {
+        std::vector<uint8_t> eep;
+        EepromMap map;
+        std::string err;
+        const bool built = buildEeprom(r, r.profile, eep, map, err);
+        check(built, "(the EEPROM image is built)", err);
+        if (built) {
+            std::vector<uint8_t> bad = eep;
+            bad[map.region[ER_MAIN_CONST].addr] ^= 0xFF;
+            SimConfig c = cfgWith({{"boot.load", "instant"}});
+            c.eepromImage = bad;
+            c.eepromMap = map;
+            Simulator sim(r, c);
+            const std::vector<DecodedLine> lines = sim.decodedProgram(Domain::Main);
+            bool anyDiffers = false;
+            for (const DecodedLine& L : lines) anyDiffers = anyDiffers || !L.matches;
+            check(anyDiffers, "a ROM with a wrong constant: boot loads it, and the decoder's line says it is not what the assembler produced");
+        }
+    }
+}
+
 static void t_fetch_timing() {
     section("fetching from the I2C EEPROM: what an instruction reads, how long it takes, the shared bus");
     // 27 MHz / 400 kHz: 607.5 ISA cycles a byte phase; a random read of N bytes is 2 + 2 (address bytes) + N phases, plus 2 cycles a transaction
@@ -1671,6 +1804,7 @@ int main() {
     t_timing();
     t_eeprom();
     t_fetch_timing();
+    t_frontend();
     t_verify_eeprom();
     t_peri_units();
     t_main_units();
