@@ -241,6 +241,7 @@ BlockEditor::BlockEditor(AppContext& ctx, const std::string& path, QWidget* pare
     connect(typeblock_, &TypeBlockBox::chosenAssembler, this, [this](const QString& text) { insertAssembler(text); });
     connect(typeblock_, &TypeBlockBox::closed, this, [this] { view_->setFocus(); });
     connect(view_, &BlockView::zoomChanged, this, [this](double z) { zoomLabel_->setText(QString::number(qRound(z * 100)) + "%"); });
+    view_->setZoom(std::max(25, std::min(300, ctx_.settings.getInt("blocks.zoom", BlockView::kDefaultZoomPercent))) / 100.0);      // the zoom the canvas opens with
     connect(code_, &GeneratedCodePane::lineClicked, this, [this](int line) {
         if (syncing_) return;
         const std::string id = session_.blockAtLine(line);

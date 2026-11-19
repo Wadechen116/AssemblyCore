@@ -73,6 +73,7 @@ struct Fixture {
             b.set("fetch.read_mode", "instant", e);
             dbg.setBaseParams(b);
         }
+        settings.set("blocks.zoom", "100");                 // the block canvas at 100 % (the tests below measure it so); its default is tested on its own
         fs->write("/w/p.acproj", "name = p\nsource = main.asm\n");
         fs->write("/w/main.asm", ".csr C = 0x120\n.main\nstart: EXEC_CSR WRITE8 C, 1\n    ALU ADD unsigned\nh: JMP h\n");
         std::vector<std::string> errs;
@@ -2567,6 +2568,58 @@ private slots:
         QCOMPARE(r.ed->codePane().extraSelections().size(), 0);
         QVERIFY(r.ed->infoText().contains("block"));
     }
+    void theCanvasOpensAtTwoThirdsAndMainAndPeriLieNearEachOther() {
+        // the zoom a canvas opens with: 66 % unless the setting says otherwise; 1:1 still means 100 %
+        {
+            Fixture f;
+            f.settings.set("blocks.zoom", "");                                              // (as a user has it: not set)
+            PanelRegistry panels;
+            registerBuiltinPanels(panels);
+            f.fs->write("/w/prog.acblk", asmcore::blocks::serializeDocument(asmcore::blocks::importAsm(kBlockProg, "prog")));
+            MainWindow w(f.ctx, panels);
+            w.setQuiet(true);
+            w.resize(1000, 700);
+            w.show();
+            w.openProject("/w/p.acproj");
+            w.openFile("/w/prog.acblk");
+            auto* ed = qobject_cast<BlockEditor*>(w.tabs()->currentWidget());
+            QVERIFY(ed);
+            QVERIFY2(std::fabs(ed->view().zoom() - 0.66) < 1e-9, qPrintable(QString::number(ed->view().zoom())));
+            QVERIFY(ed->findChild<QToolButton*>("zoomReset"));
+            ed->findChild<QToolButton*>("zoomReset")->click();
+            QCOMPARE(ed->view().zoom(), 1.0);
+        }
+        {
+            Fixture f;
+            f.settings.set("blocks.zoom", "80");
+            PanelRegistry panels;
+            registerBuiltinPanels(panels);
+            f.fs->write("/w/prog.acblk", asmcore::blocks::serializeDocument(asmcore::blocks::importAsm(kBlockProg, "prog")));
+            MainWindow w(f.ctx, panels);
+            w.setQuiet(true);
+            w.show();
+            w.openProject("/w/p.acproj");
+            w.openFile("/w/prog.acblk");
+            auto* ed = qobject_cast<BlockEditor*>(w.tabs()->currentWidget());
+            QVERIFY(ed && std::fabs(ed->view().zoom() - 0.80) < 1e-9);
+        }
+        // Main and Peri side by side: a program turned into blocks has Peri right of Main without running under it, and near it; "tidy up" places them by
+        // the real widths with a small gap
+        {
+            Rig r(".devmap 0, I2C, 0x50\n.main\nstart: MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]\n JMP start\n.peri\np: EXEC_XFER READ dev=0, addr=0, addrlen=1, ptr=0\n BR.ALWAYS p\n");
+            auto& s = r.ed->session();
+            int mainI = -1, periI = -1;
+            for (size_t i = 0; i < s.document().sections.size(); i++) { if (s.document().sections[i].domain == "main") mainI = (int)i; if (s.document().sections[i].domain == "peri") periI = (int)i; }
+            QVERIFY(mainI >= 0 && periI >= 0);
+            auto bounds = [&](int i) { const auto& st = r.ed->scene().layout().stacks[(size_t)i]; return QRectF(st.origin.x + st.bounds.x, st.origin.y + st.bounds.y, st.bounds.w, st.bounds.h); };
+            const double gap0 = bounds(periI).left() - bounds(mainI).right();
+            QVERIFY2(gap0 >= 0 && gap0 < 260, qPrintable(QString("as imported: Peri starts %1 right of Main").arg(gap0)));
+            r.ed->tidy();
+            const double gap1 = bounds(periI).left() - bounds(mainI).right();
+            QVERIFY2(gap1 >= 20 && gap1 <= 40, qPrintable(QString("tidied: %1 between Main and Peri").arg(gap1)));
+        }
+    }
+
     void theWheelZoomsTheCanvas() {
         Rig r;
         BlockView& v = r.ed->view();

@@ -351,7 +351,8 @@ Document importAsm(const std::string& text, const std::string& name, ImportStats
             }
         };
         for (const Section& s : im.doc.sections) if (s.domain != "peri") widest(s.blocks);
-        const double rightX = std::max(560.0, std::ceil((leftW + 80) / 40) * 40);
+        // (close to the left column: the two programs are read side by side; "tidy up" in the editor places them by the real widths)
+        const double rightX = std::max(380.0, std::ceil((leftW + 30) / 20) * 20);
         for (Section& s : im.doc.sections) {
             const int col = s.domain == "peri" ? 1 : 0;
             size_t n = 0;

@@ -10,7 +10,7 @@ namespace acide {
 namespace blocks {
 
 struct TidyOptions {
-    double columnGap = 70;                     // between the columns
+    double columnGap = 30;                     // between the columns (Main and Peri are kept near each other)
     double rowGap = 36;                        // between stacks of a column
     double snap = 0;                           // > 0: positions are rounded to this grid
 };

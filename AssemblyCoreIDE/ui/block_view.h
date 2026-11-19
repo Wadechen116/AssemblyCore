@@ -14,6 +14,9 @@ public:
     double zoom() const { return zoom_; }
     void setTheme(const blocks::BlockTheme& t);
     static constexpr double kMinZoom = 0.25, kMaxZoom = 3.0;
+    // The zoom a canvas opens with: 66 % shows about twice as much of a program as 100 % and the text is still read with ease. The setting blocks.zoom
+    // (per cent, 25 .. 300) changes it; "1:1" and Ctrl+0 still go to 100 %.
+    static constexpr int kDefaultZoomPercent = 66;
     static constexpr const char* kSampleMime = "application/x-acblk-sample";
 
 public slots:
