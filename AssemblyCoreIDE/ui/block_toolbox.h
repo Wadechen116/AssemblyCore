@@ -44,10 +44,14 @@ public:
     void refresh();                                                // the catalog changed (a block was added / removed): build the drawers again, keeping what is open and the filter
     void setSelectionAvailable(bool on) { selectionAvailable_ = on; }
     // How a sample is drawn: a picture of its blocks as the canvas draws them (the editor renders them with its scene). Not set, or a null picture: the sample is a line of text.
-    using Previewer = std::function<QImage(const blocks::CatalogEntry&)>;
+    // `scale`: the size the blocks are drawn at (1 = as on the canvas). The toolbox asks for the picture at the size it shows it, so the text is sharp.
+    using Previewer = std::function<QImage(const blocks::CatalogEntry&, double scale)>;
     void setPreviewer(Previewer p) { previewer_ = std::move(p); refresh(); }
     // The picture of a sample, drawn the first time it is needed (a row being shown) and kept until the drawers are built again. Null: no picture.
-    QImage picture(const QString& entryId) const;
+    QImage picture(const QString& entryId) const;                 // at the size of the canvas (what a drag carries; its size is what a row is measured from)
+    QImage picture(const QString& entryId, double scale) const;   // drawn at `scale` (what a row shows)
+    // The size samples are shown at: kScale of the canvas, smaller (down to kMinScale) for a block too wide for the toolbox.
+    static constexpr double kScale = 0.95, kMinScale = 0.72;
 
 signals:
     void activated(const QString& entryId);                        // double click / Enter on a sample
@@ -66,6 +70,7 @@ private:
     bool selectionAvailable_ = false;
     Previewer previewer_;
     mutable std::map<QString, QImage> pictures_;
+    mutable std::map<std::pair<QString, int>, QImage> scaled_;     // (entry, scale in hundredths)
 };
 
 }  // namespace acide

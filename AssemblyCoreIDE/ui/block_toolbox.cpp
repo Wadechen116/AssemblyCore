@@ -43,8 +43,8 @@ static QString hardwareTitle(const std::string& title) {
 // The samples drawn as blocks: the picture of the sample (smaller than on the canvas, so that a drawer shows many), the [Main] / [Peri] / star marks on it.
 // A picture that is too wide for the toolbox is made smaller still (down to kMinScale), then cut off with a fade; a tall pattern is cut off at the bottom.
 namespace {
-constexpr double kScale = 0.8, kMinScale = 0.55;
-constexpr int kMaxHeight = 150, kPad = 3;
+constexpr double kScale = BlockToolbox::kScale, kMinScale = BlockToolbox::kMinScale;
+constexpr int kMaxHeight = 190, kPad = 4;
 
 class SampleDelegate : public QStyledItemDelegate {
 public:
@@ -58,7 +58,8 @@ public:
     static int captionHeight(const QStyleOptionViewItem& o, const QModelIndex& i) { return captionOf(i).isEmpty() ? 0 : (int)std::ceil(QFontMetricsF(captionFont(o)).height()) + 2; }
 
     // the scale a picture is drawn at in a row `width` wide: kScale, smaller (down to kMinScale) when the block is too wide for the toolbox
-    static double scaleFor(const QSizeF& full, double width) { return std::max(kMinScale, std::min(kScale, (width - 2 - 2 * kPad) / std::max(1.0, full.width()))); }
+    // (in hundredths: the picture is drawn at exactly this size, and kept by it)
+    static double scaleFor(const QSizeF& full, double width) { return std::floor(std::max(kMinScale, std::min(kScale, (width - 2 - 2 * kPad) / std::max(1.0, full.width()))) * 100.0) / 100.0; }
     static double rowWidth(const QStyleOptionViewItem& o) {
         const auto* tv = qobject_cast<const QTreeView*>(o.widget);
         return tv ? tv->viewport()->width() - tv->indentation() : 200;          // a sample is one level in
@@ -109,8 +110,10 @@ public:
             layer.setDevicePixelRatio(dpr);
             layer.fill(Qt::transparent);
             QPainter lp(&layer);
-            lp.setRenderHint(QPainter::SmoothPixmapTransform, true);
-            lp.drawImage(QRectF(QPointF(0, 0), s), img);
+            // the blocks drawn AT this size (sharp text), not the full-size picture shrunk; that one only if the sharp one cannot be made
+            const QImage sharp = box_->picture(i.data(Qt::UserRole).toString(), sc);
+            if (!sharp.isNull()) lp.drawImage(QPointF(0, 0), sharp);
+            else { lp.setRenderHint(QPainter::SmoothPixmapTransform, true); lp.drawImage(QRectF(QPointF(0, 0), s), img); }
             lp.setCompositionMode(QPainter::CompositionMode_DestinationIn);
             if (s.width() > clip.width() + 0.5) {
                 QLinearGradient g(clip.width() - 24, 0, clip.width(), 0);
@@ -276,15 +279,30 @@ QImage BlockToolbox::picture(const QString& entryId) const {
     auto it = pictures_.find(entryId);
     if (it != pictures_.end()) return it->second;
     const CatalogEntry* e = catalog_.find(entryId.toStdString());
-    QImage img = e ? previewer_(*e) : QImage();
+    QImage img = e ? previewer_(*e, 1.0) : QImage();
     if (!img.isNull() && (img.width() < 2 || img.height() < 2)) img = QImage();
     pictures_[entryId] = img;
+    return img;
+}
+
+QImage BlockToolbox::picture(const QString& entryId, double scale) const {
+    if (!previewer_ || entryId.isEmpty()) return QImage();
+    const int key = (int)std::lround(scale * 100);
+    if (key == 100) return picture(entryId);
+    auto it = scaled_.find({entryId, key});
+    if (it != scaled_.end()) return it->second;
+    const CatalogEntry* e = catalog_.find(entryId.toStdString());
+    QImage img = e ? previewer_(*e, key / 100.0) : QImage();
+    if (!img.isNull() && (img.width() < 2 || img.height() < 2)) img = QImage();
+    if (scaled_.size() > 600) scaled_.clear();                                 // (the toolbox was dragged through many widths)
+    scaled_[{entryId, key}] = img;
     return img;
 }
 
 void BlockToolbox::build() {
     tree_->clear();
     pictures_.clear();                                                           // (the catalog or the theme changed: the pictures are drawn again when shown)
+    scaled_.clear();
     for (const blocks::BlockCatalog::Drawer& d : catalog_.drawers()) {
         const bool pattern = d.cls == "pattern";
         const QColor col = pattern ? toQColor(theme_.selection) : toQColor(theme_.categoryColor(d.name));

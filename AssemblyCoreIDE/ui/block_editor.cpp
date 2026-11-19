@@ -160,7 +160,7 @@ BlockEditor::BlockEditor(AppContext& ctx, const std::string& path, QWidget* pare
     blocksPage_->addWidget(view_);
     blocksPage_->setStretchFactor(0, 0);
     blocksPage_->setStretchFactor(1, 1);
-    blocksPage_->setSizes({210, 700});
+    blocksPage_->setSizes({260, 700});                                    // (the toolbox: wide enough for most single blocks at their toolbox size)
     blocksPage_->setCollapsible(1, false);
     {                                                           // the blocks of the user's own
         std::vector<blocks::CustomBlock> mine;
@@ -169,9 +169,9 @@ BlockEditor::BlockEditor(AppContext& ctx, const std::string& path, QWidget* pare
         toolbox_->refresh();
     }
     // the samples of the toolbox drawn as blocks, the way the canvas draws them
-    toolbox_->setPreviewer([this](const blocks::CatalogEntry& e) {
+    toolbox_->setPreviewer([this](const blocks::CatalogEntry& e, double scale) {
         asmcore::blocks::Document scratch;                                    // fresh ids from a throwaway document: the program's own is not touched
-        return scene_->preview(catalog_.instantiate(e, scratch), toolbox_->devicePixelRatioF());
+        return scene_->preview(catalog_.instantiate(e, scratch), toolbox_->devicePixelRatioF(), scale);
     });
     typeblock_ = new TypeBlockBox(catalog_, this);
     pages_->addWidget(blocksPage_);

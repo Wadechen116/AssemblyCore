@@ -84,7 +84,9 @@ public:
     void setTheme(const blocks::BlockTheme& t);
     void setLayoutStyle(const blocks::LayoutStyle& s);
     // A picture of blocks as the canvas draws them (same layout, theme and fonts), without the stack's header: the samples of the toolbox. Null if there is nothing to draw.
-    QImage preview(const std::vector<asmcore::blocks::Block>& blocks, qreal dpr);
+    // `scale`: the blocks are DRAWN at that size (text and outlines are rasterized at the size they are shown), not drawn full size and shrunk afterwards --
+    // a picture scaled down as a bitmap has soft, hard-to-read text.
+    QImage preview(const std::vector<asmcore::blocks::Block>& blocks, qreal dpr, qreal scale = 1.0);
 
     // The blocks drawn with a badge: id -> the message shown as tooltip.
     const std::map<std::string, std::string>& problems() const { return problems_; }
