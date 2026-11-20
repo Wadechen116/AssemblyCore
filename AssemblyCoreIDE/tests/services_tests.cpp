@@ -273,8 +273,14 @@ static void t_sim_params_file_words() {
     check(text.find("initial value: false; one of: true | false)\ndatapath.contention = true\n") != std::string::npos, "a switch says true | false");
     asmcore::SimParams back;
     std::vector<std::string> errs;
-    check(back.load(text, errs) && errs.empty() && back.serialize() == p.serialize() && back.status("latency.alu") == "measured" && back.note("latency.alu") == "ILA run 3",
-          "the commented file reads back to the same values, status and note", errs.empty() ? "" : errs[0]);
+    check(text.find("\nfetch.source = frontend\nfetch.source.note = where the two decoders read the code") != std::string::npos
+          && text.find("\nlatency.alu.note = ILA run 3\n") != std::string::npos && text.find("latency.alu.note = ALU add") == std::string::npos,
+          "KEY.note is never missing: the user's own note, or -- when there is none -- the purpose");
+    check(back.load(text, errs) && errs.empty() && back.get("latency.alu") == 7 && back.text("fetch.source") == "frontend" && back.status("latency.alu") == "measured"
+          && back.note("latency.alu") == "ILA run 3" && back.note("fetch.source").find("where the two decoders") == 0,
+          "the file reads back: the values, the status, the user's note -- and the purpose notes as they were written", errs.empty() ? "" : errs[0]);
+    back.dropNotesThatAre([](const asmcore::ParamDef& d, const std::string& n) { return n == d.help; });
+    check(back.serialize() == p.serialize(), "with the purpose notes dropped it is the same set as before: they are the writer's, not the user's", back.serialize());
     // every parameter of the catalog can be described (no empty purpose)
     bool all = true;
     for (const asmcore::ParamDef& d : asmcore::paramCatalog()) all = all && !d.help.empty() && asmcore::describeParam(d).find("initial value:") != std::string::npos;
@@ -293,6 +299,25 @@ static void t_sim_params_file_words() {
     fs->read("/p/x.simparams", disk);
     check(disk.find("; extra cycles from EXEC_XFER to the I2C master starting (the i2ch block)\n") != std::string::npos && disk.find("\ni2ch.overhead = 4\n") != std::string::npos,
           "the saved file carries the purpose of the parameter", disk);
+    check(disk.find("\ni2ch.overhead = 4\ni2ch.overhead.note = extra cycles from EXEC_XFER to the I2C master starting (the i2ch block)\n") != std::string::npos,
+          "... also as KEY.note, since the user wrote none", disk);
+    {
+        SimParamsStore again(ws);
+        std::vector<std::string> le;
+        check(again.load("/p/x.simparams", le) && again.params().get("i2ch.overhead") == 4 && again.params().note("i2ch.overhead").empty() && !again.dirty(),
+              "read back, that note is not taken for the user's: the store has no note for it");
+        std::string e3;
+        again.setNote("i2ch.overhead", "scope capture 12");
+        again.save(e3);
+        std::string d2;
+        fs->read("/p/x.simparams", d2);
+        check(d2.find("\ni2ch.overhead.note = scope capture 12\n") != std::string::npos && d2.find("i2ch.overhead.note = extra cycles") == std::string::npos,
+              "a note of the user's is written instead of the purpose", d2);
+        SimParamsStore third(ws);
+        check(third.load("/p/x.simparams", le) && third.params().note("i2ch.overhead") == "scope capture 12", "... and is kept when the file is read");
+        again.setNote("i2ch.overhead", "");
+        again.save(e3);
+    }
     setSimParamsFileWords([] { asmcore::SimParams::FileWords x; x.header = "H"; x.describe = [](const asmcore::ParamDef& d) { return "about " + d.key; }; return x; });
     st.set("i2ch.overhead", "5", e);
     check(ws.find("/p/x.simparams") && ws.find("/p/x.simparams")->text == "; H\n[params]\n; about i2ch.overhead\ni2ch.overhead = 5\n",

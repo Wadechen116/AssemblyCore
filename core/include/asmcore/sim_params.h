@@ -56,6 +56,8 @@ public:
     std::string note(const std::string& key) const { auto it = note_.find(key); return it == note_.end() ? std::string() : it->second; }
 
     void merge(const SimParams& other);                     // the values of `other` win
+    // Forgets every note for which `isDefault(parameter, note)` holds: the notes a writer put in place of a missing one (FileWords::defaultNote).
+    void dropNotesThatAre(const std::function<bool(const ParamDef&, const std::string& note)>& isDefault);
     size_t size() const { return v_.size(); }
     std::vector<std::string> keys() const;                  // the keys that are set, in catalog order
 
@@ -68,6 +70,9 @@ public:
     struct FileWords {
         std::string header;                                            // "" = none
         std::function<std::string(const ParamDef&)> describe;         // empty = no line above the parameters
+        // What KEY.note says for a parameter the user wrote no note for: its purpose, so that the note is never missing from the file (empty = no
+        // such line). It is a note the WRITER put there, not the user's: whoever reads the file back drops it again (dropNotesThatAre).
+        std::function<std::string(const ParamDef&)> defaultNote;
     };
     std::string serialize(const FileWords* words = nullptr) const;
 

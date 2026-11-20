@@ -197,6 +197,7 @@ asmcore::SimParams::FileWords simParamsFileWordsForUi() {
     w.header = words(QT_TRANSLATE_NOOP("SimParamFile", "Hardware parameters of the simulator: only what differs from the initial (planning) values.")).toStdString() + "\n"
              + words(QT_TRANSLATE_NOOP("SimParamFile", "The comment above each parameter says what it is for; the comments are written again on every save.")).toStdString() + "\n"
              + words(QT_TRANSLATE_NOOP("SimParamFile", "After measuring on the FPGA:  KEY.status = measured (or confirmed)   KEY.note = how it was measured")).toStdString();
+    w.defaultNote = [](const asmcore::ParamDef& d) { return simParamPurpose(d).toStdString(); };      // KEY.note of a parameter the user wrote no note for
     w.describe = [](const asmcore::ParamDef& d) {
         const std::string unit = words(QT_TRANSLATE_NOOP("SimParamFile", "unit:")).toStdString(), initial = words(QT_TRANSLATE_NOOP("SimParamFile", "initial value:")).toStdString(),
                           range = words(QT_TRANSLATE_NOOP("SimParamFile", "range:")).toStdString(), oneOf = words(QT_TRANSLATE_NOOP("SimParamFile", "one of:")).toStdString();

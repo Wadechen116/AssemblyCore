@@ -59,6 +59,11 @@ bool SimParamsStore::load(const std::string& absPath, std::vector<std::string>& 
     else if (!ws_.fileSystem()->read(absPath, text)) { errors.push_back("cannot read " + absPath); return false; }
     asmcore::SimParams n;
     const bool ok = n.load(text, errors);
+    {   // a note that only repeats the purpose was written by a writer of the file (FileWords::defaultNote), in its language or in the catalog's:
+        // it is not the user's note
+        const asmcore::SimParams::FileWords w = simParamsFileWords();
+        n.dropNotesThatAre([&](const asmcore::ParamDef& d, const std::string& note) { return note == d.help || (w.defaultNote && note == w.defaultNote(d)); });
+    }
     p_ = n;
     path_ = absPath;
     dirty_ = false;

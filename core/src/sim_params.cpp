@@ -309,8 +309,23 @@ std::string SimParams::serialize(const FileWords* words) const {
         o << k << " = " << text(k) << "\n";
         if (status(k) != "planning") o << k << ".status = " << status(k) << "\n";
         if (!note(k).empty()) o << k << ".note = " << note(k) << "\n";
+        else if (words && words->defaultNote) {                          // no note of the user's: the purpose, so that the file always has one
+            if (const ParamDef* d = findParam(k)) {
+                std::string t = words->defaultNote(*d);
+                for (char& c : t) if (c == '\n' || c == '\r') c = ' ';
+                if (!t.empty()) o << k << ".note = " << t << "\n";
+            }
+        }
     }
     return o.str();
+}
+
+void SimParams::dropNotesThatAre(const std::function<bool(const ParamDef&, const std::string&)>& isDefault) {
+    if (!isDefault) return;
+    for (auto it = note_.begin(); it != note_.end();) {
+        const ParamDef* d = findParam(it->first);
+        if (d && isDefault(*d, it->second)) it = note_.erase(it); else ++it;
+    }
 }
 
 // "unit ISA cycles; initial value 1; range 0 .. 100000"  /  "initial value eeprom; one of eeprom | sram | frontend"
@@ -333,6 +348,7 @@ SimParams::FileWords defaultFileWords() {
                "The comment above each parameter says what it is for; the comments are written again on every save.\n"
                "After measuring on the FPGA:  KEY.status = measured (or confirmed)   KEY.note = how it was measured";
     w.describe = describeParam;
+    w.defaultNote = [](const ParamDef& d) { return d.help; };
     return w;
 }
 

@@ -364,6 +364,12 @@ private slots:
         QVERIFY(f.fs->read("/w/p.simparams", zh));
         const QString z = QString::fromStdString(zh);
         QVERIFY2(z.contains(QString::fromUtf8("; ALU 加、減、比較、邏輯、移位一道指令的執行週期\n")) && z.contains("\nlatency.alu = 4\n") && chinese(z.section('\n', 0, 0)), zh.c_str());
+        QVERIFY2(z.contains(QString::fromUtf8("\nlatency.alu = 4\nlatency.alu.note = ALU 加、減、比較、邏輯、移位一道指令的執行週期\n")), zh.c_str());       // KEY.note too
+        {   // read again by the IDE, that note is not the user's: the Note column shows it as the purpose, and nothing counts as changed by it
+            std::vector<std::string> le;
+            QVERIFY(f.dbg.simParams().load("/w/p.simparams", le));
+            QVERIFY(f.dbg.simParams().params().note("latency.alu").empty() && !f.dbg.simParams().dirty());
+        }
         asmcore::SimParams back;                                            // and it still reads back
         std::vector<std::string> errs;
         QVERIFY(back.load(zh, errs) && errs.empty() && back.get("latency.alu") == 4);
