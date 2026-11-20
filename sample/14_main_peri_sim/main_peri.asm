@@ -51,8 +51,12 @@ window:                                     ; the Frame Timing: only in the blan
     BR.COND PGL_COMMIT_ELIGIBLE, commit
     JMP     window
 
+; How long the commit takes once the check has passed: fetching the write from the I2C EEPROM + executing it. The build reports it (Output panel, .map).
+; It does NOT include waiting for Peri to let go of the shared bus (up to 10,334 cycles at 400 kHz, see README): frame.wcet_pgl must cover both.
+.wcet commit_write, commit, committed
 commit:                                     ; inside the window: only the write itself (its EEPROM fetch + execution must fit: frame.wcet_pgl)
     EXEC_CSR WRITE_SP GYRO_X_CORR_L, len=2, ptr=10             ; the result: CSR 0x120 / 0x121
+committed:
     JMP     start
 
 drop:                                       ; an id Main does not know: consume and drop

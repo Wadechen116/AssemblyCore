@@ -33,6 +33,10 @@
 | 執行 `WRITE_SP` | 6 | 6 |
 | **合計＝`frame.wcet_pgl` 該設的值** | **17,634**（比視窗 14,362 還長） | **7,063** |
 
+表中第二、三列的和（7,300／2,926）由建置直接算出：程式裡有一行 `.wcet commit_write, commit, committed`，在 IDE 按 F7 後輸出面板會顯示
+`WCET commit_write: 7300 cycles (6 executing + 7294 fetching the instructions)`；把 `clock.i2c_hz` 改成 1000000 會變成 2926。命令列：`asmc main_peri.asm -I ../common --params main_peri.simparams`。
+**這個數字不含第一列**（等 Peri 用完匯流排）：WCET 只算 Main 自己取指與執行的時間，等另一個 sequencer 的時間取決於對方當時在做什麼。所以 `frame.wcet_pgl` 要設的是「WCET 查詢的結果＋最長的等待」，不是查詢結果本身。
+
 實測（`--param frame.wcet_pgl=…`，看寫入時 `vblank_open`）：
 
 | 設定 | 寫入週期 | 在視窗內？ |
