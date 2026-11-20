@@ -11,3 +11,5 @@ docs/isa_seq_v1.6_r10_detailed_spec_v24_zhTW.docx
 # backups the IDE keeps when blocks take over an assembler file
 *.asm.bak
 __pycache__/
+# images and tables of the conformance kit (make_conformance.py writes them)
+conformance/out/

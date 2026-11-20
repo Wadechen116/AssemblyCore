@@ -1,0 +1,11 @@
+﻿位址,位移,預期值,意義,取決於
+0x600,RES+0,0x02,"AND，OPA = 0x0000、OPB = 0x0000：zero（結果為 0）","各旗標的「位置」是假設（規格只列旗標、沒有給位元）：bit0 cmp_true、1 zero、2 negative、3 carry_u、4 borrow_u、5 overflow_s、6 ov16"
+0x601,RES+1,0x04,"OR，OPA = 0x8000、OPB = 0x0000：negative（邏輯結果的 bit 15）","各旗標的「位置」是假設（規格只列旗標、沒有給位元）：bit0 cmp_true、1 zero、2 negative、3 carry_u、4 borrow_u、5 overflow_s、6 ov16"
+0x602,RES+2,0x40,"SHL 1 unsigned，OPA = 0x8000、OPB = 0x0000：ov16（0x10000 放不進 16 位元）","各旗標的「位置」是假設（規格只列旗標、沒有給位元）：bit0 cmp_true、1 zero、2 negative、3 carry_u、4 borrow_u、5 overflow_s、6 ov16"
+0x603,RES+3,0x48,"ADD unsigned，OPA = 0xFFFF、OPB = 0x0001：carry_u + ov16（0x10000：16 位元的進位）","各旗標的「位置」是假設（規格只列旗標、沒有給位元）：bit0 cmp_true、1 zero、2 negative、3 carry_u、4 borrow_u、5 overflow_s、6 ov16"
+0x604,RES+4,0x54,"SUB unsigned，OPA = 0x0003、OPB = 0x0007：negative + borrow_u + ov16（3 − 7 發生借位）","各旗標的「位置」是假設（規格只列旗標、沒有給位元）：bit0 cmp_true、1 zero、2 negative、3 carry_u、4 borrow_u、5 overflow_s、6 ov16"
+0x605,RES+5,0x60,"ADD signed，OPA = 0x7FFF、OPB = 0x0001：overflow_s + ov16（32767 + 1 超出有號 16 位元的範圍）","各旗標的「位置」是假設（規格只列旗標、沒有給位元）：bit0 cmp_true、1 zero、2 negative、3 carry_u、4 borrow_u、5 overflow_s、6 ov16"
+0x606,RES+6,0x00,"ADD unsigned，OPA = 0x0001、OPB = 0x0001：沒有旗標（結果是 2，沒有特別的狀況）","各旗標的「位置」是假設（規格只列旗標、沒有給位元）：bit0 cmp_true、1 zero、2 negative、3 carry_u、4 borrow_u、5 overflow_s、6 ov16"
+0x607,RES+7,0x01,"CMP.EQ unsigned，OPA = 0x0005、OPB = 0x0005：cmp_true（相等；前一道 ADD 的旗標保留——比較只改 cmp_true）","各旗標的「位置」是假設（規格只列旗標、沒有給位元）：bit0 cmp_true、1 zero、2 negative、3 carry_u、4 borrow_u、5 overflow_s、6 ov16"
+0x608,RES+8,0x01,"ADD unsigned，OPA = 0x0001、OPB = 0x0001：cmp_true（cmp_true 保持到下一次比較）","各旗標的「位置」是假設（規格只列旗標、沒有給位元）：bit0 cmp_true、1 zero、2 negative、3 carry_u、4 borrow_u、5 overflow_s、6 ov16"
+0x67F,RES_DONE,0xA5,"測試的最後一次寫入",""

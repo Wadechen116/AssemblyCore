@@ -131,7 +131,7 @@ CMake 與 QMake 都能建置、低耦合高彈性、**不做**寫入板子（F4�
 
 | 平台 | 工具鏈 | 結果 |
 |---|---|---|
-| Linux（WSL Ubuntu） | GCC 13、Qt 6.5.3；CMake **與** QMake | CMake：`ctest` 15/15 通過（2026-11-20）。QMake：檔案清單與 CMake 一致（檢查腳本通過），近期未實際用 QMake 重建 |
+| Linux（WSL Ubuntu） | GCC 13、Qt 6.5.3；CMake **與** QMake | CMake：`ctest` 16/16 通過（2026-11-20）。QMake：檔案清單與 CMake 一致（檢查腳本通過），近期未實際用 QMake 重建 |
 | Windows | MinGW 11.2、Qt 6.5.3 MinGW 版、CMake | 2026-10-19 全部通過，之後未再驗證；GUI 測試需 `ACIDE_TEST_OUT=<目錄>` 才讀得到結果（GUI 子系統無主控台） |
 | Windows（MSVC 2026） | Visual Studio Community 2026（工具集 14.51），Qt 6.5.3 `msvc2019_64`，CMake＋Ninja | 零警告，核心與服務層測試通過（2026-11-19）；UI 測試自 2026-11-18 起未重跑；需 `ui/msvc_stdext_compat.h`（見下）；發佈資料夾在 `dist/msvc2026/` |
 | macOS | — | **尚未驗證**（此環境沒有 macOS）；程式碼未使用平台 API，檔案存取用 `std::filesystem`，預期只需 Qt 6 與 CMake／qmake |
