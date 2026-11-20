@@ -51,7 +51,7 @@
 | 新的追蹤或輸出格式 | 實作 `EventSink` 並 `addSink`（不需改核心） |
 | 新的情境腳本指令 | `runScenario(sim, script, &extra)` 傳入 `ScenarioCommand` |
 | 新的注入命令 | `Impl::applyCommand`（`sim/run.cpp`）與 `Simulator::inject`（`sim/debug.cpp`）的已知命令清單 |
-| 新的硬體參數（延遲、仲裁規則、時脈…） | `core/src/sim_params.cpp` 的目錄（`add`／`choice`：鍵、群組、單位、預設、範圍、說明、FPGA 上怎麼量）；之後重新產生文件：`gen_sim_params_doc > docs/SIM_PARAMS.md`，並在 `AssemblyCoreIDE/ui/param_texts.cpp` 的清單加上它的鍵、在翻譯檔補上中文用途（寫進 `.simparams` 的註解；UI 測試會檢查每個參數都有）。**新參數的預設值不可改變既有結果**（使用者明確指定的例外才可以） |
+| 新的硬體參數（延遲、仲裁規則、時脈…） | `core/src/sim_params.cpp` 的目錄（`add`／`choice`：鍵、群組、單位、預設、範圍、說明、FPGA 上怎麼量）；之後重新產生文件：`gen_sim_params_doc > docs/SIM_PARAMS.md`，並在 `AssemblyCoreIDE/ui/param_texts.cpp` 的清單加上它的鍵（有量測方法的再加進量測清單，新的單位加進單位清單）、在翻譯檔補上中文（用途寫進 `.simparams` 的註解，也顯示在參數面板；UI 測試會檢查每個參數都有）。**新參數的預設值不可改變既有結果**（使用者明確指定的例外才可以） |
 | 取指來源與時間（EEPROM、SRAM、Frontend） | 參數 `fetch.source`、`fetch.read_mode`、`boot.load`、`frontend.*`；EEPROM 的六個區域在 `core/include/asmcore/eeprom.h`／`eeprom.cpp`；Frontend 七個狀態的模型在 `sim/frontend.cpp`（`bootLoadSram`、`planFrontend`、`beginFrontend`） |
 | 解碼器如何由位元組形成指令（顯示用的各階段） | `sim/decode.cpp`（`DecodedLine`、`DecodeRead`） |
 | 取指時間的算法（也是 WCET 計入的取指時間） | EEPROM：`sim/decode.cpp` 的 `fetchCost`（I2C 階段數的公式）；Frontend：`sim/frontend.cpp` 的 `planFrontend`。WCET 經由 `sim::fetchTimes`／`assembleWithFetch` 取用同一份結果，不必另外同步；組譯器端只認 `Options::fetchCycles`（每道指令的取指週期），不知道取指模型 |

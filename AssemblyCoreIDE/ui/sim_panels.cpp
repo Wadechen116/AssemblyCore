@@ -46,6 +46,7 @@
 #include <cstring>
 #include <map>
 
+#include "param_texts.h"
 #include "app_context.h"
 #include "document_tab.h"
 #include "isa_top_view.h"
@@ -98,7 +99,9 @@ int paramScore1(const ParamDef& d, const QString& f) {
     if (key.startsWith(f, Qt::CaseInsensitive)) return 4;
     if (key.contains(f, Qt::CaseInsensitive)) return 3;
     if (groupName(d.group).contains(f, Qt::CaseInsensitive) || fromStd(d.group).contains(f, Qt::CaseInsensitive) || fromStd(d.unit).contains(f, Qt::CaseInsensitive)) return 2;
+    if (simParamUnit(d).contains(f, Qt::CaseInsensitive)) return 2;                                       // (the unit as it is shown)
     if (fromStd(d.help).contains(f, Qt::CaseInsensitive) || fromStd(d.measure).contains(f, Qt::CaseInsensitive)) return 1;
+    if (simParamPurpose(d).contains(f, Qt::CaseInsensitive) || simParamMeasure(d).contains(f, Qt::CaseInsensitive)) return 1;      // ... and the texts as they are shown
     return 0;
 }
 
@@ -273,10 +276,10 @@ private:
                 group->setFont(0, gf);
                 group->setExpanded(true);
             }
-            auto* it = new QTreeWidgetItem(group, {fromStd(d.key), QString(), fromStd(d.unit), QString::fromStdString(SimParams().text(d.key)), QString(), QString()});
+            auto* it = new QTreeWidgetItem(group, {fromStd(d.key), QString(), simParamUnit(d), QString::fromStdString(SimParams().text(d.key)), QString(), QString()});
             it->setData(0, Qt::UserRole, fromStd(d.key));
             it->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable | Qt::ItemIsEditable);
-            it->setToolTip(0, fromStd(d.help + (d.measure.empty() ? std::string() : "\n" + std::string("measure: ") + d.measure)));
+            it->setToolTip(0, simParamTip(d));
         }
         for (int c = 0; c < 5; c++) tree_->resizeColumnToContents(c);
         tree_->setColumnWidth(0, std::max(tree_->columnWidth(0), 190));
@@ -348,8 +351,8 @@ private:
         if (d->kind == ParamDef::Enum) { for (const std::string& o : d->options) range += (range.isEmpty() ? "" : " | ") + fromStd(o); }
         else if (d->kind == ParamDef::Bool) range = "true | false";
         else range = QString("%1 .. %2").arg(d->lo).arg(d->hi);
-        QString t = "<b>" + fromStd(d->key).toHtmlEscaped() + "</b>  (" + range.toHtmlEscaped() + (d->unit.empty() ? QString() : ", " + fromStd(d->unit).toHtmlEscaped()) + ")<br>" + fromStd(d->help).toHtmlEscaped();
-        if (!d->measure.empty()) t += "<br><i>" + tr("on the FPGA:") + "</i> " + fromStd(d->measure).toHtmlEscaped();
+        QString t = "<b>" + fromStd(d->key).toHtmlEscaped() + "</b>  (" + range.toHtmlEscaped() + (d->unit.empty() ? QString() : ", " + simParamUnit(*d).toHtmlEscaped()) + ")<br>" + simParamPurpose(*d).toHtmlEscaped();
+        if (!d->measure.empty()) t += "<br><i>" + tr("on the FPGA:") + "</i> " + simParamMeasure(*d).toHtmlEscaped();
         if (!d->active) t += "<br><i>" + tr("The simulator does not use this one yet: it is kept in the file for when it does.") + "</i>";
         help_->setText(t);
     }
@@ -1410,10 +1413,10 @@ private:
             auto* h = new QHBoxLayout(box);
             h->setContentsMargins(2, 0, 2, 0);
             auto* name = new QLabel(fromStd(d.key));
-            name->setToolTip(fromStd(d.help + (d.measure.empty() ? std::string() : "\nmeasure: " + d.measure)));
+            name->setToolTip(simParamTip(d));
             name->setMinimumWidth(170);
             QWidget* ed = valueEditor(store_, d, box);
-            auto* unit = new QLabel(fromStd(d.unit));
+            auto* unit = new QLabel(simParamUnit(d));
             unit->setEnabled(false);
             auto* pin = new QToolButton;
             pin->setAutoRaise(true);
@@ -1567,14 +1570,14 @@ private:
     struct Row { std::string key; QWidget* editor; QLabel* name; QLabel* initial; QToolButton* reset; };
     void addRow(QGridLayout* grid, int row, const ParamDef& d) {
         auto* name = new QLabel(fromStd(d.key));
-        name->setToolTip(fromStd(d.help + (d.measure.empty() ? std::string() : "\nmeasure: " + d.measure)));
+        name->setToolTip(simParamTip(d));
         QFont bold = name->font();
         bold.setBold(true);
         name->setMinimumWidth(QFontMetrics(bold).horizontalAdvance(fromStd(d.key)) + 8);        // room for the bold of a changed value
         QWidget* ed = valueEditor(store_, d, this);
         ed->setObjectName(QString("paramSet:") + fromStd(d.key));
         ed->setMinimumWidth(110);
-        auto* unit = new QLabel(fromStd(d.unit));
+        auto* unit = new QLabel(simParamUnit(d));
         unit->setEnabled(false);
         auto* initial = new QLabel(tr("initial %1").arg(fromStd(SimParams().text(d.key))));
         initial->setEnabled(false);
@@ -1600,8 +1603,8 @@ private:
         if (d->kind == ParamDef::Enum) { for (const std::string& o : d->options) range += (range.isEmpty() ? "" : " | ") + fromStd(o); }
         else if (d->kind == ParamDef::Bool) range = "true | false";
         else range = QString("%1 .. %2").arg(d->lo).arg(d->hi);
-        QString t = "<b>" + fromStd(d->key).toHtmlEscaped() + "</b>  (" + range.toHtmlEscaped() + (d->unit.empty() ? QString() : ", " + fromStd(d->unit).toHtmlEscaped()) + ")<br>" + fromStd(d->help).toHtmlEscaped();
-        if (!d->measure.empty()) t += "<br><i>" + tr("on the FPGA:") + "</i> " + fromStd(d->measure).toHtmlEscaped();
+        QString t = "<b>" + fromStd(d->key).toHtmlEscaped() + "</b>  (" + range.toHtmlEscaped() + (d->unit.empty() ? QString() : ", " + simParamUnit(*d).toHtmlEscaped()) + ")<br>" + simParamPurpose(*d).toHtmlEscaped();
+        if (!d->measure.empty()) t += "<br><i>" + tr("on the FPGA:") + "</i> " + simParamMeasure(*d).toHtmlEscaped();
         help_->setEnabled(true);
         help_->setText(t);
     }

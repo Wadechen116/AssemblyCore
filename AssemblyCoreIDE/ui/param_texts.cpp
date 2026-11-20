@@ -83,6 +83,85 @@ const char* const kKeys[] = {
         QT_TRANSLATE_NOOP("SimParamPurpose", "flag.sample_delay_peri"),
 };
 
+// The parameters that have a hint on how to measure them (context "SimParamMeasure", again by key), and the units.
+const char* const kMeasureKeys[] = {
+        QT_TRANSLATE_NOOP("SimParamMeasure", "latency.br_cond"),
+        QT_TRANSLATE_NOOP("SimParamMeasure", "latency.cascade"),
+        QT_TRANSLATE_NOOP("SimParamMeasure", "latency.alu"),
+        QT_TRANSLATE_NOOP("SimParamMeasure", "latency.mul"),
+        QT_TRANSLATE_NOOP("SimParamMeasure", "latency.mov_setup"),
+        QT_TRANSLATE_NOOP("SimParamMeasure", "latency.mov_byte"),
+        QT_TRANSLATE_NOOP("SimParamMeasure", "latency.slot_consume_setup"),
+        QT_TRANSLATE_NOOP("SimParamMeasure", "latency.csr_access"),
+        QT_TRANSLATE_NOOP("SimParamMeasure", "latency.csr_byte"),
+        QT_TRANSLATE_NOOP("SimParamMeasure", "latency.csr_done"),
+        QT_TRANSLATE_NOOP("SimParamMeasure", "latency.pub_setup"),
+        QT_TRANSLATE_NOOP("SimParamMeasure", "latency.pub_byte"),
+        QT_TRANSLATE_NOOP("SimParamMeasure", "latency.event_dispatch"),
+        QT_TRANSLATE_NOOP("SimParamMeasure", "latency.eret"),
+        QT_TRANSLATE_NOOP("SimParamMeasure", "latency.xfer_issue"),
+        QT_TRANSLATE_NOOP("SimParamMeasure", "clock.cpu_hz"),
+        QT_TRANSLATE_NOOP("SimParamMeasure", "clock.i2c_hz"),
+        QT_TRANSLATE_NOOP("SimParamMeasure", "clock.timer_hz"),
+        QT_TRANSLATE_NOOP("SimParamMeasure", "timing.frame_cycles"),
+        QT_TRANSLATE_NOOP("SimParamMeasure", "timing.vblank_start"),
+        QT_TRANSLATE_NOOP("SimParamMeasure", "timing.vblank_len"),
+        QT_TRANSLATE_NOOP("SimParamMeasure", "timing.line_cycles"),
+        QT_TRANSLATE_NOOP("SimParamMeasure", "timing.hblank_start"),
+        QT_TRANSLATE_NOOP("SimParamMeasure", "timing.hblank_len"),
+        QT_TRANSLATE_NOOP("SimParamMeasure", "frame.wcet_pgl"),
+        QT_TRANSLATE_NOOP("SimParamMeasure", "frame.wcet_ae"),
+        QT_TRANSLATE_NOOP("SimParamMeasure", "frame.wcet_line"),
+        QT_TRANSLATE_NOOP("SimParamMeasure", "sim.tie_order"),
+        QT_TRANSLATE_NOOP("SimParamMeasure", "boot.load"),
+        QT_TRANSLATE_NOOP("SimParamMeasure", "frontend.sram_latency"),
+        QT_TRANSLATE_NOOP("SimParamMeasure", "frontend.sram_policy"),
+        QT_TRANSLATE_NOOP("SimParamMeasure", "frontend.hold_cycles"),
+        QT_TRANSLATE_NOOP("SimParamMeasure", "frontend.dec_cycles"),
+        QT_TRANSLATE_NOOP("SimParamMeasure", "frontend.fire_cycles"),
+        QT_TRANSLATE_NOOP("SimParamMeasure", "fetch.read_mode"),
+        QT_TRANSLATE_NOOP("SimParamMeasure", "fetch.transaction_overhead"),
+        QT_TRANSLATE_NOOP("SimParamMeasure", "main.fetch_cycles"),
+        QT_TRANSLATE_NOOP("SimParamMeasure", "peri.fetch_cycles"),
+        QT_TRANSLATE_NOOP("SimParamMeasure", "csr.access_main"),
+        QT_TRANSLATE_NOOP("SimParamMeasure", "csr.access_peri"),
+        QT_TRANSLATE_NOOP("SimParamMeasure", "reset.boot_cycles"),
+        QT_TRANSLATE_NOOP("SimParamMeasure", "event.dispatch_extra"),
+        QT_TRANSLATE_NOOP("SimParamMeasure", "event.eret_extra"),
+        QT_TRANSLATE_NOOP("SimParamMeasure", "timer.main.clock_div"),
+        QT_TRANSLATE_NOOP("SimParamMeasure", "timer.main.start_latency"),
+        QT_TRANSLATE_NOOP("SimParamMeasure", "timer.main.done_latency"),
+        QT_TRANSLATE_NOOP("SimParamMeasure", "timer.peri.clock_div"),
+        QT_TRANSLATE_NOOP("SimParamMeasure", "timer.peri.start_latency"),
+        QT_TRANSLATE_NOOP("SimParamMeasure", "timer.peri.done_latency"),
+        QT_TRANSLATE_NOOP("SimParamMeasure", "timer.prescaler"),
+        QT_TRANSLATE_NOOP("SimParamMeasure", "timer.count"),
+        QT_TRANSLATE_NOOP("SimParamMeasure", "timer.phase"),
+        QT_TRANSLATE_NOOP("SimParamMeasure", "i2ch.overhead"),
+        QT_TRANSLATE_NOOP("SimParamMeasure", "i2c.ack_delay"),
+        QT_TRANSLATE_NOOP("SimParamMeasure", "i2c.stretch"),
+        QT_TRANSLATE_NOOP("SimParamMeasure", "i2c.turnaround"),
+        QT_TRANSLATE_NOOP("SimParamMeasure", "csr.arbiter_policy"),
+        QT_TRANSLATE_NOOP("SimParamMeasure", "csr.arbiter_penalty"),
+        QT_TRANSLATE_NOOP("SimParamMeasure", "datapath.contention"),
+        QT_TRANSLATE_NOOP("SimParamMeasure", "datapath.contention_cycles"),
+        QT_TRANSLATE_NOOP("SimParamMeasure", "slot.copy_extra"),
+        QT_TRANSLATE_NOOP("SimParamMeasure", "slot.valid_delay"),
+        QT_TRANSLATE_NOOP("SimParamMeasure", "flag.arbiter_policy"),
+        QT_TRANSLATE_NOOP("SimParamMeasure", "flag.access_cycles"),
+        QT_TRANSLATE_NOOP("SimParamMeasure", "flag.arbiter_penalty"),
+        QT_TRANSLATE_NOOP("SimParamMeasure", "flag.sample_delay_main"),
+        QT_TRANSLATE_NOOP("SimParamMeasure", "flag.sample_delay_peri"),
+};
+const char* const kUnits[] = {
+        QT_TRANSLATE_NOOP("SimParamUnit", "Hz"),
+        QT_TRANSLATE_NOOP("SimParamUnit", "ISA cycles"),
+        QT_TRANSLATE_NOOP("SimParamUnit", "ISA cycles per byte"),
+        QT_TRANSLATE_NOOP("SimParamUnit", "ISA cycles per second"),
+        QT_TRANSLATE_NOOP("SimParamUnit", "ISA cycles per tick"),
+        QT_TRANSLATE_NOOP("SimParamUnit", "SRAM cycles"),
+};
+
 QString words(const char* s) { return QCoreApplication::translate("SimParamFile", s); }
 
 }  // namespace
@@ -95,6 +174,22 @@ const char* const* simParamKeysForTranslation(int& count) {
 QString simParamPurpose(const asmcore::ParamDef& d) {
     const QString t = QCoreApplication::translate("SimParamPurpose", d.key.c_str());
     return t == QString::fromUtf8(d.key.c_str()) ? fromStd(d.help) : t;          // no translation: the catalog's help (English)
+}
+
+const char* const* simParamMeasureKeysForTranslation(int& count) { count = (int)(sizeof kMeasureKeys / sizeof kMeasureKeys[0]); return kMeasureKeys; }
+const char* const* simParamUnitsForTranslation(int& count) { count = (int)(sizeof kUnits / sizeof kUnits[0]); return kUnits; }
+
+QString simParamMeasure(const asmcore::ParamDef& d) {
+    if (d.measure.empty()) return QString();
+    const QString t = QCoreApplication::translate("SimParamMeasure", d.key.c_str());
+    return t == QString::fromUtf8(d.key.c_str()) ? fromStd(d.measure) : t;
+}
+
+QString simParamUnit(const asmcore::ParamDef& d) { return d.unit.empty() ? QString() : QCoreApplication::translate("SimParamUnit", d.unit.c_str()); }
+
+QString simParamTip(const asmcore::ParamDef& d) {
+    const QString m = simParamMeasure(d);
+    return simParamPurpose(d) + (m.isEmpty() ? QString() : "\n" + words(QT_TRANSLATE_NOOP("SimParamFile", "On the FPGA:")) + " " + m);
 }
 
 asmcore::SimParams::FileWords simParamsFileWordsForUi() {

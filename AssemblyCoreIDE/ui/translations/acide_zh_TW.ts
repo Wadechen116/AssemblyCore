@@ -2644,6 +2644,10 @@ The decoder made of the bytes: %4</source>
         <source>one of:</source>
         <translation>選項：</translation>
     </message>
+    <message>
+        <source>On the FPGA:</source>
+        <translation>在 FPGA 上：</translation>
+    </message>
 </context>
 <context>
     <name>SimParamGroup</name>
@@ -2694,6 +2698,277 @@ The decoder made of the bytes: %4</source>
     <message>
         <source>Status flags</source>
         <translation>狀態旗標</translation>
+    </message>
+</context>
+<context>
+    <name>SimParamMeasure</name>
+    <message>
+        <source>latency.br_cond</source>
+        <translation>連續執行 N 道 BR.COND：總週期 ÷ N</translation>
+    </message>
+    <message>
+        <source>latency.cascade</source>
+        <translation>一個 N 段的 cascade：總週期 ÷ (2N)</translation>
+    </message>
+    <message>
+        <source>latency.alu</source>
+        <translation>連續執行 N 道 ALU 運算：總週期 ÷ N</translation>
+    </message>
+    <message>
+        <source>latency.mul</source>
+        <translation>連續執行 N 道 MUL：總週期 ÷ N</translation>
+    </message>
+    <message>
+        <source>latency.mov_setup</source>
+        <translation>分別量 1 個與 8 個位元組的 MOV：差值得出每位元組的部分，其餘就是固定週期</translation>
+    </message>
+    <message>
+        <source>latency.mov_byte</source>
+        <translation>見 mov_setup</translation>
+    </message>
+    <message>
+        <source>latency.slot_consume_setup</source>
+        <translation>分別量從結果槽搬 1 個與 8 個位元組的 MOV</translation>
+    </message>
+    <message>
+        <source>latency.csr_access</source>
+        <translation>連續執行 N 道 EXEC_CSR WRITE8：（總週期 ÷ N）− 1</translation>
+    </message>
+    <message>
+        <source>latency.csr_byte</source>
+        <translation>分別量 1 個與 8 個位元組的 WRITE_SP</translation>
+    </message>
+    <message>
+        <source>latency.csr_done</source>
+        <translation>見 csr_byte</translation>
+    </message>
+    <message>
+        <source>latency.pub_setup</source>
+        <translation>分別量 1 個與 8 個位元組的 EXEC_PUB</translation>
+    </message>
+    <message>
+        <source>latency.pub_byte</source>
+        <translation>見 pub_setup</translation>
+    </message>
+    <message>
+        <source>latency.event_dispatch</source>
+        <translation>注入事件：從派送到處理程序第一道指令的時間</translation>
+    </message>
+    <message>
+        <source>latency.eret</source>
+        <translation>從處理程序最後一道指令到恢復後第一道指令的時間</translation>
+    </message>
+    <message>
+        <source>latency.xfer_issue</source>
+        <translation>從 EXEC_XFER 發出到第一個 SCL 脈衝的時間（扣掉 i2ch.overhead）</translation>
+    </message>
+    <message>
+        <source>clock.cpu_hz</source>
+        <translation>查 FPGA 的設計</translation>
+    </message>
+    <message>
+        <source>clock.i2c_hz</source>
+        <translation>用邏輯分析儀量 SCL 的週期</translation>
+    </message>
+    <message>
+        <source>clock.timer_hz</source>
+        <translation>以週期 N 啟動計時器，量到完成為止的週期數，除以 N</translation>
+    </message>
+    <message>
+        <source>timing.frame_cycles</source>
+        <translation>感測器／時序產生器的畫面週期</translation>
+    </message>
+    <message>
+        <source>timing.vblank_start</source>
+        <translation>時序產生器</translation>
+    </message>
+    <message>
+        <source>timing.vblank_len</source>
+        <translation>時序產生器</translation>
+    </message>
+    <message>
+        <source>timing.line_cycles</source>
+        <translation>時序產生器</translation>
+    </message>
+    <message>
+        <source>timing.hblank_start</source>
+        <translation>時序產生器</translation>
+    </message>
+    <message>
+        <source>timing.hblank_len</source>
+        <translation>時序產生器</translation>
+    </message>
+    <message>
+        <source>frame.wcet_pgl</source>
+        <translation>Frame Timing 方塊的 WCET 暫存器</translation>
+    </message>
+    <message>
+        <source>frame.wcet_ae</source>
+        <translation>Frame Timing 方塊的 WCET 暫存器</translation>
+    </message>
+    <message>
+        <source>frame.wcet_line</source>
+        <translation>Frame Timing 方塊的 WCET 暫存器</translation>
+    </message>
+    <message>
+        <source>sim.tie_order</source>
+        <translation>讓兩支程式在同一週期存取同一個 CSR</translation>
+    </message>
+    <message>
+        <source>boot.load</source>
+        <translation>從重置結束到第一道指令的時間，對照映像的大小</translation>
+    </message>
+    <message>
+        <source>frontend.sram_latency</source>
+        <translation>RTL 中 SRAM macro 的讀取延遲</translation>
+    </message>
+    <message>
+        <source>frontend.sram_policy</source>
+        <translation>兩支程式同時執行：比較其中一支在有、沒有另一支時的取指時間</translation>
+    </message>
+    <message>
+        <source>frontend.hold_cycles</source>
+        <translation>RTL：CMD_HOLD 到 CMD_OP_GET</translation>
+    </message>
+    <message>
+        <source>frontend.dec_cycles</source>
+        <translation>RTL：CMD_DEC</translation>
+    </message>
+    <message>
+        <source>frontend.fire_cycles</source>
+        <translation>RTL：CMD_FIRE，req_valid 到 req_ready</translation>
+    </message>
+    <message>
+        <source>fetch.read_mode</source>
+        <translation>每種指令各自放在迴圈裡單獨執行：每道指令的週期扣掉它的執行週期，對照它要讀的位元組數</translation>
+    </message>
+    <message>
+        <source>fetch.transaction_overhead</source>
+        <translation>一道單位元組指令：它的取指時間扣掉交易在匯流排上的時間</translation>
+    </message>
+    <message>
+        <source>main.fetch_cycles</source>
+        <translation>連續執行 N 道單週期指令：（總週期 ÷ N）− 1</translation>
+    </message>
+    <message>
+        <source>peri.fetch_cycles</source>
+        <translation>連續執行 N 道 BR 指令：（總週期 ÷ N）− 1</translation>
+    </message>
+    <message>
+        <source>csr.access_main</source>
+        <translation>由 Main 連續執行 N 道 EXEC_CSR</translation>
+    </message>
+    <message>
+        <source>csr.access_peri</source>
+        <translation>由 Peri 連續執行 N 道 EXEC_CSR</translation>
+    </message>
+    <message>
+        <source>reset.boot_cycles</source>
+        <translation>用邏輯分析儀看重置後第一次 CSR 寫入</translation>
+    </message>
+    <message>
+        <source>event.dispatch_extra</source>
+        <translation>注入事件：從發生到派送的時間，扣掉 latency.event_dispatch</translation>
+    </message>
+    <message>
+        <source>event.eret_extra</source>
+        <translation>從處理程序最後一道指令到恢復後第一道指令的時間</translation>
+    </message>
+    <message>
+        <source>timer.main.clock_div</source>
+        <translation>以週期 N 啟動，量到完成為止的週期數，除以 N</translation>
+    </message>
+    <message>
+        <source>timer.main.start_latency</source>
+        <translation>以週期 1 啟動：總時間扣掉完成延遲</translation>
+    </message>
+    <message>
+        <source>timer.main.done_latency</source>
+        <translation>以週期 1 啟動：總時間扣掉啟動延遲</translation>
+    </message>
+    <message>
+        <source>timer.peri.clock_div</source>
+        <translation>以週期 N 啟動，量到完成為止的週期數，除以 N</translation>
+    </message>
+    <message>
+        <source>timer.peri.start_latency</source>
+        <translation>以週期 1 啟動：總時間扣掉完成延遲</translation>
+    </message>
+    <message>
+        <source>timer.peri.done_latency</source>
+        <translation>以週期 1 啟動：總時間扣掉啟動延遲</translation>
+    </message>
+    <message>
+        <source>timer.prescaler</source>
+        <translation>在相差一個週期的時刻（奇數與偶數週期）各啟動同一個計時器：等待時間不同就是 free_running，相同就是 restart</translation>
+    </message>
+    <message>
+        <source>timer.count</source>
+        <translation>分別以週期 1、2、3 啟動：差值得出每個 tick 的週期數，剩下的部分說明是 n 還是 n + 1</translation>
+    </message>
+    <message>
+        <source>timer.phase</source>
+        <translation>free_running：找出等待時間較長的那些啟動週期</translation>
+    </message>
+    <message>
+        <source>i2ch.overhead</source>
+        <translation>從 EXEC_XFER 發出到第一個 SCL 脈衝的時間</translation>
+    </message>
+    <message>
+        <source>i2c.ack_delay</source>
+        <translation>從第 9 個脈衝的 SCL 下降緣到下一個位元組的時間</translation>
+    </message>
+    <message>
+        <source>i2c.stretch</source>
+        <translation>裝置把 SCL 拉低的時間</translation>
+    </message>
+    <message>
+        <source>i2c.turnaround</source>
+        <translation>匯流排上的重複起始</translation>
+    </message>
+    <message>
+        <source>csr.arbiter_policy</source>
+        <translation>兩個解碼器同時開始、各自在迴圈中執行 EXEC_CSR：看誰被拖慢、慢多少</translation>
+    </message>
+    <message>
+        <source>csr.arbiter_penalty</source>
+        <translation>先後兩方完成時間的差，扣掉先得到的一方占用仲裁器的時間</translation>
+    </message>
+    <message>
+        <source>datapath.contention</source>
+        <translation>Peri 執行 EXEC_PUB 的同時，Main 從結果槽 MOV</translation>
+    </message>
+    <message>
+        <source>datapath.contention_cycles</source>
+        <translation>見 datapath.contention</translation>
+    </message>
+    <message>
+        <source>slot.copy_extra</source>
+        <translation>8 個位元組的 EXEC_PUB，與模型比較</translation>
+    </message>
+    <message>
+        <source>slot.valid_delay</source>
+        <translation>PUB 之後由 Main 輪詢 PERI_RESULT_VALID</translation>
+    </message>
+    <message>
+        <source>flag.arbiter_policy</source>
+        <translation>兩個解碼器同時開始、各自在緊密迴圈中輪詢一個旗標：看誰被拖慢、慢多少</translation>
+    </message>
+    <message>
+        <source>flag.access_cycles</source>
+        <translation>兩道 BR 在同一週期讀旗標：第一道與第二道之間相隔的週期</translation>
+    </message>
+    <message>
+        <source>flag.arbiter_penalty</source>
+        <translation>見 flag.access_cycles</translation>
+    </message>
+    <message>
+        <source>flag.sample_delay_main</source>
+        <translation>切換一個條件，找出第一道看到它的 BR</translation>
+    </message>
+    <message>
+        <source>flag.sample_delay_peri</source>
+        <translation>切換一個條件，找出第一道看到它的 BR</translation>
     </message>
 </context>
 <context>
@@ -2981,6 +3256,33 @@ The decoder made of the bytes: %4</source>
     <message>
         <source>flag.sample_delay_peri</source>
         <translation>Peri 的 BR 看到的是幾個週期以前的旗標</translation>
+    </message>
+</context>
+<context>
+    <name>SimParamUnit</name>
+    <message>
+        <source>Hz</source>
+        <translation>Hz</translation>
+    </message>
+    <message>
+        <source>ISA cycles</source>
+        <translation>ISA 週期</translation>
+    </message>
+    <message>
+        <source>ISA cycles per byte</source>
+        <translation>ISA 週期／位元組</translation>
+    </message>
+    <message>
+        <source>ISA cycles per second</source>
+        <translation>ISA 週期／秒</translation>
+    </message>
+    <message>
+        <source>ISA cycles per tick</source>
+        <translation>ISA 週期／tick</translation>
+    </message>
+    <message>
+        <source>SRAM cycles</source>
+        <translation>SRAM 週期</translation>
     </message>
 </context>
 <context>

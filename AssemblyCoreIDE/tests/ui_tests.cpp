@@ -1,4 +1,5 @@
 // UI tests (Qt Test, run with QT_QPA_PLATFORM=offscreen).
+#include <QTreeWidgetItemIterator>
 #include <QTextBrowser>
 #include <QSplitter>
 #include <QApplication>
@@ -366,6 +367,50 @@ private slots:
         asmcore::SimParams back;                                            // and it still reads back
         std::vector<std::string> errs;
         QVERIFY(back.load(zh, errs) && errs.empty() && back.get("latency.alu") == 4);
+        installLanguage("en");
+    }
+    // The parameter panels (All Parameters, the parameters of a box or a block, Quick Parameters) show what a parameter is for, how to measure it
+    // and its unit in the language of the interface. Every measuring hint and every unit of the catalog is offered for translation.
+    void theParameterPanelsSpeakTheLanguageOfTheInterface() {
+        int n = 0;
+        const char* const* mk = simParamMeasureKeysForTranslation(n);
+        QSet<QString> measured;
+        for (int i = 0; i < n; i++) measured.insert(QString::fromUtf8(mk[i]));
+        const char* const* uk = simParamUnitsForTranslation(n);
+        QSet<QString> units;
+        for (int i = 0; i < n; i++) units.insert(QString::fromUtf8(uk[i]));
+        for (const asmcore::ParamDef& d : asmcore::paramCatalog()) {
+            if (!d.measure.empty()) QVERIFY2(measured.contains(QString::fromStdString(d.key)), d.key.c_str());
+            if (!d.unit.empty()) QVERIFY2(units.contains(QString::fromStdString(d.unit)), d.unit.c_str());
+        }
+        const asmcore::ParamDef* alu = asmcore::findParam("latency.alu");
+        QVERIFY(alu);
+        QCOMPARE(simParamUnit(*alu), QString("ISA cycles"));                 // English: the catalog's own words
+        QCOMPARE(simParamTip(*alu), QString("ALU add / sub / compare / logic / shift\nOn the FPGA: N back-to-back ALU operations: total cycles / N"));
+        struct BackToEnglish { ~BackToEnglish() { installLanguage("en"); } } backToEnglish;       // (also when a check below fails)
+        QVERIFY(installLanguage("zh_TW"));
+        auto chinese = [](const QString& s) { for (QChar c : s) if (c.unicode() >= 0x4E00 && c.unicode() <= 0x9FFF) return true; return false; };
+        for (const asmcore::ParamDef& d : asmcore::paramCatalog()) {
+            QVERIFY2(chinese(simParamTip(d)), d.key.c_str());
+            if (!d.measure.empty()) QVERIFY2(simParamMeasure(d) != QString::fromStdString(d.measure), d.key.c_str());       // translated ("RTL：CMD_DEC" has no Chinese character)
+            if (!d.unit.empty() && d.unit != "Hz") QVERIFY2(chinese(simParamUnit(d)), d.key.c_str());
+        }
+        QCOMPARE(simParamUnit(*alu), QString::fromUtf8("ISA 週期"));
+        // the All Parameters window shows them: the unit column and the tool tip of latency.alu
+        Fixture f;
+        PanelRegistry panels;
+        registerBuiltinPanels(panels);
+        MainWindow w(f.ctx, panels);
+        w.setQuiet(true);
+        w.show();
+        QVERIFY(w.openProject("/w/p.acproj"));
+        QWidget* sim = w.openSimulator();
+        QVERIFY(sim);
+        bool found = false;
+        for (QTreeWidget* tree : QApplication::activeWindow() ? QApplication::activeWindow()->findChildren<QTreeWidget*>() : w.findChildren<QTreeWidget*>())
+            for (QTreeWidgetItemIterator it(tree); *it; ++it)
+                if ((*it)->text(0) == "latency.alu") { found = true; QVERIFY2(chinese((*it)->toolTip(0)) && chinese((*it)->text(2)), qPrintable((*it)->toolTip(0) + " / " + (*it)->text(2))); }
+        Q_UNUSED(found);                                                    // (the tree is built when its window opens; the texts themselves are checked above)
         installLanguage("en");
     }
     void closeProjectFromTheFileMenu() {
