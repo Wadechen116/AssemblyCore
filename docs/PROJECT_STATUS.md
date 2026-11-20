@@ -273,6 +273,7 @@ Windows 建置在 `/mnt/d/WSL/acbuild_msvc`（`build.bat`、`uitest.bat`），�
 | `docs/S7_SHARED_RESOURCES.md` / `.pdf` | S7 功能與建置邏輯 |
 | `docs/SIM_VISUAL_DESIGN.md` | S3–S6 視覺化設計 |
 | `docs/SIM_PARAMS.md` | 硬體參數目錄（自動產生） |
+| `docs/SIM_VS_SPEC.md` | **模擬器實作與規格對照**：待確認的問題（Timer 一組或兩組、PC、取指方式…）、模擬器現在逐項怎麼做（附規格章節、依據、程式位置）、全部參數預設值、如何確認與硬體一致 |
 | `docs/SIM.md` | 模擬器 |
 | `docs/AUTO_DEBUG.md` | 自動除錯 |
 | `docs/BLOCKS_EDITOR.md`、`docs/BLOCKS.md` | 積木編輯器 |
@@ -288,6 +289,8 @@ Windows 建置在 `/mnt/d/WSL/acbuild_msvc`（`build.bat`、`uitest.bat`），�
 ---
 
 ## 7. 待使用者／硬體團隊回答的問題
+
+這次討論新增的問題（Timer 是一組還是兩組、PC、事件與 Timer 的關係等）連同模擬器目前的做法，整理在 `docs/SIM_VS_SPEC.md` 第 1 節。
 
 回答之前，對應的工作只做到「機制可選」，預設值不採用猜測（使用者已明確指定的除外，見 2.6）。回答後請直接填在「答覆」欄，我再據此實作或調整預設。
 
