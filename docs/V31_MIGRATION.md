@@ -13,7 +13,7 @@
 - [x] A4-1 `EXEC_CSR WRITE_SP`（來源 scratchpad，`ptr` 指向 scratchpad），舊的 `WRITE_BUF` 以明確錯誤訊息拒絕
 - [x] A4-2 `READ_BUF` 不變（寫入 csrbuf），`READ8` 只寫 csrbuf
 - [x] A4-3 資料流：WRITE_SP 檢查 scratchpad 範圍已定義；csrbuf 只由 READ 定義
-- [x] A5 softret：返回編號改為單一 `MOV CONST → scratchpad`，移除 csrbuf 暫存與其保留區（E306 的 csrbuf 部分、`ret_stage_base`）
+- [x] A5 softret：返回編號改為單一 `MOV CONST → scratchpad`，移除 csrbuf 暫存與其在 csrbuf 的保留區（E306 的 csrbuf 部分）。**`ret_stage_base` 這個 profile 鍵沒有移除，仍在使用**：它原本指 csrbuf 的兩個位元組，現在指 `MAIN_SCRATCHPAD[ret_stage_base..+1]`——`RET` 比較返回編號時，常數不能直接 MOV 到 `ALU_OPB`（v31 5.1），要先放在這兩個位元組；使用者的資料碰到它會得到 E306（2026-11-20 查證：改鍵值會改變產生的映像）
 - [x] A6-1 `MainBranchDesc` bit9 = `event_safe`、type 11 = `BR.ERET`
 - [x] A6-2 `PeriBranchDesc` bit11 = `event_safe`、type 8 = `BR.ERET`
 - [x] A6-3 語法：`BR.COND cond, label, safe`／Peri 分支同；`BR.ERET`；`event_safe` 納入描述子去重鍵
