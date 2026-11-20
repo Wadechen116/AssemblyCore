@@ -148,7 +148,7 @@ M1–M6（畫布、拖放、欄位編輯、工具箱、專案整合、效能與�
 * 按 F7 建置時，輸出面板會列出哪些數字來自參數，例如 `latency.alu = 6 (profile: 1)`。
 * **WCET 計入取指時間**（使用者決定：跟著 `fetch.source` 走；搶匯流排的等待先不納入）。每道指令除了執行週期，再加上硬體讀出它所花的週期；`.wcet` 的結果分開報「執行＋取指」，例如 `33443 cycles (10 executing + 33433 fetching the instructions)`。程序與呼叫點的 WCET、事件延遲也一併計入。清單的週期欄仍是執行週期。改 `fetch.*`、`frontend.*`、`clock.i2c_hz` 等參數會重新建置。
 * 驗證：同一個程式在模擬器單獨執行到終點的週期數，與 WCET 完全相同。
-* 限制：(1) **不含**等另一個 sequencer 的時間（共用 I2C 匯流排、CSR 仲裁器、Status Flag、Data Xfer），那取決於另一邊當時在做什麼，所以兩邊同時執行時實際時間仍可能比 WCET 長；(2) 只跟隨參數（`.simparams` 與模擬器頁面設定的值），環境檔裡的 `[latency]`、`[bus i2c]`、`[params]` 區段不會進到建置；(3) 命令列的 `asmc` 要加 `--params FILE`、`--param KEY=VALUE` 或 `--fetch-time` 才用同一種算法（數字與 IDE 相同）；不加時維持原本只計執行週期的行為，`sample/build_samples.py` 目前也沒有加；(4) 取指的數值本身是算出來的規劃值（見下），尚未對照硬體。
+* 限制：(1) **不含**等另一個 sequencer 的時間（共用 I2C 匯流排、CSR 仲裁器、Status Flag、Data Xfer），那取決於另一邊當時在做什麼，所以兩邊同時執行時實際時間仍可能比 WCET 長；(2) 只跟隨參數（`.simparams` 與模擬器頁面設定的值），環境檔裡的 `[latency]`、`[bus i2c]`、`[params]` 區段不會進到建置；(3) 命令列的 `asmc` 要加 `--params FILE`、`--param KEY=VALUE` 或 `--fetch-time` 才用同一種算法（數字與 IDE 相同）；不加時維持原本只計執行週期的行為。`sample/build_samples.py` 已照 IDE 的方式傳入（專案有 `.simparams` 用 `--params`，否則 `--fetch-time`），範例輸出資料夾的 `.map` 與 IDE 一致；(4) 取指的數值本身是算出來的規劃值（見下），尚未對照硬體。
 
 **取指時間怎麼算**（沒有硬體時的估算依據）：不是量測，而是依協定計算，與模擬器的解碼器、Decoder 面板用同一份程式。
 
@@ -182,7 +182,7 @@ M1–M6（畫布、拖放、欄位編輯、工具箱、專案整合、效能與�
 | 模擬器 | SPI；FIFO 結果槽（非 I2C 的 `bus_type` 目前直接 fault）；Listing 的實測週期欄；SRAM 面板標示已讀／未讀；Frontend 的 `CMD_EXEC` 細分 |
 | v31 遷移 | 階段 6 的就緒等級 L0／L1／L2；`asmc --upgrade-v24` 與 IDE 的「升級到 v31」；易用性 U5–U8、U11、U12（見 `docs/V31_MIGRATION.md`） |
 | IDE | P2 分析視圖（表用量、WCET、呼叫模型比較）；情境腳本介面與剖析；格式化；歡迎頁與新專案精靈；當機復原；事件中斷點；環境檔表單編輯；折疊與書籤；專案樹的新增／刪除／搬移 |
-| WCET | 不含等另一個 sequencer 的時間（共用匯流排、仲裁器）；不跟隨環境檔的 `[latency]`／`[params]`；`sample/build_samples.py` 產生的範例輸出仍是只計執行週期的 WCET（見 2.14） |
+| WCET | 不含等另一個 sequencer 的時間（共用匯流排、仲裁器）；不跟隨環境檔的 `[latency]`／`[params]`；`asmc` 不加選項時只計執行週期（見 2.14） |
 | 積木 | B4 的多段常數（64-bit／double）、程序（procedure）圖形介面 |
 | 反組譯器 | 把 softret 序列還原成 `CALL`／`RET` |
 | 語言 | 組譯器診斷、模擬器停止原因、範本註解仍是英文 |

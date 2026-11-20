@@ -69,7 +69,10 @@ for proj in projects:
         common += ["-I", inc]
     if p.get("profile"):
         common += ["--profile", p["profile"]]
-    build = [exe("asmc"), "--call-model", model, "--dataflow", p.get("dataflow", "warn"), "--list", "--map", "--dbg", "--hex", "--artifacts", "--eeprom"] + common
+    # Cycle counts and the WCET as the IDE counts them: the project's hardware parameters (.simparams) when it has them, else the default ones --
+    # either way the time to fetch each instruction is part of the WCET (docs/ASM_SYNTAX.md, section 1).
+    timing = ["--params", p["simparams"]] if p.get("simparams") else ["--fetch-time"]
+    build = [exe("asmc"), "--call-model", model, "--dataflow", p.get("dataflow", "warn"), "--list", "--map", "--dbg", "--hex", "--artifacts", "--eeprom"] + common + timing
     for q in p["wcet"]:
         build += ["--wcet", q]
     build += p["source"] + ["-o", arg(prefix, d)]
@@ -85,6 +88,7 @@ for proj in projects:
         + ("  profile   %s\n" % p["profile"] if p.get("profile") else "  profile   預設（planning-default；EEPROM 位址都是暫定值）\n") \
         + ("  產生自    %s（原始碼由它產生）\n" % (p.get("hardware") or p.get("blocks")) if p.get("hardware") or p.get("blocks") else "") \
         + "  呼叫模型  %s\n" % model \
+        + ("  硬體參數  %s（週期數與 WCET 依它計算，含取指時間）\n" % p["simparams"] if p.get("simparams") else "  硬體參數  預設值（WCET 含取指時間：從 I2C EEPROM 取指）\n") \
         + "  建置時間  %s\n" % now \
         + "  工具      %s（與 AssemblyCoreIDE 同一版引擎）\n" % ("dist\\msvc2026\\asmc.exe" if winexe_from_wsl else "asmc") \
         + "  命令      %s\n\n" % shown(build).replace(arg(prefix, d), out_name + "\\" + name)
