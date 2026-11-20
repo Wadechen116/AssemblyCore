@@ -1206,6 +1206,36 @@ private slots:
         QVERIFY(all && all->isVisible());
         auto* tree = all->findChild<QTreeWidget*>("paramsTree");
         QVERIFY(tree);
+        {   // the Note column says what each parameter is for until the user writes a note of their own (which is what is stored and edited)
+            QTreeWidgetItem* alu = nullptr;
+            int rows = 0, empty = 0;
+            for (QTreeWidgetItemIterator it(tree); *it; ++it) {
+                if (!(*it)->parent()) continue;
+                rows++;
+                if ((*it)->text(5).isEmpty()) empty++;
+                if ((*it)->data(0, Qt::UserRole).toString() == "latency.alu") alu = *it;
+            }
+            QVERIFY2(rows == (int)asmcore::paramCatalog().size() && empty == 0, qPrintable(QString("%1 rows, %2 without a note").arg(rows).arg(empty)));
+            QVERIFY(alu);
+            QCOMPARE(alu->text(5), QString("ALU add / sub / compare / logic / shift"));
+            QVERIFY(alu->data(5, Qt::UserRole + 1).toString().isEmpty());                // nothing of it is the user's
+            QVERIFY(r.f.dbg.simParams().params().note("latency.alu").empty());           // ... and nothing is stored
+            alu->setText(5, "measured on board 2");                                      // (what committing an edit of the cell does)
+            QCOMPARE(QString::fromStdString(r.f.dbg.simParams().params().note("latency.alu")), QString("measured on board 2"));
+            QCOMPARE(alu->text(5), QString("measured on board 2"));
+            QCOMPARE(alu->data(5, Qt::UserRole + 1).toString(), QString("measured on board 2"));
+            alu->setText(5, "");                                                          // emptied: the purpose is back
+            QVERIFY(r.f.dbg.simParams().params().note("latency.alu").empty());
+            QCOMPARE(alu->text(5), QString("ALU add / sub / compare / logic / shift"));
+            QVERIFY(installLanguage("zh_TW"));                                            // in Chinese the purpose is Chinese (shown at the next refresh)
+            std::string e2;
+            r.f.dbg.simParams().set("latency.mul", "3", e2);
+            QTest::qWait(50);
+            QCOMPARE(alu->text(5), QString::fromUtf8("ALU 加、減、比較、邏輯、移位一道指令的執行週期"));
+            installLanguage("en");
+            r.f.dbg.simParams().clear("latency.mul");
+            QTest::qWait(50);
+        }
         // the debugger's parameter store is what both show
         std::string err;
         r.f.dbg.simParams().set("main.fetch_cycles", "2", err);

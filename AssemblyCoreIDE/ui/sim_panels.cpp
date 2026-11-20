@@ -138,6 +138,8 @@ void syncEditor(QWidget* e, SimParamsStore& store, const std::string& key) {
 
 // ---- the parameter panel --------------------------------------------------------------------------------------------------------------
 
+const int kNoteRole = Qt::UserRole + 1;           // column 5 of a parameter row: the user's own note (the cell shows the purpose when it is empty)
+
 class ParamDelegate : public QStyledItemDelegate {
 public:
     using QStyledItemDelegate::QStyledItemDelegate;
@@ -166,6 +168,8 @@ public:
         return nullptr;
     }
     void setEditorData(QWidget* e, const QModelIndex& index) const override {
+        if (index.column() == 5)                                          // the user's own note is what is edited, not the purpose shown in its place
+            if (auto* le = qobject_cast<QLineEdit*>(e)) { le->setText(index.data(kNoteRole).toString()); return; }
         if (auto* s = qobject_cast<QSpinBox*>(e)) { s->setValue(index.data(Qt::EditRole).toString().toInt()); return; }
         if (auto* c = qobject_cast<QComboBox*>(e)) { c->setCurrentText(index.data(Qt::EditRole).toString()); return; }
         QStyledItemDelegate::setEditorData(e, index);
@@ -301,7 +305,12 @@ private:
             const bool set = p.isSet(key) && !p.atDefault(key);
             it->setText(1, fromStd(p.text(key)));
             it->setText(4, fromStd(p.status(key)));
-            it->setText(5, fromStd(p.note(key)));
+            // The Note column always says something: the user's own note, or -- when there is none -- what the parameter is for (shown paler; it is
+            // not stored). Editing the cell edits the user's note (kNoteRole holds it; empty again brings the purpose back).
+            const QString own = fromStd(p.note(key));
+            it->setData(5, kNoteRole, own);
+            it->setText(5, own.isEmpty() && d ? simParamPurpose(*d) : own);
+            it->setToolTip(5, d ? simParamTip(*d) : QString());
             QFont f = it->font(1);
             f.setBold(set);
             it->setFont(1, f);
@@ -315,6 +324,7 @@ private:
             it->setForeground(1, set ? QColor("#e08a00") : text);
             const std::string st = p.status(key);
             it->setForeground(4, st == "measured" ? QColor("#2e9d4f") : st == "confirmed" ? QColor("#3b82f6") : text);
+            it->setForeground(5, own.isEmpty() ? tree_->palette().color(QPalette::Disabled, QPalette::Text) : text);
             it->setText(0, QString(isPinned(ctx_.settings, key) ? QString::fromUtf8("\xE2\x98\x85 ") : QString()) + fromStd(key) + (d && !d->active ? tr("  (not used yet)") : QString()));
         });
         updating_ = false;
@@ -363,7 +373,7 @@ private:
         bool ok = true;
         if (col == 1) ok = store_.set(key, toStd(it->text(1)), err);
         else if (col == 4) ok = store_.setStatus(key, toStd(it->text(4)), err);
-        else if (col == 5) store_.setNote(key, toStd(it->text(5)));
+        else if (col == 5) { store_.setNote(key, toStd(it->text(5))); refresh(); }      // (an emptied note shows the purpose again)
         if (!ok) { ctx_.status.fire(fromStd(err)); refresh(); }
     }
     void menu(const QPoint& at) {
