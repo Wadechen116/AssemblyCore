@@ -1,8 +1,10 @@
 # AssemblyCore 專案進度與後續計畫
 
-更新日期：2026-11-02 ・ 最新提交：`799ba30`（master）・ 儲存庫：<https://github.com/Wadechen116/AssemblyCore>（Apache-2.0）
+更新日期：2026-11-20 ・ 最新程式提交：`a32cc44`（分支 `blocks-toolbox-single-pieces`，已推送）・ 儲存庫：<https://github.com/Wadechen116/AssemblyCore>（Apache-2.0）
 
 AssemblyCore 是 Sensor Micro-Sequencer ISA v1.6 r10（規格 v31）的組譯器、模擬器、反組譯器，附 Qt Widgets IDE、積木編輯器與範例專案。核心是標準 C++17、不依賴 Qt。
+
+分支關係：`master`（`df4ab1e`，2026-11-02）← `sim-timer-flag-toolbox-longrun`（`93c8125`，2026-11-10）← `blocks-toolbox-single-pieces`（目前工作分支）。三者尚未合併；依使用者決定（2026-11-18），功能穩定之前不開 PR，持續在工作分支提交並推送。
 
 ---
 
@@ -10,17 +12,34 @@ AssemblyCore 是 Sensor Micro-Sequencer ISA v1.6 r10（規格 v31）的組譯器
 
 | 項目 | 狀態 |
 |---|---|
-| 核心：組譯器、模擬器、反組譯器、硬體描述 | 完成 |
+| 核心：組譯器、模擬器、反組譯器、硬體描述、EEPROM 映像 | 完成（v31 遷移階段 1–5 完成；階段 6、7 見 `docs/V31_MIGRATION.md`） |
 | CLI 工具：`asmc`、`asmsim`、`asmdis`、`asmhw`、`asmblk` | 完成 |
-| IDE：編輯器、語言服務、建置、除錯 | P0–P1、P3 完成；P2、P4、P5 待做（見 `AssemblyCoreIDE/docs/IDE_PLAN.md`） |
-| 積木編輯器 | M1–M6 完成；B4 進行中 |
-| 模擬器（硬體參數、Main/Peri 同跑、即時執行） | S1–S7 完成；S8 待做 |
-| 自動除錯（找出並修復） | 完成，規則持續增強 |
-| Linux 測試 | `ctest` 13/13 通過 |
-| Windows（MSVC）建置 | 0 個 `warning C`；偵錯 26、積木 60、翻譯 7 項 UI 測試、服務層 402 項全過 |
-| `dist\msvc2026` | 已更新到 S7（`799ba30`） |
+| IDE：編輯器、語言服務、建置、除錯 | P0–P1、P3 完成；P4、P5 部分；P2 待做（見 `AssemblyCoreIDE/docs/IDE_PLAN.md`） |
+| 積木編輯器 | B0、B1（M1–M6）、B2 完成；B4 部分（缺多段常數、程序介面）；工具箱改為單片積木 |
+| 模擬器（硬體參數、Main／Peri 同跑、即時執行） | S1–S7 完成；EEPROM 取指、共用 I2C、Frontend 七狀態模型完成；S8 待做 |
+| 自動除錯（找出並修復） | 完成；編輯器的波浪線可按右鍵修復 |
+| EEPROM 流程（建置、驗證、反組譯、從映像除錯） | 完成 |
+| Linux 測試 | `ctest` 14/14 通過（2026-11-20 重跑） |
+| Windows（MSVC 2026）建置 | 0 個 `warning C`；核心模擬器、積木、服務層測試全過（2026-11-19）；**UI 測試自 2026-11-18 起未在 Windows 重跑** |
+| `dist\msvc2026` | exe 更新到 `437e3a4`（2026-11-19 16:43），範例含 17；之後只有文件變動 |
+| macOS | 尚未驗證 |
 
-測試數量（Linux）：核心模擬器 217 項、IDE 服務層 402 項，UI 測試全過。
+測試數量（Linux，2026-11-20）：
+
+| 套件 | 項數 |
+|---|---|
+| 核心：組譯器 | 339 |
+| 核心：模擬器 | 336 |
+| 核心：反組譯器 | 63 |
+| 核心：解碼交叉比對（反組譯器對模擬器） | 6（0 個不一致） |
+| 核心：硬體描述 | 83 |
+| 核心：積木（模型 125、元件 200、編輯 125） | 450 |
+| IDE 服務層：積木 | 267 |
+| IDE 服務層：其餘 | 427 |
+| IDE 介面（offscreen，六個測試類別） | 135 通過、1 略過（長時間浸泡測試，需 `ACIDE_SOAK_SECONDS` 才跑） |
+| 範例專案、建置檔一致性、翻譯完整性 | 各 1 項，通過 |
+
+**使用前要知道的限制**：模擬器與 WCET 的許多數值是規劃值或假設，尚未對照 RTL／FPGA（見第 7 節）。在硬體答覆之前，模擬結果可用來理解行為與比較方案，不能當作時序簽核的依據。
 
 ---
 
@@ -65,54 +84,108 @@ AssemblyCore 是 Sensor Micro-Sequencer ISA v1.6 r10（規格 v31）的組譯器
 
 M1–M6（畫布、拖放、欄位編輯、工具箱、專案整合、效能與驗收）、B2（硬體描述抽屜）、B4 第一批（if／while／wait until、變數與運算式、級聯積木）。偵錯時積木上顯示執行狀態（值、閃爍與流向、熱度與次數），按停止後回復靜止。
 
-### 2.5 工具
+### 2.5 工具（md2pdf）
 
 `AssemblyCoreIDE/tools/md2pdf.cpp`：只用 Qt 把 Markdown 轉成 A4 PDF（支援中文與表格）。用法 `md2pdf INPUT.md OUTPUT.pdf [--title 標題]`。MSVC 上需要專案已有的 `ui/msvc_stdext_compat.h`（已加進 CMake）。
 
+### 2.6 計時器、Status Flag 與長時間執行（2026-11-04，`2bb63fa`、`f0ee607`）
+
+* 兩個計時器共用 `clock.timer_hz`（13.5 MHz＝27 MHz／2，使用者確認）；`timer.prescaler`、`timer.count`、`timer.phase` 是待 RTL 確認的規劃值。
+* Status Flag 是 Main／Peri 的 BR 共用的一個單元（使用者確認）：`flag.arbiter_policy`、`flag.access_cycles`、`flag.arbiter_penalty`，預設 `main_first`。
+* CSR 仲裁器：先到先得，同週期 Main 先（使用者確認）→ `csr.arbiter_policy` 預設 `main_first`。這兩個預設是使用者明確指定的例外，不受「預設不改變舊結果」限制。
+* 長時間執行的記憶體與回應問題已修（軌跡標記上限、更新回壓、快照共用事件紀錄）；浸泡測試 `DebugTests::aLongDebugRunStaysBoundedAndResponsive`（`ACIDE_SOAK_SECONDS=60` 才跑）。
+
+### 2.7 參數就地設定（2026-11-05，`9a58396`）
+
+模擬器頁面不再有參數表：架構圖的方塊按右鍵設定該方塊的參數，積木按右鍵設定該指令的參數，完整表格在「所有參數」對話框。
+
+### 2.8 EEPROM 流程（2026-11-05～06，詳見 `docs/EEPROM.md`）
+
+硬體事實（使用者說明）：程式碼、描述子表、常數池、DeviceMap 存在 I2C EEPROM（0x50，與 Peri 的 `EXEC_XFER` 共用匯流排），解碼器每道指令都去讀；各區的起始位址是暫存器。
+
+* `asmc`／`asmdis`／`asmsim` 的 `--eeprom`；IDE 建置寫出 `.eeprom.*` 與 `PREFIX.eeprom.sym`（名稱）。
+* 模擬器預設從 EEPROM 取指（`fetch.source = eeprom`）；`fetch.read_mode` 為 sequential（預設）／per_byte／instant；解碼器與 `EXEC_XFER` 共用 I2C 匯流排，先到先得，同週期 Main 先，不插隊（使用者確認）。
+* 驗證燒錄檔：`asmsim --verify-eeprom`；反組譯燒錄檔：`asmdis --eeprom`（`--check`、`--strict`）。
+* IDE：Build 選單的「EEPROM」視窗（建置／驗證／反組譯三頁）、「Debug from an EEPROM Image」、Decoder 面板。
+* 範例 `15_eeprom_images`（正確與故意寫壞的映像）。
+* 常數池的名稱在反組譯結果中以註解呈現，不還原成 `.const` 定義（使用者決定，2026-11-09）。
+
+### 2.9 解碼問題分級與硬體偵測表（2026-11-09～10，`2bcf11b`、`a3daf44`）
+
+* 分三類：A 不合法的編碼、B 編碼合法但違反規格規則、C 執行期狀態造成。反組譯器與模擬器的判定必須完全一致（`tests/crosscheck_tests.cpp`）。
+* IDE 在問題面板（Kind 欄）、編輯器波浪線、Decoder 面板同時呈現；範例 `16_error_showcase`。
+* `docs/HW_FAULT_DETECTION.md`（由 `docs/gen_hw_fault_table.py` 產生）：55 列，請硬體團隊填「哪一級偵測」。共享頁面：<https://claude.ai/artifact/2pKLgKyzHGWpXQE5iK1itR>。
+* 原則（使用者）：規格文件才是依據，模擬器不是解碼器的規格。
+
+### 2.10 積木工具箱與畫布（2026-11-18～19）
+
+* 工具箱每個項目都是一片獨立的積木，資料插槽是空洞，選項插槽（運算種類、有無號、分支條件）保留預設值；Patterns 與 Hardware 抽屜移到最後、預設收合。
+* 參照類積木以用途命名（NAME、label、procedure、CSR_NAME…），不再有多個同名的「name」。
+* 接點磁吸：能接就吸過去，不能接就推開並彈回。
+* 工具箱的樣本放大並以實際大小繪製；畫布預設 66%；Main／Peri 兩欄靠近；右鍵在空白處拖曳可平移畫面。
+
+### 2.11 編輯器修復選單與即時清單（2026-11-18）
+
+* 組合語言編輯器的波浪線按右鍵 →「Fix E###」與「Fix all」；修復時顯示進行中與結果（編輯器內提示、狀態列、輸出面板）。
+* Listing 面板在除錯時顯示實際執行的程式：Main／Peri 位置、執行次數、中斷點、fault、與取指內容不同的列。
+
+### 2.12 解碼階段、Program SRAM 與 Frontend 模型（2026-11-19，`20c0272`、`479f965`）
+
+* Decoder 面板顯示一道指令如何形成：第一階段位元組（opcode＋index）→ 查描述子表 → 第二階段的完整指令。
+* Program SRAM 面板：開機時由 ROM 載入的共用 32-bit SRAM 內容。
+* Frontend 模型（選用，`fetch.source = frontend`；預設仍是 `eeprom`）：開機把 ROM 載入 SRAM，之後每道指令走規格 v31 的七個狀態；Decoder 面板可勾選、可單步一個週期。`boot.load`、`frontend.*` 參數全部是規劃值，待 RTL 提供。
+
+### 2.13 架構圖的單元活動與範例 17（2026-11-19，`437e3a4`、`a32cc44`）
+
+* 架構圖上指令用到的單元會一起閃（佈局檔的 `touch` 行）；ALU 回報它寫入的 out 與 status。
+* 範例 `17_alu_busy`：不會結束的 MOV／ALU 迴圈，用來在模擬器頁面觀察 ALU。
+
 ---
 
-## 3. 後續計畫（依使用者指定的順序）
+## 3. 後續計畫與未完成項目
 
-### 3.1 S8：校準套件與 FPGA 擷取比對 —— 需要使用者回答
+### 3.1 等硬體答覆（阻塞模擬結果的可信度）
 
-目標：把 FPGA 量到的資料匯入，和模擬的時間軸疊起來比，找出該打開哪個 S7 參數、填多少。
+依影響大小排列，問題表在第 7 節：
 
-**阻塞的問題**（需要使用者決定）：
-1. 量測來源：ILA／邏輯分析儀／CSR 週期計數器？
-2. 匯出格式：CSV？VCD？欄位長什麼樣？
-3. 時間基準：量測時脈和 ISA 週期的對應。
+1. **編碼假設**（7.4）：ALU 子運算碼的數值、描述子位元組序、DeviceMap 位元排列、ALU_STATUS 旗標位置。這是唯一會讓燒錄映像本身出錯的一類。
+2. **硬體錯誤偵測表**（2.9）：55 列，共享頁面至 2026-11-20 為止 0 筆答覆。答覆後調整模擬器的 fault 時機（B5／R4 分支目標、B6 指令中間的目標）。
+3. **S7 的硬體規則**（7.2 的 B3–B9）。
+4. **Frontend 與計時器的 RTL 數值**（7.5）。
+5. **範例 14 的提交視窗**（7.6）：400 kHz 共用匯流排下無法保證落在消隱視窗內，等硬體方向。
 
-### 3.2 S7 的硬體規則確認 —— 需要使用者回答
+### 3.2 S8：校準套件與 FPGA 擷取比對 —— 需要使用者回答（7.1）
 
-模型已實作成可選項，但預設值要由硬體事實決定：
-* CSR Arbiter 與 Data Xfer 在硬體上是否真的存在競爭？規則（先到先得／固定優先／輪流）？
-* 一次存取占用多久？交接有沒有額外延遲？
-* 結果槽的 `valid` 在複製完成前能不能被 Main 看到？
-* 條件旗標到 BR 之間有幾個週期的延遲？
-* Main 觸發語意：Frame Timing WCET＋一個 Timer？
+目標：把 FPGA 量到的資料匯入，和模擬的時間軸疊起來比，找出該調哪個參數、填多少。尚未開始。
 
-### 3.3 全部實作完成之後：討論 Main／Peri 切換與狀態交換
+### 3.3 尚未實作的功能
 
-**先討論、決定，再實作；在使用者同意之前不要動手。** 要談的是模擬器如何在 Main 與 Peri 兩個組合語言程式之間切換、交換執行狀態。
+| 範圍 | 項目 |
+|---|---|
+| 模擬器 | SPI；FIFO 結果槽（非 I2C 的 `bus_type` 目前直接 fault）；Listing 的實測週期欄；SRAM 面板標示已讀／未讀；Frontend 的 `CMD_EXEC` 細分 |
+| v31 遷移 | 階段 6 的就緒等級 L0／L1／L2；`asmc --upgrade-v24` 與 IDE 的「升級到 v31」；易用性 U5–U8、U11、U12（見 `docs/V31_MIGRATION.md`） |
+| IDE | P2 分析視圖（表用量、WCET、呼叫模型比較）；情境腳本介面與剖析；格式化；歡迎頁與新專案精靈；當機復原；事件中斷點；環境檔表單編輯；折疊與書籤；專案樹的新增／刪除／搬移 |
+| IDE 建置 | 組譯器的 WCET 估算不跟隨模擬器的延遲參數 |
+| 積木 | B4 的多段常數（64-bit／double）、程序（procedure）圖形介面 |
+| 反組譯器 | 把 softret 序列還原成 `CALL`／`RET` |
+| 語言 | 組譯器診斷、模擬器停止原因、範本註解仍是英文 |
+| 發佈 | `dist` 未附 VC++ 執行階段，沒有安裝程式；macOS 未驗證 |
 
-### 3.4 一次性修復「其他下拉選單」的問題
+### 3.4 尚未在實機上確認的介面改動
 
-使用者要求把其他下拉選單有問題的地方留到最後一次修。屆時先問清楚是哪個欄位仍有異常（已修過的：封閉選項改用選單、下拉清單等滑鼠放開才關閉、選完即結束編輯）。
+以下都有自動測試，但沒有人實際開 IDE 用滑鼠試過；數值是初估：
 
-### 3.5 最後：`timer.shared` 實驗
+* 接點磁吸的距離與彈簧常數、被拒絕時的落點。
+* 右鍵拖曳平移（Windows 實際滑鼠行為）。
+* 單片工具箱、放大的樣本、66% 的畫布。
+* 架構圖方塊的位置（依使用者對圖的描述排的）與閃爍節奏（範例 17 的 `sim.speed = 40`）。
+* Windows 上的 UI 測試自 2026-11-18 起未重跑。
 
-使用者指定放在**最後**。內容：
-* 新參數 `timer.shared`（預設關＝現在行為）；開啟時 `main_timer.*` 對應到 `timer.*`，`MAIN_TIMER_DONE` 與 `IF_TIMER_DONE` 共用同一個 done 旗標。
-* 自動除錯新增發現：「計時器被另一邊搶走」。
-* ISA Top 增加共用計時器的版本。
-* 用執行面板的基準線比較「共用」與「各自一個」。
-* 需要使用者的硬體答案：誰可以啟動它、完成時是否通知兩邊、同時啟動怎麼辦。
+### 3.5 使用者指定順序、留到後面的三件事
 
-### 3.6 其他待辦（B4 與 IDE 計畫）
-
-* B4：多段常數、程序（procedure）的圖形介面。
-* IDE 組譯器的 WCET 估算跟隨延遲參數。
-* IDE 計畫的 P2、P4、P5（見 `AssemblyCoreIDE/docs/IDE_PLAN.md`）。
+1. **討論 Main／Peri 切換與狀態交換**：先討論、決定，再實作；在使用者同意之前不要動手。
+2. **一次性修復「其他下拉選單」的問題**：屆時先問清楚是哪個欄位仍有異常（已修過的：封閉選項改用選單、下拉清單等滑鼠放開才關閉、選完即結束編輯）。
+3. **最後：`timer.shared` 實驗**（7.3）：新參數 `timer.shared`（預設關）；開啟時 `main_timer.*` 對應到 `timer.*`，`MAIN_TIMER_DONE` 與 `IF_TIMER_DONE` 共用同一個 done 旗標；自動除錯新增「計時器被另一邊搶走」；架構圖增加共用計時器的版本；用執行面板的基準線比較。
 
 ---
 
@@ -126,7 +199,7 @@ M1–M6（畫布、拖放、欄位編輯、工具箱、專案整合、效能與�
 * GUI 程序只能用 PID 結束，禁止 `pkill -f`；不要從 WSL 開真實視窗做冒煙測試（用 offscreen／QTest）；會跳對話框的測試要用 `MainWindow::setQuiet(true)`。
 * 大量或正規表達式修改前先備份；優先用精確字串替換並加斷言，替換後必須重新檢查。
 * Windows 建置必須 **0 個 `warning C`**。
-* Git：提交訊息以 `Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>` 結尾；可以推送；不要把 GitHub token 寫進檔案或日誌；三份廠商規格（`docs/MicroISA_Spec_v31.pdf`、`docs/MicroISA_v31_assembly_compiler_handoff.md`、`docs/isa_seq_v1.6_r10_detailed_spec_v24_zhTW.docx`）已在 `.gitignore`，**不可公開**；不要擅自改使用者本機的修改（例如 `sample/common/defs.inc`）。
+* Git：每個提交訊息都要有日期（年月日）、修改人、作者、修改項目、剩餘問題（沒有就留空）、驗證，並以當時模型的 `Co-Authored-By` 行結尾；在工作分支提交並推送，功能穩定前不開 PR；合併過的分支不刪；不要把 GitHub token 寫進檔案或日誌；三份廠商規格（`docs/MicroISA_Spec_v31.pdf`、`docs/MicroISA_v31_assembly_compiler_handoff.md`、`docs/isa_seq_v1.6_r10_detailed_spec_v24_zhTW.docx`）已在 `.gitignore`，**不可公開**；不要擅自改使用者本機的修改（例如 `sample/common/defs.inc`）。
 
 ---
 
@@ -135,7 +208,7 @@ M1–M6（畫布、拖放、欄位編輯、工具箱、專案整合、效能與�
 ```bash
 # Linux 建置與測試（WSL）
 cd /mnt/d/swork/AssemblyCore/build && cmake .. && ulimit -v 6000000 && timeout 580 make -j2
-ctest                                     # 13 項
+ctest                                     # 14 項
 ./asmcore_sim_tests                       # 核心模擬器
 ./AssemblyCoreIDE/acide_services_tests    # IDE 服務層
 
@@ -171,13 +244,17 @@ Windows 建置在 `/mnt/d/WSL/acbuild_msvc`（`build.bat`、`uitest.bat`），�
 | `docs/ASM_SYNTAX.md`、`docs/HARDWARE.md`、`docs/DEBUG_INFO.md`、`docs/DISASM.md` | 語法、硬體描述、除錯資訊、反組譯 |
 | `AssemblyCoreIDE/docs/IDE_PLAN.md` | IDE 各階段計畫與狀態 |
 | `AssemblyCoreIDE/docs/DEBUGGING.md`、`ARCHITECTURE.md` | 除錯與架構 |
-| `sample/README.md` | 範例專案（01–14） |
+| `docs/EEPROM.md` | EEPROM 映像：建置、驗證、反組譯、從映像除錯 |
+| `docs/HW_FAULT_DETECTION.md` | 給硬體團隊的錯誤偵測對照表（由 `gen_hw_fault_table.py` 產生） |
+| `docs/V31_MIGRATION.md`、`docs/SPEC_V24_VS_V31.md` | v31 遷移檢查清單、v24 與 v31 的差異 |
+| `docs/EXTENDING.md`、`docs/LANG_SERVICE.md` | 規格變動時改哪裡、語言服務層 |
+| `sample/README.md` | 範例專案（01–17） |
 
 ---
 
-## 7. 待使用者回答的問題（三處）
+## 7. 待使用者／硬體團隊回答的問題
 
-回答之前，對應的工作只做到「機制可選、預設關閉」，不會把任何猜測當成預設。回答後請直接填在「答覆」欄，我再據此實作或調整預設。
+回答之前，對應的工作只做到「機制可選」，預設值不採用猜測（使用者已明確指定的除外，見 2.6）。回答後請直接填在「答覆」欄，我再據此實作或調整預設。
 
 ### 7.1 S8：FPGA 量測資料的格式（阻塞 S8）
 
@@ -213,3 +290,34 @@ Windows 建置在 `/mnt/d/WSL/acbuild_msvc`（`build.bat`、`uitest.bat`），�
 | C3 | 兩邊同時啟動怎麼辦？ | 後者覆蓋、前者優先、或視為錯誤？ | |
 
 實驗內容（待問題回答後才做）：新參數 `timer.shared`（預設關）、`main_timer.*` 對應到 `timer.*`、自動除錯新增「計時器被另一邊搶走」、ISA Top 共用計時器版本、用執行面板基準線比較「共用」與「各自一個」。
+
+### 7.4 編碼假設（影響燒錄映像是否正確）
+
+規格只列名稱或寬度、沒有給數值或排列；目前的值在 profile 中，`asmc --profile-gaps` 會列出未確認的群組。
+
+| # | 問題 | 目前的假設 | 答覆 |
+|---|---|---|---|
+| D1 | ALU 子運算碼的數值（arith／cmp／logic／shift） | 依規格列出名稱的順序：ADD=0、SUB=1、MUL=2、INC=3、DEC=4；EQ=0、NE=1、LT=2、GE=3；AND=0、OR=1、XOR=2、NOT=3；SHL=0、SHR=1 | |
+| D2 | 多位元組描述子在映像中的位元組序 | 小端 | |
+| D3 | DeviceMap 每筆的位元排列 | 1 位元組：bit 7＝bus_type、bits 6:0＝I2C 位址 | |
+| D4 | ALU_STATUS 各旗標的位元位置 | bit0 cmp_true、1 zero、2 negative、3 carry_u、4 borrow_u、5 overflow_s、6 ov16 | |
+| D5 | negative 旗標取哪一位 | 低 16 位元的符號位 | |
+
+### 7.5 Frontend、開機載入與計時器的 RTL 數值
+
+| # | 問題 | 目前的規劃值 | 答覆 |
+|---|---|---|---|
+| E1 | SRAM 讀取延遲、兩個 Frontend 如何共用一個讀取埠 | `frontend.sram_latency = 1`、`frontend.sram_policy = shared`（先到先得，同時 Main 先） | |
+| E2 | `CMD_HOLD`、`CMD_DEC`、`CMD_FIRE` 各幾個週期 | 0、1、1 | |
+| E3 | 開機載入 ROM→SRAM 的方式與時間 | `boot.load = i2c` | |
+| E4 | PC 何時前進；`CMD_EXEC` 是否要再細分 | 執行開始時前進；不細分 | |
+| E5 | 計時器的預除器是否自由運轉、計數是 n 還是 n+1、相位 | `timer.prescaler`、`timer.count`、`timer.phase` 的預設值 | |
+
+### 7.6 範例 14：提交能否保證落在消隱視窗內
+
+量測結果（`10b5fda`）：計算已移到視窗之前，視窗內只剩一道 `WRITE_SP`。在 400 kHz 共用匯流排下，檢查之後的最壞情況是 17,634 週期（等 Peri 的 XFER 取指 10,334＋`WRITE_SP` 取指 7,294＋6），大於視窗的 14,362 週期，**無法保證**；1 MHz 時 WCET 7,063，可落在視窗內。
+
+| # | 問題 | 選項 | 答覆 |
+|---|---|---|---|
+| F1 | 硬體方向 | 匯流排提高到 1 MHz／解碼器用自己的匯流排／取指改走 SRAM（Frontend 模型）／其他 | |
+
