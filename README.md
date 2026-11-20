@@ -15,7 +15,7 @@ cli/             asmc（組譯）、asmsim（組譯並模擬）、asmdis（反�
 tests/           核心測試：組譯器、模擬器、反組譯器、解碼交叉比對、硬體描述、積木
 examples/        早期的範例原始碼（IMU 陀螺儀流程、CALL/RET 兩種模型）
 sample/          範例專案 01–17（各附說明；build_samples.py 建置、check_samples.py 檢查），索引見 sample/README.md
-conformance/     一致性測試套件：第 1 層（編碼）十支、第 2 層（行為）五支程式＋預期結果表，拿去 RTL 模擬確認硬體與工具一致（見其 README）
+conformance/     一致性測試套件：第 1 層（編碼）十支、第 2 層（行為）五支、第 3 層（時間量測）八支程式，附預期結果與預測值，拿去 RTL 模擬確認硬體與工具一致（見其 README）
 profiles/        目標 profile 範本（資料表深度、延遲、版面、softret 保留位置）
 docs/            規格書與各項說明（索引見 docs/PROJECT_STATUS.md 第 6 節）
 AssemblyCoreIDE/ IDE：services/（標準 C++17，不含 Qt）、ui/（Qt Widgets）、tests/、tools/md2pdf、docs/
@@ -27,7 +27,7 @@ dist/            Windows 發佈資料夾（dist\msvc2026，不進版本控制）
 ```
 cmake -S . -B build -DCMAKE_PREFIX_PATH=<Qt6 路徑>     # 找不到 Qt6 時只建核心、CLI、服務層與其測試
 cmake --build build
-ctest --test-dir build                                  # 16 項；GUI 測試需 QT_QPA_PLATFORM=offscreen
+ctest --test-dir build                                  # 17 項；GUI 測試需 QT_QPA_PLATFORM=offscreen
 build/asmc --list --map --dbg examples/imu_gyro.asm
 build/asmsim examples/imu_gyro.asm --env examples/imu_env.cfg --scenario examples/imu_gyro.scn --vcd run.vcd
 build/asmdis --main --check imu.main.bin                # 反組譯並確認重新組譯得到同一份映像
@@ -37,7 +37,7 @@ build/asmdis --main --check imu.main.bin                # 反組譯並確認重�
 
 | 平台 | 工具鏈 | 狀態 |
 |---|---|---|
-| Linux（WSL Ubuntu） | GCC 13、Qt 6.5.3、CMake | `ctest` 16/16 通過（2026-11-20） |
+| Linux（WSL Ubuntu） | GCC 13、Qt 6.5.3、CMake | `ctest` 17/17 通過（2026-11-20） |
 | Windows | Visual Studio 2026（MSVC 14.51）、Qt 6.5.3 `msvc2019_64`、CMake＋Ninja | 0 個 `warning C`；核心與服務層測試通過（2026-11-19）；UI 測試自 2026-11-18 起未重跑 |
 | macOS | — | 尚未驗證 |
 
