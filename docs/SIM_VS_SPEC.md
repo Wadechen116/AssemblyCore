@@ -12,6 +12,7 @@
 ### 請注意
 
 * 「規格」欄寫的是**程式註解引用的規格章節**（v31 規格書的章號）。這份文件**沒有**逐條重新對照規格原文——那正是它要請您做的事。發現不符請直接在該列註記。
+* **已知有一處預設做法與規格不同**：程式怎麼從 ROM 進到 SRAM、執行時從哪裡取指（見 1.2 與 Q5）。
 * 專案的自動測試證明的是「組譯器、模擬器、反組譯器彼此一致」，**不是**「與硬體一致」。目前沒有任何項目對照過 RTL 或實體硬體。
 
 ### 圖例（「依據」欄）
@@ -39,11 +40,57 @@
 | Q2 | **Main 與 Peri 的 PC 是分開的兩個嗎？** | 是，各一個，各自從 0 起算、各自前進（見 2.1） | 規格文字是「各 domain 自己的 byte PC」；請確認 RTL 也是 | |
 | Q3 | **事件（event）與 Timer 有沒有關聯？** Timer 到時會不會觸發事件？ | 沒有關聯。Timer 只設完成旗標，程式用分支輪詢；事件只能由外部注入（見 2.16） | 規格說「不要發明 timer interrupt」；請確認 | |
 | Q4 | **移位方向位元 `shift_dir`：0 是 SHL 還是 SHR？** | 0＝SHL、1＝SHR（寫死在 `core/src/isa.h`，沒有 profile 鍵） | 兩份規格說法不一致（交接文件說已明確，規格 6.3／6.7 抽出的文字只見名稱）；錯了左移右移會對調 | |
-| Q5 | **硬體怎麼取指？** 每道指令都從 I2C EEPROM 讀，還是開機載入 SRAM 後從 SRAM 讀？ | 兩種都做了，預設是每道指令都讀 EEPROM（見 2.2） | 取指時間差上千倍；範例 14 在 400 kHz 下提交無法保證落在消隱視窗內 | |
+| Q5 | **硬體怎麼取指？規格寫的是「開機一次載入 SRAM，之後從 SRAM 取指」，模擬器預設卻是「每道指令都經 I2C 讀 EEPROM」——兩者不一致**（詳見 1.2） | 兩種都做了；**預設（`fetch.source = eeprom`）不是規格的做法**，規格的做法是選用的 `frontend` 模式（見 2.2） | 取指時間差上千倍（同一支測試程式的 WCET：33,443 對 27 個週期）；範例 14 在預設下提交無法保證落在消隱視窗內，照規格的做法則沒有這個問題 | |
+| Q5a | 2026-11-05 說明的「程式存在 I2C EEPROM，解碼器每道指令都去讀」，是指**手上實際的硬體**（例如 FPGA 上的版本），還是當時對規格的理解？ | 模擬器把它當成硬體事實，設為預設 | 若是實際硬體：硬體與 v31 規格不同，需要讓硬體團隊知道。若是理解上的落差：預設應改成 `frontend` | |
+| Q5b | 規格所說的「外部 ROM」就是那顆 I2C EEPROM（位址 0x50）嗎？Boot 用什麼介面、多快的速度讀它？ | Frontend 模式下假設是：Boot 經 I2C 以每個區域一次讀取的方式讀 EEPROM（`boot.load = i2c`） | 規格沒有指定 ROM 的元件與介面；這決定開機要多久 | |
 | Q6 | **兩個 sequencer 搶共用資源時，硬體的規則與時間？** | 先到先得，同週期 Main 先（I2C 匯流排、CSR 仲裁器已由您確認；其餘是假設，見 2.15） | 等待時間目前不計入 WCET，所以就緒等級達不到 L2 | |
 | Q7 | **怎麼確認模擬器與硬體一致？** | 尚未確認任何一項（見第 4 節的做法） | | |
 
-### 1.2 先前已列出、仍未答覆的（完整內容在 `docs/PROJECT_STATUS.md` 第 7 節）
+### 1.2 已知的落差：程式怎麼從 ROM 進到 SRAM（對應 Q5）
+
+這是目前唯一一處「規格有明確寫法，而模擬器的**預設**與它不同」的地方。
+
+**規格怎麼寫**（`MicroISA_Spec_v31.pdf` 第 8–10、14 頁；交接文件第 2 節）
+
+| 問題 | 規格的答案 |
+|---|---|
+| 什麼時機 | 開機重置之後、兩個 sequencer 開始執行之前，一次做完。「Power-on reset 後共享 Program SRAM 中的 Main／Peri image 均視為 invalid」 |
+| 誰來做 | 獨立的 Boot/init 模組（不是 Main 或 Peri）。載入期間兩個 sequencer 停在 reset／halt |
+| 來源 | 「外部 ROM」提供兩份映像 |
+| 怎麼寫進 SRAM | 把每份映像的位元組打包成 32 位元的字，依序寫入**同一顆** SRAM：Main 從 `MAIN_IMAGE_BASE_WORD` 起，Peri 從 `PERI_IMAGE_BASE_WORD` 起；各自最後不足 4 個位元組的補齊，兩份不共用同一個字；不可假設 SRAM 有 byte write enable |
+| 各區段的起始位置（ImageLayout） | 另外載入獨立的暫存器（sideband latches），不放在 SRAM 的程式位元組裡 |
+| 什麼時候放行 | 兩份映像與 ImageLayout 都載入成功、SRAM 寫入完成、讀取緩衝狀態已清除之後：設 `image_valid`、**鎖住 SRAM 的寫入路徑**（`program_storage_locked_q = 1`）、清空兩個 Frontend 的狀態，才放行 Main／Peri。Baseline 是兩份都有效才一起放行 |
+| 執行期間 | SRAM 維持寫入鎖定，兩個 Frontend 只從 SRAM 讀。「Runtime SRAM 不是 external ROM」；「Boot-load 與 runtime-read 不可同時競爭同一 SRAM」 |
+
+**規格沒有寫的**（都明寫由 target profile／boot protocol 定義）：外部 ROM 是什麼元件、用什麼介面讀（I2C、SPI、平行都沒有指定）；ROM 內的格式、起始位址、校驗、如何分辨 Main 與 Peri；載入要多久；ImageLayout 暫存器的載入順序與介面。**規格全文沒有出現「EEPROM」與「I2C 取指」**——這兩者來自使用者 2026-11-05 對硬體的說明。
+
+**模擬器怎麼做**
+
+| | 規格 v31 | 模擬器**預設** `fetch.source = eeprom` | 模擬器選用 `fetch.source = frontend` |
+|---|---|---|---|
+| 程式執行時放在哪 | SRAM | **I2C EEPROM**（沒有載入 SRAM 這一步） | SRAM |
+| 什麼時候讀 ROM | 開機一次 | **每道指令執行前都讀** | 開機一次 |
+| 執行時從哪取指 | SRAM | **經 I2C 讀 EEPROM** | SRAM |
+| 每道指令的取指時間 | 幾個週期 | 數千個週期（400 kHz 下讀 1 個位元組約 3,040） | 幾個週期 |
+| 與 Peri 的 `EXEC_XFER` 搶 I2C 匯流排 | 不會（執行期間不讀 ROM） | **會** | 不會 |
+| 是否符合規格 | — | **不符合**（依據是使用者 2026-11-05 的說明） | 流程符合；數值是規劃值 |
+
+**Frontend 模式與規格相比，還有這些差別或未確認之處**
+
+| 項目 | 規格 | 模擬器（`frontend`） |
+|---|---|---|
+| 外部 ROM 與介面 | 未指定 | 假設就是那顆 I2C EEPROM，經六個區域暫存器定位（Q5b） |
+| 載入時間 | 未指定 | `boot.load = i2c`（預設）：讀六個區域的 I2C 時間，每區一次讀取；`instant`：不花時間 |
+| 載入順序 | Main 先、Peri 後 | 相同；兩邊在全部載入後**一起**放行 |
+| `image_valid`、寫入鎖定 | 有明確的旗標與規則（鎖定後 Boot 的寫入被擋或 fault） | **沒有這些旗標**；模擬器在執行期間根本沒有寫 SRAM 的路徑，效果等同鎖定，但無法模擬「鎖定前就執行」「鎖定後還寫入」這類錯誤 |
+| 載入失敗 | 不放行 | **未模擬**（載入一定成功） |
+| ImageLayout 暫存器的載入 | 獨立的載入介面與順序 | **未模擬**（直接使用組譯結果的 layout） |
+| 執行期間改寫 EEPROM | 不影響執行（SRAM 已鎖定） | 相同：`EXEC_XFER` 寫 EEPROM 不影響已載入 SRAM 的內容 |
+| SRAM 讀取延遲、兩個 Frontend 的排程、各狀態週期 | 由 profile 提供，且 WCET 需要可證明的上界 | 規劃值（`frontend.*`） |
+
+**影響**：模擬器預設下的取指時間、WCET、匯流排競爭、範例 14 的結論（400 kHz 下提交無法保證落在消隱視窗內），**全部建立在「每道指令讀 EEPROM」這個前提上**。如果硬體照規格做，這些結論都不成立，應改用 `fetch.source = frontend` 重新評估。在 Q5a 有答案之前，兩種模式的結果都只能當參考。
+
+### 1.3 先前已列出、仍未答覆的（完整內容在 `docs/PROJECT_STATUS.md` 第 7 節）
 
 | 編號 | 主題 | 狀態 |
 |---|---|---|
@@ -82,11 +129,11 @@
 | 2.2.2 | Main 的 opcode：0 EXEC_CSR、1 BR、2 MOV、3 ALU | 2 | 規格 | `impl.cpp` `registerOps` |
 | 2.2.3 | Peri 的 opcode：0 EXEC_CSR、1 BR、2 EXEC_PUB、3 EXEC_XFER | 2 | 規格 | 同上 |
 | 2.2.4 | arg 是描述子表的索引；`EXEC_CSR` 與 `EXEC_XFER` 的 bit 5 選 OneByte／MultiByte 表，bit 4:0 是索引 | 3、4、8 | 規格 | 各 `op*` 函式 |
-| 2.2.5 | 取指來源由參數 `fetch.source` 決定，預設 **`eeprom`**：每執行一道指令前，解碼器先經 I2C 從 EEPROM 讀出它的程式碼位元組、描述子、（`EXEC_XFER` 的）DeviceMap 項目、（MOV 的）常數 | — | 使用者確認「程式存在 I2C EEPROM（0x50），每道指令都去讀」（2026-11-05） | `decode.cpp` `beginFetch`、`fetchCost` |
-| 2.2.6 | EEPROM 分六個區域（Main 程式碼／描述子／常數，Peri 程式碼／描述子／DeviceMap），起始位址由六個暫存器決定 | — | 使用者確認；位址數值是規劃值（profile `eeprom_*`） | `eeprom.cpp`、`impl.cpp` `syncFetch` |
+| 2.2.5 | 取指來源由參數 `fetch.source` 決定，預設 **`eeprom`**：每執行一道指令前，解碼器先經 I2C 從 EEPROM 讀出它的程式碼位元組、描述子、（`EXEC_XFER` 的）DeviceMap 項目、（MOV 的）常數。**沒有「開機載入 SRAM」這一步** | **與規格不符**：v31 第 8–10 頁寫的是開機載入 SRAM、執行時從 SRAM 取指（見 1.2） | 使用者 2026-11-05 的說明「程式存在 I2C EEPROM（0x50），每道指令都去讀」；是否為實際硬體待確認（Q5a） | `decode.cpp` `beginFetch`、`fetchCost` |
+| 2.2.6 | EEPROM 分六個區域（Main 程式碼／描述子／常數，Peri 程式碼／描述子／DeviceMap），起始位址由六個暫存器決定 | 規格沒有 EEPROM；規格的「外部 ROM」格式未指定 | 使用者說明；位址數值是規劃值（profile `eeprom_*`） | `eeprom.cpp`、`impl.cpp` `syncFetch` |
 | 2.2.7 | 一次讀取的時間：`⌈9 × (2 + 位址位元組數 + n) × cpu_hz ÷ i2c_hz⌉ + 階段數 × (i2c.ack_delay + i2c.stretch) + fetch.transaction_overhead` | 14.4（I2C 位元組階段） | 公式依協定；每區域一次讀完、額外週期等是假設 | `decode.cpp` `fetchCost` |
 | 2.2.8 | `fetch.read_mode`：`sequential`（每個區域一次讀取，預設）、`per_byte`（每個位元組一次）、`instant`（不花時間） | — | 假設 | 同上 |
-| 2.2.9 | `fetch.source = frontend`（選用）：開機先把 ROM 載入一顆共用的 32-bit 程式 SRAM，之後每道指令走七個狀態 CMD_HOLD → OP_GET → DESC_GET → DEC → FIRE → EXEC（錯誤時 CMD_FAULT） | v31 3.1、Frontend-001 | 狀態順序依規格；各狀態週期數、SRAM 延遲、兩個 Frontend 共用讀取埠的方式是規劃值 | `frontend.cpp` |
+| 2.2.9 | `fetch.source = frontend`（**選用，這才是規格的流程**）：開機時兩個 sequencer 停住，Boot 把兩份映像打包成 32 位元的字寫進一顆共用的程式 SRAM（Main 先、Peri 後），全部完成後一起放行；之後每道指令走七個狀態 CMD_HOLD → OP_GET → DESC_GET → DEC → FIRE → EXEC（錯誤時 CMD_FAULT） | v31 3.1（第 8–10 頁）、Frontend-001 | 流程依規格；Boot 的來源與介面（假設為 I2C EEPROM）、載入時間、各狀態週期數、SRAM 延遲、兩個 Frontend 共用讀取埠的方式都是規劃值；`image_valid`／寫入鎖定旗標、載入失敗、ImageLayout 的載入未模擬（見 1.2） | `frontend.cpp` `bootLoadSram`、`planFrontend` |
 | 2.2.10 | Frontend：SRAM 以兩倍 ISA 時脈運作；有一個字的 opcode 緩衝（同一個字裡的程式碼位元組不重讀） | v31 3.1 | 規格／規劃值 | `frontend.cpp` `planFrontend` |
 | 2.2.11 | `fetch.source = sram`：直接用組譯結果，取指不花時間 | — | 這是早期的簡化模型，不是硬體 | — |
 | 2.2.12 | PC 超出程式碼範圍：fault `fault_pc_out_of_code` | — | 假設 | `impl.cpp` `fetchOk` |
@@ -377,6 +424,7 @@
 | 事件的硬體來源 | 沒有，只能注入 |
 | I2C 的 START／STOP、仲裁失敗、時脈延展的細節 | 只以每位元組的額外週期參數概括 |
 | 把「等另一個 sequencer」的時間算進 WCET | 沒有（模擬時會等，但組譯器的 WCET 不計） |
+| Boot 的 `image_valid`／`program_storage_locked_q` 旗標、載入失敗、ImageLayout 暫存器的載入過程 | 沒有（見 1.2） |
 | 匯入 FPGA／RTL 擷取資料並自動比對（S8） | 沒有 |
 | 對照 RTL／硬體的驗證 | 沒有做過任何一項 |
 
@@ -419,7 +467,7 @@
 | `sim.tie_order` | main_first | — | main_first／peri_first | 模擬器的設定，不是硬體 |
 | `sim.unmapped_csr` | ram | — | ram／fault | 模擬器的設定，不是硬體 |
 | `sim.fault_stops` | domain | — | domain／all | 模擬器的設定，不是硬體 |
-| `fetch.source` | eeprom | — | eeprom／sram／frontend | 規劃值，待 RTL |
+| `fetch.source` | eeprom | — | eeprom／sram／frontend | 使用者說明（2026-11-05）；**與規格 v31 不同，規格的做法是 `frontend`**（見 1.2） |
 | `boot.load` | i2c | — | instant／i2c | 規劃值，待 RTL |
 | `frontend.sram_latency` | 1 | SRAM cycles | 1..16 | 規劃值，待 RTL |
 | `frontend.sram_policy` | shared | — | shared／slots | 規劃值，待 RTL |
