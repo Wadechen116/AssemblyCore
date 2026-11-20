@@ -1,0 +1,5 @@
+﻿位址,位移,預期值,意義,取決於
+0x600,RES+0,0x11,"Main 第一次短計時結束","用到板子自己的 CSR（計時器、poll、done／error）：先把 conf_board.inc 改成實際的位址與位元"
+0x601,RES+1,0x12,"Main 第二次短計時結束","用到板子自己的 CSR（計時器、poll、done／error）：先把 conf_board.inc 改成實際的位址與位元"
+0x608,RES+8,0x21,"Peri 兩次長計時結束","用到板子自己的 CSR（計時器、poll、done／error）：先把 conf_board.inc 改成實際的位址與位元"
+0x67F,RES_DONE,0xA5,"測試的最後一次寫入",""

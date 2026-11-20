@@ -1,0 +1,4 @@
+﻿位址,位移,預期值,意義,取決於
+0x600,RES+0,0x0A,"第一個 service：done 且沒有 error → PERI_NO_ERROR","用到板子自己的 CSR（計時器、poll、done／error）：先把 conf_board.inc 改成實際的位址與位元"
+0x601,RES+1,0xEB,"第二個 service：done 且有 error → PERI_ERROR","用到板子自己的 CSR（計時器、poll、done／error）：先把 conf_board.inc 改成實際的位址與位元"
+0x67F,RES_DONE,0xA5,"測試的最後一次寫入",""

@@ -1,0 +1,4 @@
+﻿位址,位移,預期值,意義,取決於
+0x600,RES+0,0xE0,"ready 之後讀到並發佈的兩個位元組（位元組 0）","用到板子自己的 CSR（計時器、poll、done／error）：先把 conf_board.inc 改成實際的位址與位元"
+0x601,RES+1,0xE1,"ready 之後讀到並發佈的兩個位元組（位元組 1）","用到板子自己的 CSR（計時器、poll、done／error）：先把 conf_board.inc 改成實際的位址與位元"
+0x67F,RES_DONE,0xA5,"測試的最後一次寫入",""

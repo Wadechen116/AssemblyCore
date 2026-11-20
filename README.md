@@ -15,7 +15,7 @@ cli/             asmc（組譯）、asmsim（組譯並模擬）、asmdis（反�
 tests/           核心測試：組譯器、模擬器、反組譯器、解碼交叉比對、硬體描述、積木
 examples/        早期的範例原始碼（IMU 陀螺儀流程、CALL/RET 兩種模型）
 sample/          範例專案 01–17（各附說明；build_samples.py 建置、check_samples.py 檢查），索引見 sample/README.md
-conformance/     第 1 層一致性測試套件：十支程式＋預期值表，拿去 RTL 模擬確認硬體的解碼與工具的編碼一致（見其 README）
+conformance/     一致性測試套件：第 1 層（編碼）十支、第 2 層（行為）五支程式＋預期結果表，拿去 RTL 模擬確認硬體與工具一致（見其 README）
 profiles/        目標 profile 範本（資料表深度、延遲、版面、softret 保留位置）
 docs/            規格書與各項說明（索引見 docs/PROJECT_STATUS.md 第 6 節）
 AssemblyCoreIDE/ IDE：services/（標準 C++17，不含 Qt）、ui/（Qt Widgets）、tests/、tools/md2pdf、docs/
