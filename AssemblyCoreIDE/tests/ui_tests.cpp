@@ -33,6 +33,7 @@
 #include <fstream>
 #include <sstream>
 
+#include "param_texts.h"
 #include "asmcore/profile_info.h"
 #include "asmcore/readiness.h"
 #include "readiness_texts.h"
@@ -330,6 +331,42 @@ private slots:
         ee->trigger();
         QCOMPARE(f.dbg.fetchDefault(), std::string("eeprom"));
         QCOMPARE(note->text(), QString("In use now: eeprom"));
+    }
+    // The .simparams file the IDE writes says, above every parameter, what it is for -- in the language of the interface. Every parameter of the
+    // catalog is offered for translation, and in Traditional Chinese every one has a Chinese purpose.
+    void theParameterFileSaysWhatEachParameterIsFor() {
+        int n = 0;
+        const char* const* keys = simParamKeysForTranslation(n);
+        QSet<QString> offered;
+        for (int i = 0; i < n; i++) offered.insert(QString::fromUtf8(keys[i]));
+        for (const asmcore::ParamDef& d : asmcore::paramCatalog()) QVERIFY2(offered.contains(QString::fromStdString(d.key)), d.key.c_str());
+        QCOMPARE(n, (int)asmcore::paramCatalog().size());
+        Fixture f;
+        PanelRegistry panels;
+        registerBuiltinPanels(panels);
+        MainWindow w(f.ctx, panels);                                        // (the window installs the words of the interface)
+        w.setQuiet(true);
+        QVERIFY(w.openProject("/w/p.acproj"));
+        std::string e;
+        QVERIFY(f.dbg.simParams().set("latency.alu", "3", e));
+        QVERIFY(f.dbg.simParams().saveAs("/w/p.simparams", e));
+        std::string en;
+        QVERIFY(f.fs->read("/w/p.simparams", en));
+        QVERIFY2(QString::fromStdString(en).contains("; ALU add / sub / compare / logic / shift\n; (unit: ISA cycles; initial value: 1; range: 0 .. 100000)\nlatency.alu = 3\n"), en.c_str());
+        QVERIFY(installLanguage("zh_TW"));
+        auto chinese = [](const QString& s) { for (QChar c : s) if (c.unicode() >= 0x4E00 && c.unicode() <= 0x9FFF) return true; return false; };
+        for (const asmcore::ParamDef& d : asmcore::paramCatalog()) QVERIFY2(chinese(simParamPurpose(d)), d.key.c_str());
+        QVERIFY(f.dbg.simParams().set("latency.alu", "4", e));              // written again, now in Chinese
+        std::string err2;
+        QVERIFY(f.dbg.simParams().save(err2));
+        std::string zh;
+        QVERIFY(f.fs->read("/w/p.simparams", zh));
+        const QString z = QString::fromStdString(zh);
+        QVERIFY2(z.contains(QString::fromUtf8("; ALU 加、減、比較、邏輯、移位一道指令的執行週期\n")) && z.contains("\nlatency.alu = 4\n") && chinese(z.section('\n', 0, 0)), zh.c_str());
+        asmcore::SimParams back;                                            // and it still reads back
+        std::vector<std::string> errs;
+        QVERIFY(back.load(zh, errs) && errs.empty() && back.get("latency.alu") == 4);
+        installLanguage("en");
     }
     void closeProjectFromTheFileMenu() {
         Fixture f;

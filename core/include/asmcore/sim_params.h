@@ -7,6 +7,7 @@
 // Where they come from (later ones win): the defaults, the environment file's [latency] [timing] [bus i2c] [sim] sections, its [params] section,
 // SimConfig::params (the IDE, `asmsim --param key=value`). Standard C++17 only.
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <string>
 #include <vector>
@@ -61,7 +62,14 @@ public:
     // Text form (an INI section): "[params]" then  key = value,  key.status = measured,  key.note = text.  `load` also takes the bare lines (no header) and
     // the key = value lines of an environment file's [params] section; ; and # start a comment. A bad line is reported and skipped.
     bool load(const std::string& text, std::vector<std::string>& errors);
-    std::string serialize() const;                          // only what is set, in catalog order
+    // Only what is set, in catalog order. With `words`, the file explains itself: its header lines first, and above every parameter a comment line
+    // that says what the parameter is for (`describe`; a text of several lines becomes several comment lines). Comments start with ';' and are
+    // skipped by load(): they are written again on every save, in the language of whoever saves. Without `words`: the bare values.
+    struct FileWords {
+        std::string header;                                            // "" = none
+        std::function<std::string(const ParamDef&)> describe;         // empty = no line above the parameters
+    };
+    std::string serialize(const FileWords* words = nullptr) const;
 
     // The parameters that are fields of Latency are written into it (the ones not set are left as they are).
     void apply(Latency& l) const;
@@ -70,5 +78,12 @@ private:
     std::map<std::string, int64_t> v_;
     std::map<std::string, std::string> status_, note_;
 };
+
+// The English words of a parameter file (SimParams::FileWords): what the file is, and for each parameter its purpose with the unit, the initial value
+// and the range. A front end with another language supplies its own.
+std::string describeParam(const ParamDef& d);
+// The facts of a parameter in one line, with the caller's words: "<unit> ISA cycles; <initial> 1; <range> 0 .. 100000" (or "<oneOf> a | b | c").
+std::string paramFacts(const ParamDef& d, const char* unit, const char* initial, const char* range, const char* oneOf);
+SimParams::FileWords defaultFileWords();
 
 }  // namespace asmcore

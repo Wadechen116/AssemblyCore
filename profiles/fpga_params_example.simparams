@@ -1,12 +1,16 @@
-; An example parameter file for `asmsim --params` (and, later, the IDE): only what differs from the initial (planning) values.
-; Every value here is a PLACEHOLDER to show the form. After measuring on the FPGA, put the real numbers in and mark them:
-;   key.status = measured      (or: confirmed, once checked against the RTL)
-;   key.note   = how it was measured
-; `asmsim --list-params` lists every parameter with its unit, range and how to measure it on the FPGA.
+; 模擬器的硬體參數：只列出與初始值（規劃值）不同的項目。
+; 每個參數上方的註解說明它的用途；註解在每次存檔時重新寫入。
+; 在 FPGA 上量測之後：KEY.status = measured（或 confirmed）　KEY.note = 量測方式
 [params]
+; Main 解碼器在每道指令上多花的週期（取描述子與解碼）
+; (單位： ISA cycles; 初始值： 0; 範圍： 0 .. 1000)
 main.fetch_cycles = 1
-main.fetch_cycles.note = placeholder: descriptor fetch from the 2x-clock SRAM, to be measured
+main.fetch_cycles.note = 暫定值，待量測（示範用）
+; Peri 解碼器在每道指令上多花的週期（取描述子與解碼）
+; (單位： ISA cycles; 初始值： 0; 範圍： 0 .. 1000)
 peri.fetch_cycles = 1
-peri.fetch_cycles.note = placeholder, to be measured
+peri.fetch_cycles.note = 暫定值，待量測（示範用）
+; 從 EXEC_XFER 到 I2C 主控端開始動作的額外週期（i2ch 方塊）
+; (單位： ISA cycles; 初始值： 0; 範圍： 0 .. 1000000)
 i2ch.overhead = 4
-i2ch.overhead.note = placeholder: CSR -> i2ch -> i2cm_top start, to be measured
+i2ch.overhead.note = 暫定值，待量測（示範用）

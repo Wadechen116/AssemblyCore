@@ -2615,6 +2615,37 @@ The decoder made of the bytes: %4</source>
     </message>
 </context>
 <context>
+    <name>SimParamFile</name>
+    <message>
+        <source>Hardware parameters of the simulator: only what differs from the initial (planning) values.</source>
+        <translation>模擬器的硬體參數：只列出與初始值（規劃值）不同的項目。</translation>
+    </message>
+    <message>
+        <source>The comment above each parameter says what it is for; the comments are written again on every save.</source>
+        <translation>每個參數上方的註解說明它的用途；註解在每次存檔時重新寫入。</translation>
+    </message>
+    <message>
+        <source>After measuring on the FPGA:  KEY.status = measured (or confirmed)   KEY.note = how it was measured</source>
+        <translation>在 FPGA 上量測之後：KEY.status = measured（或 confirmed）&#x3000;KEY.note = 量測方式</translation>
+    </message>
+    <message>
+        <source>unit:</source>
+        <translation>單位：</translation>
+    </message>
+    <message>
+        <source>initial value:</source>
+        <translation>初始值：</translation>
+    </message>
+    <message>
+        <source>range:</source>
+        <translation>範圍：</translation>
+    </message>
+    <message>
+        <source>one of:</source>
+        <translation>選項：</translation>
+    </message>
+</context>
+<context>
     <name>SimParamGroup</name>
     <message>
         <source>Instruction latency</source>
@@ -2663,6 +2694,293 @@ The decoder made of the bytes: %4</source>
     <message>
         <source>Status flags</source>
         <translation>狀態旗標</translation>
+    </message>
+</context>
+<context>
+    <name>SimParamPurpose</name>
+    <message>
+        <source>latency.br_cond</source>
+        <translation>BR.COND 一道指令的執行週期（條件成立與否相同）</translation>
+    </message>
+    <message>
+        <source>latency.cascade</source>
+        <translation>CASCADE_BEGIN／CASCADE_END 一道指令的執行週期</translation>
+    </message>
+    <message>
+        <source>latency.alu</source>
+        <translation>ALU 加、減、比較、邏輯、移位一道指令的執行週期</translation>
+    </message>
+    <message>
+        <source>latency.mul</source>
+        <translation>ALU 乘法一道指令的執行週期</translation>
+    </message>
+    <message>
+        <source>latency.mov_setup</source>
+        <translation>MOV 的固定週期（MOV 的執行週期＝固定週期＋每位元組週期 × 長度）</translation>
+    </message>
+    <message>
+        <source>latency.mov_byte</source>
+        <translation>MOV 每搬一個位元組的週期</translation>
+    </message>
+    <message>
+        <source>latency.slot_consume_setup</source>
+        <translation>從 PERI_RESULT_SLOT 取用結果的 MOV 的固定週期（總週期＝固定週期＋每位元組週期 × 長度）</translation>
+    </message>
+    <message>
+        <source>latency.csr_access</source>
+        <translation>一次 CSR 存取的週期（單位元組 EXEC_CSR＝1＋存取；SET8／CLR8 讀改寫＝1＋2 × 存取）</translation>
+    </message>
+    <message>
+        <source>latency.csr_byte</source>
+        <translation>多位元組 EXEC_CSR 每個位元組的週期</translation>
+    </message>
+    <message>
+        <source>latency.csr_done</source>
+        <translation>多位元組 EXEC_CSR 結尾的週期</translation>
+    </message>
+    <message>
+        <source>latency.pub_setup</source>
+        <translation>EXEC_PUB 的固定週期（總週期＝固定週期＋每位元組週期 × 長度）</translation>
+    </message>
+    <message>
+        <source>latency.pub_byte</source>
+        <translation>EXEC_PUB 每發佈一個位元組的週期</translation>
+    </message>
+    <message>
+        <source>latency.event_dispatch</source>
+        <translation>事件派送時轉向處理程序向量所花的週期</translation>
+    </message>
+    <message>
+        <source>latency.eret</source>
+        <translation>BR.ERET 回到返回位址所花的週期</translation>
+    </message>
+    <message>
+        <source>latency.xfer_issue</source>
+        <translation>EXEC_XFER 發出交易的固定週期（不含匯流排上的時間）</translation>
+    </message>
+    <message>
+        <source>clock.cpu_hz</source>
+        <translation>ISA 時脈的頻率（規格 14.1）；所有「週期」都以它為單位</translation>
+    </message>
+    <message>
+        <source>clock.i2c_hz</source>
+        <translation>I2C 匯流排時脈的頻率；決定 EXEC_XFER 與從 EEPROM 取指的時間（27 MHz 下 400 kHz＝每個 SCL 脈衝 67.5 個 ISA 週期）</translation>
+    </message>
+    <message>
+        <source>clock.timer_hz</source>
+        <translation>Main 與 Peri 兩個計時器共用的計數時脈（13.5 MHz＝ISA 時脈除以 2，即每個 tick 2 個 ISA 週期）</translation>
+    </message>
+    <message>
+        <source>timing.frame_cycles</source>
+        <translation>一個畫面的長度；0＝沒有畫面時序（FRAME_END_EVT 不會發生）</translation>
+    </message>
+    <message>
+        <source>timing.vblank_start</source>
+        <translation>垂直消隱視窗在畫面中的起點</translation>
+    </message>
+    <message>
+        <source>timing.vblank_len</source>
+        <translation>垂直消隱視窗的長度</translation>
+    </message>
+    <message>
+        <source>timing.line_cycles</source>
+        <translation>一行的長度；0＝沒有行時序</translation>
+    </message>
+    <message>
+        <source>timing.hblank_start</source>
+        <translation>水平消隱視窗在一行中的起點</translation>
+    </message>
+    <message>
+        <source>timing.hblank_len</source>
+        <translation>水平消隱視窗的長度</translation>
+    </message>
+    <message>
+        <source>frame.wcet_pgl</source>
+        <translation>Frame Timing 的 WCET：PGL 提交最壞要花的時間（消隱視窗剩餘時間不少於它，PGL_COMMIT_ELIGIBLE 才成立）</translation>
+    </message>
+    <message>
+        <source>frame.wcet_ae</source>
+        <translation>Frame Timing 的 WCET：AE 提交最壞要花的時間（AE_COMMIT_ELIGIBLE 的門檻）</translation>
+    </message>
+    <message>
+        <source>frame.wcet_line</source>
+        <translation>Frame Timing 的 WCET：行提交最壞要花的時間（LINE_COMMIT_ELIGIBLE 的門檻）</translation>
+    </message>
+    <message>
+        <source>sim.speed</source>
+        <translation>IDE 讓模擬器以多快的速度執行（真實時間每秒幾個 ISA 週期），只為了方便觀看：20～100 可以逐道指令跟著看，0＝全速。不影響程式的行為與時序</translation>
+    </message>
+    <message>
+        <source>sim.tie_order</source>
+        <translation>兩個 sequencer 在同一週期都可以執行時誰先（計時事件永遠最先）。I2C 匯流排、CSR 仲裁器、Status Flag 各有自己的規則，不由它決定</translation>
+    </message>
+    <message>
+        <source>sim.unmapped_csr</source>
+        <translation>EXEC_CSR 存取環境檔沒有定義的位址時：當成 RAM，或視為 fault</translation>
+    </message>
+    <message>
+        <source>sim.fault_stops</source>
+        <translation>發生 fault 時只停下那一個 sequencer，或兩個都停</translation>
+    </message>
+    <message>
+        <source>fetch.source</source>
+        <translation>兩個解碼器從哪裡取指：eeprom＝每道指令都經 I2C 從 EEPROM 讀出（依硬體的口述說明）；frontend＝開機把 ROM 載入程式 SRAM、之後從 SRAM 讀（依規格 v31）；sram＝直接用組譯結果、不花時間</translation>
+    </message>
+    <message>
+        <source>boot.load</source>
+        <translation>fetch.source = frontend 時，開機把兩份映像從 ROM 讀進程式 SRAM 要多久：i2c＝讀六個區域的匯流排時間；instant＝不花時間。載入完成前兩個 sequencer 都停住</translation>
+    </message>
+    <message>
+        <source>frontend.sram_latency</source>
+        <translation>fetch.source = frontend 時，程式 SRAM 從送出讀取要求到回應的 SRAM 週期數（每個 ISA 週期 2 個 SRAM 週期）</translation>
+    </message>
+    <message>
+        <source>frontend.sram_policy</source>
+        <translation>fetch.source = frontend 時，兩個 Frontend 如何共用一個 SRAM 讀取埠：shared＝先到先得、同時則 Main 先；slots＝每個 ISA 週期 Main、Peri 各有一個時槽</translation>
+    </message>
+    <message>
+        <source>frontend.hold_cycles</source>
+        <translation>fetch.source = frontend 時，Frontend 在 CMD_HOLD（取下一道指令之前）停留的週期</translation>
+    </message>
+    <message>
+        <source>frontend.dec_cycles</source>
+        <translation>fetch.source = frontend 時，Frontend 在 CMD_DEC（檢查並組成正規化命令）停留的週期</translation>
+    </message>
+    <message>
+        <source>frontend.fire_cycles</source>
+        <translation>fetch.source = frontend 時，Frontend 在 CMD_FIRE（等執行引擎接受要求）停留的週期</translation>
+    </message>
+    <message>
+        <source>fetch.read_mode</source>
+        <translation>fetch.source = eeprom 時，解碼器如何從 EEPROM 讀一道指令：sequential＝每個連續區段一次讀取；per_byte＝每個位元組各自一次讀取；instant＝不花匯流排時間</translation>
+    </message>
+    <message>
+        <source>fetch.transaction_overhead</source>
+        <translation>解碼器每次讀 EEPROM 的交易額外週期</translation>
+    </message>
+    <message>
+        <source>main.fetch_cycles</source>
+        <translation>Main 解碼器在每道指令上多花的週期（取描述子與解碼）</translation>
+    </message>
+    <message>
+        <source>peri.fetch_cycles</source>
+        <translation>Peri 解碼器在每道指令上多花的週期（取描述子與解碼）</translation>
+    </message>
+    <message>
+        <source>csr.access_main</source>
+        <translation>Main 這一側一次 CSR 存取的週期；-1＝與 latency.csr_access 相同</translation>
+    </message>
+    <message>
+        <source>csr.access_peri</source>
+        <translation>Peri 這一側一次 CSR 存取的週期；-1＝與 latency.csr_access 相同</translation>
+    </message>
+    <message>
+        <source>reset.boot_cycles</source>
+        <translation>從重置結束到兩個 sequencer 執行第一道指令的週期</translation>
+    </message>
+    <message>
+        <source>event.dispatch_extra</source>
+        <translation>事件派送在 latency.event_dispatch 之外多花的週期（檢查點取樣、載入向量）</translation>
+    </message>
+    <message>
+        <source>event.eret_extra</source>
+        <translation>BR.ERET 在 latency.eret 之外多花的週期</translation>
+    </message>
+    <message>
+        <source>timer.main.clock_div</source>
+        <translation>Main 計時器的時脈：0＝與另一個計時器一樣數 clock.timer_hz（正常情況）；填數字＝只有這個計時器每隔那麼多個 ISA 週期一個 tick（測試用）</translation>
+    </message>
+    <message>
+        <source>timer.main.start_latency</source>
+        <translation>Main 計時器：從啟動它的 EXEC_CSR 到第一個 tick 的週期</translation>
+    </message>
+    <message>
+        <source>timer.main.done_latency</source>
+        <translation>Main 計時器：從最後一個 tick 到 BR 看得到完成旗標的週期</translation>
+    </message>
+    <message>
+        <source>timer.peri.clock_div</source>
+        <translation>Peri 計時器的時脈：0＝與另一個計時器一樣數 clock.timer_hz（正常情況）；填數字＝只有這個計時器每隔那麼多個 ISA 週期一個 tick（測試用）</translation>
+    </message>
+    <message>
+        <source>timer.peri.start_latency</source>
+        <translation>Peri 計時器：從啟動它的 EXEC_CSR 到第一個 tick 的週期</translation>
+    </message>
+    <message>
+        <source>timer.peri.done_latency</source>
+        <translation>Peri 計時器：從最後一個 tick 到 BR 看得到完成旗標的週期</translation>
+    </message>
+    <message>
+        <source>timer.prescaler</source>
+        <translation>兩個計時器的 tick 怎麼產生：free_running＝除頻後的時脈一直在跑，tick 落在固定的格線上，等待時間與啟動時機有關；restart＝啟動時除頻器也重新開始，每次等待都剛好是週期 × 每 tick 的週期數</translation>
+    </message>
+    <message>
+        <source>timer.count</source>
+        <translation>週期設為 N 時實際數幾個 tick：n＝N 個；n_plus_1＝N＋1 個（在下溢時才完成）</translation>
+    </message>
+    <message>
+        <source>timer.phase</source>
+        <translation>只用於 free_running：重置後第一個 tick 所在的週期（tick 的格線由它起算）</translation>
+    </message>
+    <message>
+        <source>i2ch.overhead</source>
+        <translation>從 EXEC_XFER 到 I2C 主控端開始動作的額外週期（i2ch 方塊）</translation>
+    </message>
+    <message>
+        <source>i2c.ack_delay</source>
+        <translation>I2C 每個位元組階段在 ACK 上多花的週期</translation>
+    </message>
+    <message>
+        <source>i2c.stretch</source>
+        <translation>I2C 每個位元組階段的時脈延展週期</translation>
+    </message>
+    <message>
+        <source>i2c.turnaround</source>
+        <translation>帶暫存器位址的讀取在換向（重複起始）時多花的週期</translation>
+    </message>
+    <message>
+        <source>csr.arbiter_policy</source>
+        <translation>Main／Peri 共用的 CSR 仲裁器：先到先得，被占用時另一邊的 EXEC_CSR 要等。兩邊同一週期抵達時由它決定誰先（none＝不模擬競爭）</translation>
+    </message>
+    <message>
+        <source>csr.arbiter_penalty</source>
+        <translation>CSR 仲裁器空出來之後，等待的一方還要多等的週期（交接）</translation>
+    </message>
+    <message>
+        <source>datapath.contention</source>
+        <translation>是否模擬 Data Xfer 的競爭：Peri 的 EXEC_PUB 與 Main 從 PERI_RESULT_SLOT 的 MOV 共用它，被占用時要等</translation>
+    </message>
+    <message>
+        <source>datapath.contention_cycles</source>
+        <translation>Data Xfer 空出來之後，等待的一方還要多等的週期</translation>
+    </message>
+    <message>
+        <source>slot.copy_extra</source>
+        <translation>EXEC_PUB 把 rx_buf 複製到結果槽多花的週期：指令變長，結果也晚這麼久才看得到</translation>
+    </message>
+    <message>
+        <source>slot.valid_delay</source>
+        <translation>從複製完成到 Main 看得到 PERI_RESULT_VALID 的延遲</translation>
+    </message>
+    <message>
+        <source>flag.arbiter_policy</source>
+        <translation>Main／Peri 共用的 Status Flag 單元：會讀旗標的 BR 占用它，另一邊的 BR 要等。兩邊同一週期抵達時由它決定誰先（none＝不模擬競爭）</translation>
+    </message>
+    <message>
+        <source>flag.access_cycles</source>
+        <translation>一道 BR 占用 Status Flag 單元多久</translation>
+    </message>
+    <message>
+        <source>flag.arbiter_penalty</source>
+        <translation>Status Flag 單元空出來之後，等待的 BR 還要多等的週期（交接）</translation>
+    </message>
+    <message>
+        <source>flag.sample_delay_main</source>
+        <translation>Main 的 BR 看到的是幾個週期以前的旗標（計時器、影像視窗、結果槽等；不含 ALU 旗標）</translation>
+    </message>
+    <message>
+        <source>flag.sample_delay_peri</source>
+        <translation>Peri 的 BR 看到的是幾個週期以前的旗標</translation>
     </message>
 </context>
 <context>

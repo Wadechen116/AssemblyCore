@@ -251,6 +251,55 @@ static asmcore::Result simAssemble(const std::string& text) {
     return asmcore::assemble({asmcore::Source{"p.asm", text}}, nullptr, o);
 }
 
+// A .simparams file explains itself: above every parameter a comment says what it is for (with its unit, initial value and range), and the file
+// reads back to the same values. The words come from whoever writes the file (the core's English ones here; the IDE's in its language).
+static void t_sim_params_file_words() {
+    std::printf("\nSimulator parameters: the file says what each parameter is for\n");
+    asmcore::SimParams p;
+    std::string e;
+    p.set("latency.alu", "7", e);
+    p.set("fetch.source", "frontend", e);
+    p.set("datapath.contention", "true", e);
+    p.setStatus("latency.alu", "measured", e);
+    p.setNote("latency.alu", "ILA run 3");
+    check(p.serialize() == "[params]\nlatency.alu = 7\nlatency.alu.status = measured\nlatency.alu.note = ILA run 3\ndatapath.contention = true\nfetch.source = frontend\n"
+          || p.serialize().find("; ") == std::string::npos, "without words the file is the bare values, as before", p.serialize());
+    const asmcore::SimParams::FileWords w = asmcore::defaultFileWords();
+    const std::string text = p.serialize(&w);
+    check(text.find("; Hardware parameters of the simulator") == 0 && text.find("\n[params]\n") != std::string::npos, "the header comes first, as comments", text.substr(0, 80));
+    check(text.find("; ALU add / sub / compare / logic / shift\n; (unit: ISA cycles; initial value: 1; range: 0 .. 100000)\nlatency.alu = 7\n") != std::string::npos,
+          "above latency.alu: what it is for, its unit, initial value and range", text);
+    check(text.find("initial value: eeprom; one of: eeprom | sram | frontend)\nfetch.source = frontend\n") != std::string::npos, "a choice lists its options");
+    check(text.find("initial value: false; one of: true | false)\ndatapath.contention = true\n") != std::string::npos, "a switch says true | false");
+    asmcore::SimParams back;
+    std::vector<std::string> errs;
+    check(back.load(text, errs) && errs.empty() && back.serialize() == p.serialize() && back.status("latency.alu") == "measured" && back.note("latency.alu") == "ILA run 3",
+          "the commented file reads back to the same values, status and note", errs.empty() ? "" : errs[0]);
+    // every parameter of the catalog can be described (no empty purpose)
+    bool all = true;
+    for (const asmcore::ParamDef& d : asmcore::paramCatalog()) all = all && !d.help.empty() && asmcore::describeParam(d).find("initial value:") != std::string::npos;
+    check(all, "every parameter of the catalog has a purpose and its facts");
+    // the store writes its file with them
+    auto fs = std::make_shared<MemoryFileSystem>();
+    fs->write("/p/p.acproj", "name = p\nsource = a.asm\n");
+    fs->write("/p/a.asm", ".main\nh: JMP h\n");
+    Workspace ws(fs);
+    std::vector<std::string> oe;
+    ws.openProject("/p/p.acproj", oe);
+    SimParamsStore st(ws);
+    st.set("i2ch.overhead", "4", e);
+    check(st.saveAs("/p/x.simparams", e), "the store saves a file", e);
+    std::string disk;
+    fs->read("/p/x.simparams", disk);
+    check(disk.find("; extra cycles from EXEC_XFER to the I2C master starting (the i2ch block)\n") != std::string::npos && disk.find("\ni2ch.overhead = 4\n") != std::string::npos,
+          "the saved file carries the purpose of the parameter", disk);
+    setSimParamsFileWords([] { asmcore::SimParams::FileWords x; x.header = "H"; x.describe = [](const asmcore::ParamDef& d) { return "about " + d.key; }; return x; });
+    st.set("i2ch.overhead", "5", e);
+    check(ws.find("/p/x.simparams") && ws.find("/p/x.simparams")->text == "; H\n[params]\n; about i2ch.overhead\ni2ch.overhead = 5\n",
+          "a front end's own words are used at the next write", ws.find("/p/x.simparams") ? ws.find("/p/x.simparams")->text : "");
+    setSimParamsFileWords(nullptr);
+}
+
 static void t_sim_compare() {
     std::printf("\nSimulator runs: trace and comparison\n");
     const std::string alus = ".main\ns: ALU ADD unsigned\n ALU ADD unsigned\n ALU ADD unsigned\n ALU ADD unsigned\n ALU ADD unsigned\n ALU ADD unsigned\n ALU ADD unsigned\n ALU ADD unsigned\n ALU ADD unsigned\n ALU ADD unsigned\nh: JMP h\n";
@@ -1841,6 +1890,7 @@ int main() {
     t_fetch_default();
     t_block_link();
     t_sim_params();
+    t_sim_params_file_words();
     t_sim_compare();
     t_hardware_link();
     t_samples();

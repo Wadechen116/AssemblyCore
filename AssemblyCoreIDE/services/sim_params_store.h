@@ -2,6 +2,7 @@
 // The simulator's hardware parameters as the IDE holds them: a working set of values (what the parameter panel edits), the file they belong to (a
 // .simparams file, listed in the project as `simparams = ...`) and whether they differ from it. The simulator and the comparison runs take their values
 // from here. No Qt.
+#include <functional>
 #include <string>
 
 #include "asmcore/sim_params.h"
@@ -9,6 +10,12 @@
 #include "workspace.h"
 
 namespace acide {
+
+// The words a .simparams file is written with: the header and, above every parameter, what it is for (asmcore::SimParams::FileWords). The
+// English ones of the core until the interface supplies its own (in its language); asked for at every save, so a change of language shows in the
+// next file written.
+void setSimParamsFileWords(std::function<asmcore::SimParams::FileWords()> words);
+asmcore::SimParams::FileWords simParamsFileWords();
 
 class SimParamsStore {
 public:
@@ -43,6 +50,7 @@ public:
 
 private:
     void touch();
+    std::string serialized() const;
     Workspace& ws_;
     asmcore::SimParams p_;
     std::string path_;

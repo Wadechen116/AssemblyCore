@@ -4,9 +4,22 @@ namespace acide {
 
 // Every change goes into the workspace buffer of the file at once (like an edit of any file): the tab shows it is unsaved, Save / Save All / the question when
 // closing take care of it.
+namespace {
+std::function<asmcore::SimParams::FileWords()>& wordsSource() { static std::function<asmcore::SimParams::FileWords()> f; return f; }
+}  // namespace
+
+void setSimParamsFileWords(std::function<asmcore::SimParams::FileWords()> words) { wordsSource() = std::move(words); }
+asmcore::SimParams::FileWords simParamsFileWords() { return wordsSource() ? wordsSource()() : asmcore::defaultFileWords(); }
+
+// The text of the file: the values, each with a comment that says what the parameter is for.
+std::string SimParamsStore::serialized() const {
+    const asmcore::SimParams::FileWords w = simParamsFileWords();
+    return p_.serialize(&w);
+}
+
 void SimParamsStore::touch() {
     dirty_ = true;
-    if (!path_.empty()) ws_.setText(path_, p_.serialize());
+    if (!path_.empty()) ws_.setText(path_, serialized());
     changed.fire();
 }
 
@@ -55,7 +68,7 @@ bool SimParamsStore::load(const std::string& absPath, std::vector<std::string>& 
 
 bool SimParamsStore::save(std::string& error) {
     if (path_.empty()) { error = "these values belong to no file yet: use Save As"; return false; }
-    ws_.setText(path_, p_.serialize());
+    ws_.setText(path_, serialized());
     if (!ws_.save(path_, error)) return false;
     dirty_ = false;
     changed.fire();

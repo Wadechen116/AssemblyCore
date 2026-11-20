@@ -1,6 +1,12 @@
-; Parameters for main_peri.asm: only what differs from the initial values. Placeholders to play with on the Simulator page.
+; 模擬器的硬體參數：只列出與初始值（規劃值）不同的項目。
+; 每個參數上方的註解說明它的用途；註解在每次存檔時重新寫入。
+; 在 FPGA 上量測之後：KEY.status = measured（或 confirmed）　KEY.note = 量測方式
 [params]
-i2ch.overhead = 4
-i2ch.overhead.note = placeholder, to be measured
+; Frame Timing 的 WCET：PGL 提交最壞要花的時間（消隱視窗剩餘時間不少於它，PGL_COMMIT_ELIGIBLE 才成立）
+; (單位： ISA cycles; 初始值： 0; 範圍： 0 .. 2147483647)
 frame.wcet_pgl = 120
-frame.wcet_pgl.note = placeholder: the true bound at 400 kHz is 17,634 cycles (longer than the 14,362-cycle window), see README
+frame.wcet_pgl.note = 暫定值：400 kHz 下真正的上界是 17,634 個週期（比 14,362 個週期的視窗還長），見 README
+; 從 EXEC_XFER 到 I2C 主控端開始動作的額外週期（i2ch 方塊）
+; (單位： ISA cycles; 初始值： 0; 範圍： 0 .. 1000000)
+i2ch.overhead = 4
+i2ch.overhead.note = 暫定值，待量測

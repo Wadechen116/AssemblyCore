@@ -1,6 +1,12 @@
-; Parameters for alu_busy.asm: only what differs from the initial values. Made for watching the ALU on the Simulator page.
+; 模擬器的硬體參數：只列出與初始值（規劃值）不同的項目。
+; 每個參數上方的註解說明它的用途；註解在每次存檔時重新寫入。
+; 在 FPGA 上量測之後：KEY.status = measured（或 confirmed）　KEY.note = 量測方式
 [params]
-fetch.read_mode = instant
-fetch.read_mode.note = for watching: no bus time for fetching each instruction from the EEPROM, so that the cycles are the instructions' own
+; IDE 讓模擬器以多快的速度執行（真實時間每秒幾個 ISA 週期），只為了方便觀看：20～100 可以逐道指令跟著看，0＝全速。不影響程式的行為與時序
+; (單位： ISA cycles per second; 初始值： 1000; 範圍： 0 .. 1000000000)
 sim.speed = 40
-sim.speed.note = for watching: about 15 instructions a second, slow enough to see the ALU box flash with every operation
+sim.speed.note = 觀看用：大約每秒 15 道指令，慢到看得出 ALU 方塊隨每次運算閃一下
+; fetch.source = eeprom 時，解碼器如何從 EEPROM 讀一道指令：sequential＝每個連續區段一次讀取；per_byte＝每個位元組各自一次讀取；instant＝不花匯流排時間
+; (初始值： sequential; 選項： sequential | per_byte | instant)
+fetch.read_mode = instant
+fetch.read_mode.note = 觀看用：從 EEPROM 取指不花匯流排時間，週期數就是指令本身的

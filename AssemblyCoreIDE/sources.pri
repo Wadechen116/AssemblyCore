@@ -61,6 +61,7 @@ UI_SOURCES = \
     $$IDE_DIR/ui/custom_block_dialog.cpp \
     $$IDE_DIR/ui/block_texts.cpp \
     $$IDE_DIR/ui/readiness_texts.cpp \
+    $$IDE_DIR/ui/param_texts.cpp \
     $$IDE_DIR/ui/typeblock_box.cpp
 
 # headers that declare Q_OBJECT classes (qmake runs moc on the HEADERS it is given)

@@ -59,7 +59,7 @@
 |---|---|
 | `SimSession` | 模擬器的工作緒＋命令佇列＋狀態快照；即時執行（依 `sim.speed` 切片）、取消、倒回；更新有回壓，UI 忙時不堆積 |
 | `Debugger` | 使用者眼中的除錯：原始碼行、焦點 domain、執行／單步／繼續、中斷點、目前位置；在它與 `SimSession` 之間轉換。擁有硬體參數，值改變時同時送給執行中的模擬器與 `Workspace`（給建置）；實際使用的參數＝使用者的預設取指方式（`setFetchDefault`，設定 `sim.fetch_default`）→ 測試用的基底 → 專案的參數，後者優先 |
-| `SimParamsStore` | IDE 持有的硬體參數：工作中的值、所屬的 `.simparams` 檔、與預設的差異 |
+| `SimParamsStore` | IDE 持有的硬體參數：工作中的值、所屬的 `.simparams` 檔、與預設的差異。寫檔時在每個參數上方加註用途（用語由 `setSimParamsFileWords` 提供：介面的在 `ui/param_texts.*`，沒有介面時用核心的英文） |
 | `instr_params.*` | 一道指令牽涉哪些參數（積木與架構圖方塊的右鍵選單用） |
 | `TraceRing` | 除錯工作階段的近期歷史（兩個 sequencer 的指令與其間的事件），供時間軸與倒回 |
 | `sim_compare.*` | 在獨立的模擬器裡跑一段、留下軌跡，並比較兩份軌跡（基準線、標記、連結、統計） |

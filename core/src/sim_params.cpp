@@ -292,15 +292,48 @@ bool SimParams::load(const std::string& text, std::vector<std::string>& errors) 
     return ok;
 }
 
-std::string SimParams::serialize() const {
+namespace {
+void comment(std::ostringstream& o, const std::string& text) {          // every line of `text` as a ';' comment line
+    std::istringstream in(text);
+    std::string line;
+    while (std::getline(in, line)) o << "; " << line << "\n";
+}
+}  // namespace
+
+std::string SimParams::serialize(const FileWords* words) const {
     std::ostringstream o;
+    if (words && !words->header.empty()) comment(o, words->header);
     o << "[params]\n";
     for (const std::string& k : keys()) {
+        if (words && words->describe) if (const ParamDef* d = findParam(k)) comment(o, words->describe(*d));
         o << k << " = " << text(k) << "\n";
         if (status(k) != "planning") o << k << ".status = " << status(k) << "\n";
         if (!note(k).empty()) o << k << ".note = " << note(k) << "\n";
     }
     return o.str();
+}
+
+// "unit ISA cycles; initial value 1; range 0 .. 100000"  /  "initial value eeprom; one of eeprom | sram | frontend"
+std::string paramFacts(const ParamDef& d, const char* unit, const char* initial, const char* range, const char* oneOf) {
+    std::string t;
+    if (!d.unit.empty()) t += std::string(unit) + " " + d.unit + "; ";
+    SimParams none;
+    t += std::string(initial) + " " + none.text(d.key) + "; ";
+    if (d.kind == ParamDef::Enum) { t += std::string(oneOf) + " "; for (size_t i = 0; i < d.options.size(); i++) t += (i ? " | " : "") + d.options[i]; }
+    else if (d.kind == ParamDef::Bool) t += std::string(oneOf) + " true | false";
+    else t += std::string(range) + " " + std::to_string(d.lo) + " .. " + std::to_string(d.hi);
+    return t;
+}
+
+std::string describeParam(const ParamDef& d) { return d.help + "\n(" + paramFacts(d, "unit:", "initial value:", "range:", "one of:") + ")"; }
+
+SimParams::FileWords defaultFileWords() {
+    SimParams::FileWords w;
+    w.header = "Hardware parameters of the simulator: only what differs from the initial (planning) values.\n"
+               "The comment above each parameter says what it is for; the comments are written again on every save.\n"
+               "After measuring on the FPGA:  KEY.status = measured (or confirmed)   KEY.note = how it was measured";
+    w.describe = describeParam;
+    return w;
 }
 
 void SimParams::apply(Latency& l) const {

@@ -57,5 +57,6 @@ set(ACIDE_UI_SOURCES
   ${CMAKE_CURRENT_LIST_DIR}/ui/custom_block_dialog.cpp
   ${CMAKE_CURRENT_LIST_DIR}/ui/block_texts.cpp
   ${CMAKE_CURRENT_LIST_DIR}/ui/readiness_texts.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/ui/param_texts.cpp
   ${CMAKE_CURRENT_LIST_DIR}/ui/typeblock_box.cpp
 )

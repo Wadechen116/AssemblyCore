@@ -24,6 +24,7 @@
 #include "artifacts.h"
 #include "asmcore/readiness.h"
 #include "readiness_texts.h"
+#include "param_texts.h"
 #include "asmcore/blocks.h"
 #include "block_editor.h"
 #include "cursor_bar.h"
@@ -73,6 +74,7 @@ MainWindow::MainWindow(AppContext& ctx, PanelRegistry& panels, QWidget* parent) 
     caretLabel_ = new QLabel;
     debugLabel_ = new QLabel(tr("Debug: off"));
     debugLabel_->setObjectName("debugStatus");
+    setSimParamsFileWords(simParamsFileWordsForUi);                      // .simparams files say what each parameter is for, in the language in use
     readinessChip_ = new QPushButton;
     readinessChip_->setObjectName("readinessChip");
     readinessChip_->setFlat(true);
