@@ -88,6 +88,8 @@
 | 執行期間改寫 EEPROM | 不影響執行（SRAM 已鎖定） | 相同：`EXEC_XFER` 寫 EEPROM 不影響已載入 SRAM 的內容 |
 | SRAM 讀取延遲、兩個 Frontend 的排程、各狀態週期 | 由 profile 提供，且 WCET 需要可證明的上界 | 規劃值（`frontend.*`） |
 
+**怎麼切換**（2026-11-20）：IDE 的 **Debug → Default Fetch Model（預設取指方式）** 有兩個選項——「每道指令都從 I2C EEPROM 讀出（依硬體的口述說明）」＝`eeprom`，與「開機時把程式載入 SRAM（依規格 v31）」＝`frontend`。這是使用者層級的設定（`sim.fetch_default`，出廠為 `eeprom`，使用者決定），存在 IDE 的設定裡、不寫進專案；切換後會重新建置，週期數與 WCET 跟著變。專案的 `.simparams` 若自己設了 `fetch.source`，以專案為準（選單最下面一行會顯示目前實際使用的是哪一種）。命令列沒有這個設定，用 `--param fetch.source=frontend` 指定。
+
 **影響**：模擬器預設下的取指時間、WCET、匯流排競爭、範例 14 的結論（400 kHz 下提交無法保證落在消隱視窗內），**全部建立在「每道指令讀 EEPROM」這個前提上**。如果硬體照規格做，這些結論都不成立，應改用 `fetch.source = frontend` 重新評估。在 Q5a 有答案之前，兩種模式的結果都只能當參考。
 
 ### 1.3 先前已列出、仍未答覆的（完整內容在 `docs/PROJECT_STATUS.md` 第 7 節）
@@ -467,7 +469,7 @@
 | `sim.tie_order` | main_first | — | main_first／peri_first | 模擬器的設定，不是硬體 |
 | `sim.unmapped_csr` | ram | — | ram／fault | 模擬器的設定，不是硬體 |
 | `sim.fault_stops` | domain | — | domain／all | 模擬器的設定，不是硬體 |
-| `fetch.source` | eeprom | — | eeprom／sram／frontend | 使用者說明（2026-11-05）；**與規格 v31 不同，規格的做法是 `frontend`**（見 1.2） |
+| `fetch.source` | eeprom | — | eeprom／sram／frontend | 使用者說明（2026-11-05）；**與規格 v31 不同，規格的做法是 `frontend`**（見 1.2）。IDE 的預設可在 Debug → Default Fetch Model 切換 |
 | `boot.load` | i2c | — | instant／i2c | 規劃值，待 RTL |
 | `frontend.sram_latency` | 1 | SRAM cycles | 1..16 | 規劃值，待 RTL |
 | `frontend.sram_policy` | shared | — | shared／slots | 規劃值，待 RTL |

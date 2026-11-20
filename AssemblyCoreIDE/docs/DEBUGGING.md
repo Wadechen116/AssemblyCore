@@ -65,6 +65,12 @@ WCET 另外計入**取指時間**：硬體把每道指令（程式碼位元組�
 * `fetch.source = sram` 或 `fetch.read_mode = instant`：不計取指時間。
 * 確定的部分：協定的位元數、兩個時脈（27 MHz 為使用者確認、400 kHz 為規格 14.4）。**假設的部分**：解碼器是否每個區域一次讀完、EEPROM 位址位元組數（profile `eeprom_address_bytes`）、每次交易的額外週期（預設 2）、ACK 延遲與時脈延展（預設 0）、Frontend 各狀態的長度。這些都是參數，硬體數值出來後直接改。
 
+## 預設取指方式
+
+**怎麼切換**（2026-11-20）：IDE 的 **Debug → Default Fetch Model（預設取指方式）** 有兩個選項——「每道指令都從 I2C EEPROM 讀出（依硬體的口述說明）」＝`eeprom`，與「開機時把程式載入 SRAM（依規格 v31）」＝`frontend`。這是使用者層級的設定（`sim.fetch_default`，出廠為 `eeprom`，使用者決定），存在 IDE 的設定裡、不寫進專案；切換後會重新建置，週期數與 WCET 跟著變。專案的 `.simparams` 若自己設了 `fetch.source`，以專案為準（選單最下面一行會顯示目前實際使用的是哪一種）。命令列沒有這個設定，用 `--param fetch.source=frontend` 指定。
+
+兩種方式的差別與規格的寫法見 `docs/SIM_VS_SPEC.md` 1.2。
+
 ## 防止失控
 
 每次執行都有週期與牆上時間上限（預設 5000 萬週期、15 秒），到了就停下並說明原因；暫停永遠有效。

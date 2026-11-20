@@ -16,6 +16,31 @@ Debugger::Debugger(SimSession& s, Workspace& w, Settings* settings, std::functio
         ws_.setBuildParams(effectiveParams());                                         // ... and the builds: the WCET counts with the same cycle model
     });
     conns_.add(ws_.projectChanged, [this] { params_.syncWithProject(); });             // the project's .simparams file is the values of the parameters
+    if (settings_) {                                                                    // the user's default fetch model
+        const std::string f = settings_->get("sim.fetch_default", "eeprom");
+        if (f == "frontend") { fetchDefault_ = f; ws_.setBuildParams(effectiveParams()); }
+    }
+}
+
+// The user's default fetch model, then the bench's starting point, then the project's parameters: the later ones win.
+asmcore::SimParams Debugger::effectiveParams() const {
+    asmcore::SimParams p;
+    std::string e;
+    if (fetchDefault_ != "eeprom") p.set("fetch.source", fetchDefault_, e);          // ("eeprom" is the catalog's own initial value: nothing to set)
+    p.merge(base_);
+    p.merge(params_.params());
+    return p;
+}
+
+bool Debugger::setFetchDefault(const std::string& source) {
+    if (source != "eeprom" && source != "frontend") return false;
+    if (source == fetchDefault_) return true;
+    fetchDefault_ = source;
+    if (settings_) settings_->set("sim.fetch_default", source);
+    if (active()) session_.setParams(effectiveParams());
+    ws_.setBuildParams(effectiveParams());
+    fetchDefaultChanged.fire();
+    return true;
 }
 
 SnapshotPtr Debugger::programForMapping() const {

@@ -4810,6 +4810,42 @@ An IDE for the Sensor Micro-Sequencer ISA, built on the AssemblyCore assembler.<
         <source>  The WCET is planning-only, not a guarantee: readiness is %1 (click the level in the status bar to see what is missing).</source>
         <translation>  WCET 僅供規劃，不是保證值：就緒等級為 %1（點狀態列的等級看還缺什麼）。</translation>
     </message>
+    <message>
+        <source>Default Fetch Model</source>
+        <translation>預設取指方式</translation>
+    </message>
+    <message>
+        <source>Every instruction is read from the I2C EEPROM (as the hardware was described)</source>
+        <translation>每道指令都從 I2C EEPROM 讀出（依硬體的口述說明）</translation>
+    </message>
+    <message>
+        <source>fetch.source = eeprom: before it executes an instruction, the decoder reads it from the EEPROM over the I2C bus. Thousands of cycles each; shares the bus with EXEC_XFER.</source>
+        <translation>fetch.source = eeprom：解碼器執行每道指令之前，先經 I2C 匯流排從 EEPROM 讀出它。每道數千個週期；與 EXEC_XFER 共用匯流排。</translation>
+    </message>
+    <message>
+        <source>Boot loads the program into the SRAM (as specification v31 has it)</source>
+        <translation>開機時把程式載入 SRAM（依規格 v31）</translation>
+    </message>
+    <message>
+        <source>fetch.source = frontend: at power-on boot copies the ROM into the program SRAM, then the two Frontends fetch from the SRAM. A few cycles each.</source>
+        <translation>fetch.source = frontend：開機時 Boot 把 ROM 複製到程式 SRAM，之後兩個 Frontend 從 SRAM 取指。每道只要幾個週期。</translation>
+    </message>
+    <message>
+        <source>Default fetch model: %1. This project sets fetch.source itself (%2), which wins.</source>
+        <translation>預設取指方式：%1。這個專案自己設定了 fetch.source（%2），以專案為準。</translation>
+    </message>
+    <message>
+        <source>Default fetch model: %1. Cycle counts and the WCET are counted again.</source>
+        <translation>預設取指方式：%1。週期數與 WCET 會重新計算。</translation>
+    </message>
+    <message>
+        <source>This project sets fetch.source itself: %1</source>
+        <translation>這個專案自己設定了 fetch.source：%1</translation>
+    </message>
+    <message>
+        <source>In use now: %1</source>
+        <translation>目前使用：%1</translation>
+    </message>
 </context>
 <context>
     <name>acide::TypeBlockBox</name>

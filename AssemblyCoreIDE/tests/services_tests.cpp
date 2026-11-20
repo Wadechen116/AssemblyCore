@@ -794,6 +794,63 @@ static void t_build_follows_params() {
     }
 }
 
+// The default fetch model is the user's choice (setting sim.fetch_default): "eeprom" (as the hardware was described, the initial choice) or
+// "frontend" (as spec v31 has it). It reaches the builds and the simulator; a project that sets fetch.source itself wins; it is not a change
+// of the project's parameters.
+static void t_fetch_default() {
+    std::printf("\nDefault fetch model (the user's setting)\n");
+    const std::string src = ".main\n.wcet T, a, b\na: MOV CONST(1, 2) -> MAIN_SCRATCHPAD[0..1]\n MOV MAIN_SCRATCHPAD[0..1] -> ALU_OPA\n"
+                            " MOV MAIN_SCRATCHPAD[0..1] -> ALU_OPB\n ALU ADD unsigned\nb: JMP b\n";
+    auto fetchOf = [](const SnapshotPtr& s) { return s->result.wcet.empty() ? (int64_t)-1 : (int64_t)s->result.wcet[0].fetchCycles; };
+    DebugRig r(src);
+    r.dbg.setBaseParams(asmcore::SimParams());                              // (this test looks at the fetching: no bench pin on it)
+    int builds = 0, changed = 0;
+    r.ws.buildParamsChanged.connect([&] { builds++; });
+    r.dbg.fetchDefaultChanged.connect([&] { changed++; });
+    check(r.dbg.fetchDefault() == "eeprom" && r.dbg.effectiveFetchSource() == "eeprom" && !r.dbg.effectiveParams().isSet("fetch.source"),
+          "never chosen: eeprom, the catalog's own initial value (nothing is set)");
+    r.rebuild();
+    check(r.latest->fetchModel == "I2C EEPROM, one read per region, 400000 Hz" && fetchOf(r.latest) == 33433, "the build counts the EEPROM fetch", r.latest->fetchModel);
+    check(!r.dbg.setFetchDefault("sram") && !r.dbg.setFetchDefault("") && r.dbg.fetchDefault() == "eeprom" && changed == 0, "only eeprom and frontend can be the default");
+
+    check(r.dbg.setFetchDefault("frontend") && changed == 1 && builds == 1, "choosing frontend asks for a build");
+    check(r.dbg.effectiveFetchSource() == "frontend" && r.settings.get("sim.fetch_default") == "frontend", "it is what the simulator will use, and it is saved in the settings");
+    check(!r.dbg.simParams().dirty() && r.dbg.simParams().changedCount() == 0 && !r.dbg.projectSetsFetchSource(), "it is not a change of the project's parameters");
+    r.rebuild();
+    check(r.latest->fetchModel.find("program SRAM through the Frontend") == 0 && fetchOf(r.latest) > 0 && fetchOf(r.latest) < 200,
+          "the build counts the fetch from the program SRAM", r.latest->fetchModel + " " + std::to_string(fetchOf(r.latest)));
+    {
+        std::string why;
+        const bool began = r.begin(why);
+        r.disp->pumpUntil([&] { return r.ses.view() && r.ses.view()->frontend[0].active; }, 3000);
+        check(began && r.ses.view() && r.ses.view()->frontend[0].active, "a debug session started now runs the Frontend model", why);
+        r.dbg.stop();
+    }
+    check(r.dbg.setFetchDefault("frontend") && changed == 1, "choosing it again changes nothing");
+
+    // a project that says where it fetches from is left alone
+    std::string e;
+    r.dbg.simParams().set("fetch.source", "eeprom", e);
+    check(r.dbg.projectSetsFetchSource() && r.dbg.effectiveFetchSource() == "eeprom", "the project's own fetch.source wins over the default");
+    r.rebuild();
+    check(r.latest->fetchModel.find("I2C EEPROM") == 0, "... also in the build", r.latest->fetchModel);
+    r.dbg.simParams().clear("fetch.source");
+    check(r.dbg.effectiveFetchSource() == "frontend", "cleared: the default is back");
+
+    // the setting is the user's: the next Debugger (the next start of the IDE) has it
+    {
+        auto fs = std::make_shared<MemoryFileSystem>();
+        auto disp = std::make_shared<QueueDispatcher>();
+        Workspace ws(fs);
+        SimSession ses(disp);
+        Debugger again(ses, ws, &r.settings, [] { return SnapshotPtr(); });
+        check(again.fetchDefault() == "frontend" && again.effectiveFetchSource() == "frontend" && ws.buildParams().text("fetch.source") == "frontend",
+              "a new Debugger with the same settings starts with frontend, builds included");
+    }
+    check(r.dbg.setFetchDefault("eeprom") && r.settings.get("sim.fetch_default") == "eeprom" && r.dbg.effectiveFetchSource() == "eeprom" && !r.dbg.effectiveParams().isSet("fetch.source"),
+          "back to eeprom");
+}
+
 static void t_debugger() {
     std::printf("\nDebugger (lines, locations, stale)\n");
     using namespace asmcore;
@@ -1781,6 +1838,7 @@ int main() {
     t_workspace();
     t_build();
     t_build_follows_params();
+    t_fetch_default();
     t_block_link();
     t_sim_params();
     t_sim_compare();

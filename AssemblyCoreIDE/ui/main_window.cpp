@@ -1095,6 +1095,46 @@ void MainWindow::createDebugActions() {
         sim->setShortcut(QKeySequence("Ctrl+Shift+M"));
         sim->setObjectName("simulatorAction");
         connect(sim, &QAction::triggered, this, [this] { openSimulator(); });
+        {   // where the decoders fetch from when the project does not say: the hardware as it was described, or as the specification has it
+            QMenu* fm = dbg->addMenu(tr("Default Fetch Model"));
+            fm->setObjectName("fetchDefaultMenu");
+            fm->setToolTipsVisible(true);
+            auto* grp = new QActionGroup(this);
+            grp->setObjectName("fetchDefaultGroup");
+            struct Choice { const char* id; QString text, tip; };
+            const Choice choices[] = {
+                {"eeprom", tr("Every instruction is read from the I2C EEPROM (as the hardware was described)"),
+                 tr("fetch.source = eeprom: before it executes an instruction, the decoder reads it from the EEPROM over the I2C bus. Thousands of cycles each; shares the bus with EXEC_XFER.")},
+                {"frontend", tr("Boot loads the program into the SRAM (as specification v31 has it)"),
+                 tr("fetch.source = frontend: at power-on boot copies the ROM into the program SRAM, then the two Frontends fetch from the SRAM. A few cycles each.")},
+            };
+            for (const Choice& c : choices) {
+                QAction* a = fm->addAction(c.text);
+                a->setObjectName(QString("fetchDefault_") + c.id);
+                a->setToolTip(c.tip);
+                a->setCheckable(true);
+                a->setActionGroup(grp);
+                a->setChecked(ctx_.debugger.fetchDefault() == c.id);
+                const std::string id = c.id;
+                connect(a, &QAction::triggered, this, [this, id] {
+                    ctx_.debugger.setFetchDefault(id);
+                    ctx_.log.fire(ctx_.debugger.projectSetsFetchSource()
+                                      ? tr("Default fetch model: %1. This project sets fetch.source itself (%2), which wins.").arg(fromStd(id), fromStd(ctx_.debugger.effectiveFetchSource()))
+                                      : tr("Default fetch model: %1. Cycle counts and the WCET are counted again.").arg(fromStd(id)));
+                });
+            }
+            fm->addSeparator();
+            QAction* note = fm->addAction(QString());
+            note->setObjectName("fetchDefaultNote");
+            note->setEnabled(false);
+            auto refresh = [this, note] {
+                note->setText(ctx_.debugger.projectSetsFetchSource() ? tr("This project sets fetch.source itself: %1").arg(fromStd(ctx_.debugger.effectiveFetchSource()))
+                                                                    : tr("In use now: %1").arg(fromStd(ctx_.debugger.effectiveFetchSource())));
+            };
+            refresh();
+            conns_.add(ctx_.debugger.simParams().changed, refresh);
+            conns_.add(ctx_.debugger.fetchDefaultChanged, refresh);
+        }
         quickParamsAct_ = dbg->addAction(tr("Quick Parameters..."));
         quickParamsAct_->setShortcut(QKeySequence("Ctrl+Shift+P"));
         quickParamsAct_->setObjectName("quickParamsAction");

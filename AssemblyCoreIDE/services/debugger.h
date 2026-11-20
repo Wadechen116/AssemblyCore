@@ -76,7 +76,16 @@ public:
     // to no bus time here. Every simulator the debugger makes (debugging, the analysis run, auto debug) gets them.
     void setBaseParams(const asmcore::SimParams& p) { base_ = p; ws_.setBuildParams(effectiveParams()); }
     const asmcore::SimParams& baseParams() const { return base_; }
-    asmcore::SimParams effectiveParams() const { asmcore::SimParams p = base_; p.merge(params_.params()); return p; }
+    asmcore::SimParams effectiveParams() const;
+    // Where the decoders fetch from when the project's parameters do not say (fetch.source is not set in its .simparams): "eeprom" -- every
+    // instruction is read from the I2C EEPROM, as the hardware was described -- or "frontend" -- boot loads the ROM into the program SRAM and the
+    // Frontends read that, as spec v31 has it. A setting of the user (sim.fetch_default, "eeprom" when it was never chosen), not of a project: it is
+    // no change of the project's parameters. False for any other name. A project that sets fetch.source itself is not touched.
+    bool setFetchDefault(const std::string& source);
+    const std::string& fetchDefault() const { return fetchDefault_; }
+    bool projectSetsFetchSource() const { return params_.params().isSet("fetch.source"); }
+    std::string effectiveFetchSource() const { return effectiveParams().text("fetch.source"); }      // what the simulator and the builds really use
+    Signal<> fetchDefaultChanged;
     // The recent past of the session (both sequencers, events, bus transfers ...): what the time line shows, running or stopped. Holds the last `trace.rows`
     // instructions (a setting, 60000 by default).
     const TraceRing& trace() const { return trace_; }
@@ -160,6 +169,7 @@ private:
 
     SimParamsStore params_;
     asmcore::SimParams base_;
+    std::string fetchDefault_ = "eeprom";
     std::shared_ptr<const std::pair<std::vector<uint8_t>, asmcore::EepromMap>> eeprom_;
     std::string eepromPath_;
     SimSession& session_;

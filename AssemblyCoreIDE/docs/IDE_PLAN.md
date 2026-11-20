@@ -108,6 +108,7 @@ CMake 與 QMake 都能建置、低耦合高彈性、**不做**寫入板子（F4�
 | EEPROM 視窗（建置／驗證／反組譯）、Debug from an EEPROM Image | ✅ | `docs/EEPROM.md`；專案鍵 `debug_eeprom` |
 | Decoder 面板 | ✅ | 解碼問題 A／B／C 著色、形成指令的各階段、Frontend 七狀態（選用） |
 | 就緒等級 L0／L1／L2（狀態列標示＋說明視窗） | ✅（2026-11-20） | 等級由 profile 已確認的群組與硬體參數的狀態決定；說明視窗（含各缺口的標題、原因、補法）中英文皆有；L2 目前無法達到（WCET 未涵蓋等另一個 sequencer） |
+| 預設取指方式（Debug → Default Fetch Model） | ✅（2026-11-20） | `eeprom`（口述的硬體，出廠預設）或 `frontend`（規格 v31）；使用者設定 `sim.fetch_default`，專案的 `fetch.source` 優先 |
 | Program SRAM 面板 | ✅ | 標示已讀／未讀的字 ⬜ |
 | 問題面板的 Kind 欄（建置／解碼／執行） | ✅ | |
 | IDE 組譯器的 WCET 與週期數跟隨模擬器的硬體參數 | ✅（2026-11-20） | 週期模型的參數（`latency.*`、`clock.*_hz`）蓋在 profile 上；WCET 另計入取指時間（依 `fetch.source` 等參數，分開報執行與取指）；改這類參數會重建；F7 的輸出列出來源與算法。未含等另一個 sequencer 的時間；不跟隨環境檔的 `[latency]`／`[params]` |
@@ -120,8 +121,8 @@ CMake 與 QMake 都能建置、低耦合高彈性、**不做**寫入板子（F4�
 | 核心（模擬器） | 336 |
 | 核心（反組譯器、交叉比對、硬體描述、積木） | 63、6、83、450 |
 | 服務層（積木） | 267 |
-| 服務層（其餘） | 456 |
-| UI（offscreen，六個測試類別） | 138 通過、1 略過（浸泡測試） |
+| 服務層（其餘） | 470 |
+| UI（offscreen，六個測試類別） | 139 通過、1 略過（浸泡測試） |
 | 建置檔案一致性（`tests/check_build_files.py`） | 1 |
 | 翻譯完整性（`tests/check_translations.py`） | 1 |
 

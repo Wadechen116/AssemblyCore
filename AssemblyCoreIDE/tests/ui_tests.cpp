@@ -297,6 +297,40 @@ private slots:
         }
         installLanguage("en");
     }
+    // Debug > Default Fetch Model: the user chooses where the decoders fetch from when the project does not say (as the hardware was described, or
+    // as the specification has it). The choice rebuilds, is kept in the settings, and the menu says what is in use.
+    void theDefaultFetchModelIsChosenInTheDebugMenu() {
+        Fixture f;
+        f.dbg.setBaseParams(asmcore::SimParams());                          // (no bench pin on the fetching here)
+        f.ctx.snapshot.reset();
+        PanelRegistry panels;
+        registerBuiltinPanels(panels);
+        MainWindow w(f.ctx, panels);
+        w.setQuiet(true);
+        w.show();
+        QVERIFY(w.openProject("/w/p.acproj"));
+        QVERIFY(waitBuild(f, w));
+        auto* ee = w.findChild<QAction*>("fetchDefault_eeprom");
+        auto* fe = w.findChild<QAction*>("fetchDefault_frontend");
+        auto* note = w.findChild<QAction*>("fetchDefaultNote");
+        QVERIFY(ee && fe && note);
+        QVERIFY(ee->isChecked() && !fe->isChecked());                       // the initial choice: as the hardware was described
+        QCOMPARE(note->text(), QString("In use now: eeprom"));
+        QVERIFY2(QString::fromStdString(f.ctx.snapshot->fetchModel).startsWith("I2C EEPROM"), f.ctx.snapshot->fetchModel.c_str());
+        fe->trigger();
+        for (int i = 0; i < 600 && !QString::fromStdString(f.ctx.snapshot->fetchModel).startsWith("program SRAM"); i++) QTest::qWait(10);
+        QVERIFY2(QString::fromStdString(f.ctx.snapshot->fetchModel).startsWith("program SRAM through the Frontend"), f.ctx.snapshot->fetchModel.c_str());
+        QVERIFY(fe->isChecked() && !ee->isChecked());
+        QCOMPARE(note->text(), QString("In use now: frontend"));
+        QCOMPARE(QString::fromStdString(f.settings.get("sim.fetch_default")), QString("frontend"));
+        std::string e;                                                      // a project that sets it itself: the menu says so
+        QVERIFY(f.dbg.simParams().set("fetch.source", "eeprom", e));
+        QCOMPARE(note->text(), QString("This project sets fetch.source itself: eeprom"));
+        f.dbg.simParams().clear("fetch.source");
+        ee->trigger();
+        QCOMPARE(f.dbg.fetchDefault(), std::string("eeprom"));
+        QCOMPARE(note->text(), QString("In use now: eeprom"));
+    }
     void closeProjectFromTheFileMenu() {
         Fixture f;
         f.ctx.snapshot.reset();
