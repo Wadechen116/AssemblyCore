@@ -42,6 +42,15 @@ SnapshotPtr buildNow(const BuildInput& in, const asmcore::lang::Language& langua
         if (ov == in.overlay.end() && (!in.fs || !in.fs->read(in.profilePath, text))) snap->notes.push_back("cannot read the profile " + in.profilePath);
         else if (!opt.profile.load(text, errs)) for (auto& e : errs) snap->notes.push_back(in.profilePath + ": " + e);
     }
+    // The cycle model is the simulator's: its parameters win over the profile, exactly as in the simulator (and in asmsim), so that the WCET and the
+    // cycle column say what a run will show. Nothing else of a build depends on them: the images are the same.
+    {
+        const asmcore::Latency before = opt.profile.latency;
+        in.params.apply(opt.profile.latency);
+        for (const asmcore::ParamDef& d : asmcore::paramCatalog())
+            if (d.latency && before.*(d.latency) != opt.profile.latency.*(d.latency))
+                snap->cycleOverrides.push_back(d.key + " = " + std::to_string(opt.profile.latency.*(d.latency)) + " (profile: " + std::to_string(before.*(d.latency)) + ")");
+    }
     asmcore::IncludeResolver res = makeResolver(in);
     for (auto& s : in.sources) snap->sourcePaths.push_back(s.name);
     snap->sources = in.sources;

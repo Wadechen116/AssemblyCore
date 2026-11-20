@@ -651,6 +651,96 @@ struct DebugRig {
     bool waitStop(size_t n, int ms = 5000) { return disp->pumpUntil([&] { return stops.size() >= n; }, ms); }
 };
 
+// The assembler's cycle model follows the simulator's hardware parameters: the WCET and the cycle column of a build are counted with the numbers a
+// run uses (BuildInput::params), and a build is asked for again when one of those numbers changes -- and only then.
+static void t_build_follows_params() {
+    std::printf("\nBuild: WCET follows the hardware parameters\n");
+    auto lang = asmcore::lang::Language::defaults();
+    const std::string src = ".main\n.wcet T, a, b\na: MOV CONST(1, 2) -> MAIN_SCRATCHPAD[0..1]\n MOV MAIN_SCRATCHPAD[0..1] -> ALU_OPA\n"
+                            " MOV MAIN_SCRATCHPAD[0..1] -> ALU_OPB\n ALU ADD unsigned\nb: JMP b\n";
+    auto aluCycles = [](const SnapshotPtr& s) { for (auto& i : s->result.instrs) if (i.text.find("ALU ADD") != std::string::npos) return i.cycles; return -1; };
+    auto wcetOf = [](const SnapshotPtr& s) { return s->result.wcet.empty() ? (int64_t)-1 : (int64_t)s->result.wcet[0].cycles; };
+    {
+        auto fs = std::make_shared<MemoryFileSystem>();
+        fs->write("/p/p.acproj", "name = p\nsource = a.asm\n");
+        fs->write("/p/a.asm", src);
+        Workspace ws(fs);
+        std::vector<std::string> errs;
+        ws.openProject("/p/p.acproj", errs);
+        SnapshotPtr plain = buildNow(ws.snapshot(), lang);
+        check(plain->result.ok && wcetOf(plain) == 10 && aluCycles(plain) == 1 && plain->cycleOverrides.empty(),
+              "without parameters the build counts with the profile (WCET 10, ALU 1 cycle, nothing overridden)", std::to_string(wcetOf(plain)));
+
+        int fired = 0;
+        ws.buildParamsChanged.connect([&] { fired++; });
+        const uint64_t rev = ws.revision();
+        asmcore::SimParams p;
+        std::string e;
+        p.set("latency.alu", "7", e);
+        ws.setBuildParams(p);
+        SnapshotPtr slow = buildNow(ws.snapshot(), lang);
+        check(fired == 1 && ws.revision() == rev, "a parameter of the cycle model asks for a build; the revision does not move (no text changed)", std::to_string(fired));
+        check(slow->result.ok && aluCycles(slow) == 7 && wcetOf(slow) == 16, "latency.alu = 7: the ALU instruction costs 7 and the WCET grows by 6",
+              std::to_string(aluCycles(slow)) + " / " + std::to_string(wcetOf(slow)));
+        check(slow->cycleOverrides.size() == 1 && slow->cycleOverrides[0] == "latency.alu = 7 (profile: 1)", "the build says which numbers came from the parameters",
+              slow->cycleOverrides.empty() ? "" : slow->cycleOverrides[0]);
+        check(slow->profile.latency.alu == 7, "the snapshot's profile carries the cycle model it was built with");
+        check(slow->result.image(asmcore::Domain::Main).bytes == plain->result.image(asmcore::Domain::Main).bytes, "the image is the same: only the counting changed");
+
+        p.set("sim.speed", "40", e);
+        p.set("csr.arbiter_policy", "main_first", e);
+        ws.setBuildParams(p);
+        check(fired == 1, "parameters outside the cycle model (speed, arbiter) ask for no build", std::to_string(fired));
+        p.set("latency.alu", "1", e);
+        ws.setBuildParams(p);
+        SnapshotPtr same = buildNow(ws.snapshot(), lang);
+        check(fired == 2 && same->cycleOverrides.empty() && wcetOf(same) == 10, "set to the profile's own value: built again, nothing listed as overridden", std::to_string(fired));
+        ws.setBuildParams(asmcore::SimParams());
+        check(fired == 3 && wcetOf(buildNow(ws.snapshot(), lang)) == 10, "all parameters cleared: back to the profile");
+
+        // the profile is the base, the parameters win over it -- the simulator's order
+        fs->write("/p/t.profile", "alu = 3\nmov_byte = 2\n");
+        fs->write("/p/p.acproj", "name = p\nsource = a.asm\nprofile = t.profile\n");
+        ws.openProject("/p/p.acproj", errs);
+        SnapshotPtr prof = buildNow(ws.snapshot(), lang);
+        check(prof->result.ok && aluCycles(prof) == 3 && prof->cycleOverrides.empty(), "a profile's [latency] numbers are used when no parameter is set", std::to_string(aluCycles(prof)));
+        asmcore::SimParams q;
+        q.set("latency.alu", "9", e);
+        ws.setBuildParams(q);
+        SnapshotPtr over = buildNow(ws.snapshot(), lang);
+        check(aluCycles(over) == 9 && over->profile.latency.movByte == 2 && over->cycleOverrides.size() == 1 && over->cycleOverrides[0] == "latency.alu = 9 (profile: 3)",
+              "a parameter wins over the profile; the numbers it does not set stay the profile's", over->cycleOverrides.empty() ? "" : over->cycleOverrides[0]);
+
+        // what the build counts is what a run takes
+        asmcore::sim::SimConfig cfg;
+        cfg.profile = asmcore::Profile();
+        std::vector<std::string> pe;
+        cfg.profile.load("alu = 3\nmov_byte = 2\n", pe);
+        cfg.params = q;
+        std::string pin;
+        cfg.baseParams.set("fetch.read_mode", "instant", pin);
+        asmcore::sim::Simulator sim(over->result, cfg);
+        check(sim.params().get("latency.alu") == 9, "the simulator given the same profile and parameters runs with the same number");
+    }
+    {   // the Debugger owns the parameters and keeps the workspace's copy up to date
+        DebugRig r(src);
+        int fired = 0;
+        r.ws.buildParamsChanged.connect([&] { fired++; });
+        std::string e;
+        check(r.dbg.simParams().set("latency.mul", "5", e) && fired == 1 && r.ws.buildParams().get("latency.mul") == 5,
+              "a value set in the parameter store reaches the builds", e);
+        r.rebuild();
+        check(r.latest->cycleOverrides.size() == 1 && r.latest->cycleOverrides[0] == "latency.mul = 5 (profile: 2)", "... and the next build uses it",
+              r.latest->cycleOverrides.empty() ? "" : r.latest->cycleOverrides[0]);
+        check(r.ws.buildParams().isSet("fetch.read_mode"), "the bench's base parameters are part of what the builds get (setBaseParams)");
+        r.dbg.simParams().set("sim.speed", "100", e);
+        check(fired == 1, "the speed of the run asks for no build", std::to_string(fired));
+        r.dbg.simParams().clear("latency.mul");
+        r.rebuild();
+        check(fired == 2 && r.latest->cycleOverrides.empty(), "cleared: the builds are back on the profile", std::to_string(fired));
+    }
+}
+
 static void t_debugger() {
     std::printf("\nDebugger (lines, locations, stale)\n");
     using namespace asmcore;
@@ -1637,6 +1727,7 @@ int main() {
     t_project();
     t_workspace();
     t_build();
+    t_build_follows_params();
     t_block_link();
     t_sim_params();
     t_sim_compare();

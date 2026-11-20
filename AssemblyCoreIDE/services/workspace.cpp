@@ -145,6 +145,20 @@ bool Workspace::anyDirty() const {
     return false;
 }
 
+// The values of the parameters that are fields of the cycle model, as text: two sets that give the same text give the same build.
+static std::string cycleModelKey(const asmcore::SimParams& p) {
+    std::string k;
+    for (const asmcore::ParamDef& d : asmcore::paramCatalog())
+        if (d.latency && p.isSet(d.key)) k += d.key + "=" + std::to_string(p.get(d.key)) + ";";
+    return k;
+}
+
+void Workspace::setBuildParams(const asmcore::SimParams& p) {
+    const bool differs = cycleModelKey(p) != cycleModelKey(buildParams_);
+    buildParams_ = p;
+    if (differs) buildParamsChanged.fire();
+}
+
 BuildInput Workspace::snapshot() const {
     BuildInput in;
     in.fs = fs_;
@@ -152,6 +166,7 @@ BuildInput Workspace::snapshot() const {
     in.revision = revision_;
     for (auto& s : project_.includeDirs) in.includeDirs.push_back(project_.absolute(s));
     if (!project_.profile.empty()) in.profilePath = project_.absolute(project_.profile);
+    in.params = buildParams_;
     in.prefix = project_.absolute(project_.outputDir) + "/" + (project_.outputPrefix.empty() ? project_.name : project_.outputPrefix);
     for (auto& kv : docs_) in.overlay[kv.first] = kv.second.text;
     for (const std::string& rel : project_.sources) {

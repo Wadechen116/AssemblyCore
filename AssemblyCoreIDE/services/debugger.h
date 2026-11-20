@@ -74,7 +74,7 @@ public:
     SimParamsStore& simParams() { return params_; }
     // Parameters under the user's (they win): a bench's starting point that is not a change of the user's -- the UI tests pin the EEPROM fetch
     // to no bus time here. Every simulator the debugger makes (debugging, the analysis run, auto debug) gets them.
-    void setBaseParams(const asmcore::SimParams& p) { base_ = p; }
+    void setBaseParams(const asmcore::SimParams& p) { base_ = p; ws_.setBuildParams(effectiveParams()); }
     const asmcore::SimParams& baseParams() const { return base_; }
     asmcore::SimParams effectiveParams() const { asmcore::SimParams p = base_; p.merge(params_.params()); return p; }
     // The recent past of the session (both sequencers, events, bus transfers ...): what the time line shows, running or stopped. Holds the last `trace.rows`

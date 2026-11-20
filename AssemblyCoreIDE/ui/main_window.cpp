@@ -105,6 +105,7 @@ MainWindow::MainWindow(AppContext& ctx, PanelRegistry& panels, QWidget* parent) 
     conns_.add(ctx.requestBuild, [this] { buildNow(false); });
     conns_.add(ctx.workspace.documentChanged, [this](const std::string&) { scheduleBuild(); updateTitle(); });
     conns_.add(ctx.workspace.projectChanged, [this] { scheduleBuild(); updateTitle(); syncBuildMenu(); refreshGeneratedMarks(); });
+    conns_.add(ctx.workspace.buildParamsChanged, [this] { scheduleBuild(); });           // a hardware parameter of the cycle model: WCET and cycle counts follow
     conns_.add(ctx.build.finished, [this](SnapshotPtr s) { onSnapshot(s); });
     conns_.add(ctx.debugger.updated, [this](const SimUpdate&) { updateDebugActions(); });
     conns_.add(ctx.debugger.stopped, [this](const SimUpdate& u, const DebugLocation& w) { onStopped(u, w); });
@@ -886,6 +887,11 @@ void MainWindow::onSnapshot(SnapshotPtr s) {
             for (auto& f : files) ctx_.log.fire(tr("  wrote %1").arg(fromStd(f)));
             if (!err.empty()) ctx_.log.fire(tr("  cannot write %1").arg(fromStd(err)));
             for (const asmcore::WcetResult& wc : s->result.wcet) ctx_.log.fire(tr("  WCET %1: %2").arg(fromStd(wc.name), wc.bounded ? tr("%1 cycles").arg(wc.cycles) : tr("unbounded")));
+            if (!s->cycleOverrides.empty()) {
+                QStringList l;
+                for (auto& o : s->cycleOverrides) l << fromStd(o);
+                ctx_.log.fire(tr("  Cycle counts and WCET use the simulator's hardware parameters: %1").arg(l.join(", ")));
+            }
         }
         if (docks_.contains("output")) docks_["output"]->show();
     }

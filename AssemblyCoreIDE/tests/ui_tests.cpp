@@ -185,6 +185,40 @@ private slots:
         QVERIFY(w.buildStatusText().contains("warning"));
         w.grab().save(QDir::tempPath() + "/acide_window1.png");
     }
+    // A hardware parameter of the cycle model (the Simulator page) rebuilds the program: the listing's cycles and the WCET are counted with the
+    // number the simulator runs with, and an explicit build says so in the Output panel.
+    void aLatencyParameterRebuildsWithTheSimulatorsCycleModel() {
+        Fixture f;
+        f.ctx.snapshot.reset();
+        PanelRegistry panels;
+        registerBuiltinPanels(panels);
+        MainWindow w(f.ctx, panels);
+        w.setQuiet(true);
+        w.show();
+        QVERIFY(w.openProject("/w/p.acproj"));
+        QVERIFY(waitBuild(f, w));
+        auto alu = [&]() -> int { for (auto& i : f.ctx.snapshot->result.instrs) if (i.text.find("ALU ADD") != std::string::npos) return i.cycles; return -1; };
+        QCOMPARE(alu(), 1);
+        QVERIFY(f.ctx.snapshot->cycleOverrides.empty());
+        const uint64_t before = f.ctx.snapshot->id;
+        std::string e;
+        QVERIFY(f.dbg.simParams().set("latency.alu", "6", e));
+        for (int i = 0; i < 600 && f.ctx.snapshot->cycleOverrides.empty(); i++) QTest::qWait(10);
+        QVERIFY2(f.ctx.snapshot->id != before && alu() == 6, qPrintable(QString("alu=%1").arg(alu())));
+        QCOMPARE(QString::fromStdString(f.ctx.snapshot->cycleOverrides.at(0)), QString("latency.alu = 6 (profile: 1)"));
+
+        const uint64_t mid = f.ctx.snapshot->id;                             // a parameter that is not of the cycle model builds nothing
+        QVERIFY(f.dbg.simParams().set("sim.speed", "50", e));
+        QTest::qWait(700);
+        QCOMPARE(f.ctx.snapshot->id, mid);
+
+        QStringList lines;
+        ConnectionBag bag;
+        bag.add(f.ctx.log, [&](const QString& l) { lines << l; });
+        w.buildNow(true);
+        for (int i = 0; i < 600 && !lines.join("\n").contains("Build "); i++) QTest::qWait(10);
+        QVERIFY2(lines.join("\n").contains("hardware parameters: latency.alu = 6 (profile: 1)"), qPrintable(lines.join(" | ")));
+    }
     void closeProjectFromTheFileMenu() {
         Fixture f;
         f.ctx.snapshot.reset();

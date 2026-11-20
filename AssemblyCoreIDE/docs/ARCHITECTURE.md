@@ -40,13 +40,13 @@
 | `IFileSystem`（`fs.h`） | 讀寫、列舉；`RealFileSystem`、`MemoryFileSystem`。IDE 內部路徑一律用 `/` |
 | `Settings` | 使用者設定：扁平的鍵值（字型、主題、最近專案、介面語言、`blocks.*`、`isatop.layout`…），鍵由使用者自己擁有 |
 | `Project` | `.acproj`：`source`、`include_dir`、`profile`、`environment`、`scenario`、`hardware`、`blocks`（舊名 `block` 仍可讀）、`simparams`、`debug_eeprom`、輸出位置（`output_dir`、`output_prefix`）、建置選項（`call_model`、`dataflow`、`suppress`、`werror`、`wcet`） |
-| `Workspace` | 專案＋開啟的文件緩衝區（版本號、dirty）；產生建置輸入的快照（含未存檔文字） |
+| `Workspace` | 專案＋開啟的文件緩衝區（版本號、dirty）；產生建置輸入的快照（含未存檔文字，以及建置要用的硬體參數 `setBuildParams`；週期模型的參數改變時發 `buildParamsChanged`，版本號不動） |
 
 建置與編輯：
 
 | 元件 | 責任 |
 |---|---|
-| `BuildService`（`build.*`） | 背景工作緒；最新請求優先、過期結果丟棄；產生 `BuildSnapshot`（`Result`＋`Index`＋`SourceMap`＋每檔診斷） |
+| `BuildService`（`build.*`） | 背景工作緒；最新請求優先、過期結果丟棄；產生 `BuildSnapshot`（`Result`＋`Index`＋`SourceMap`＋每檔診斷）。組譯前把硬體參數中的週期模型蓋在 profile 上（與模擬器同一順序），`cycleOverrides` 記下被取代的數字 |
 | `artifacts.*` | 把建置結果寫成檔案（`.bin`／`.hex`／`.lst`／`.map`／`.dbg.json`…，檔名與 `asmc` 相同） |
 | `editing.*` | 補全、懸停、重新命名：`(文字, 語言, 索引)` 的純函式 |
 | `auto_fix.*` | 自動修復：依診斷代碼套用「只有一種最可能修法」的修補，重建，直到乾淨或無法再修；可限定檔案／行／代碼 |
@@ -58,7 +58,7 @@
 | 元件 | 責任 |
 |---|---|
 | `SimSession` | 模擬器的工作緒＋命令佇列＋狀態快照；即時執行（依 `sim.speed` 切片）、取消、倒回；更新有回壓，UI 忙時不堆積 |
-| `Debugger` | 使用者眼中的除錯：原始碼行、焦點 domain、執行／單步／繼續、中斷點、目前位置；在它與 `SimSession` 之間轉換 |
+| `Debugger` | 使用者眼中的除錯：原始碼行、焦點 domain、執行／單步／繼續、中斷點、目前位置；在它與 `SimSession` 之間轉換。擁有硬體參數，值改變時同時送給執行中的模擬器與 `Workspace`（給建置） |
 | `SimParamsStore` | IDE 持有的硬體參數：工作中的值、所屬的 `.simparams` 檔、與預設的差異 |
 | `instr_params.*` | 一道指令牽涉哪些參數（積木與架構圖方塊的右鍵選單用） |
 | `TraceRing` | 除錯工作階段的近期歷史（兩個 sequencer 的指令與其間的事件），供時間軸與倒回 |

@@ -27,7 +27,9 @@ struct BuildSnapshot {
     std::vector<std::string> sourcePaths;
     std::vector<asmcore::Source> sources;         // the texts that were built (the artifact manifest hashes them)
     std::string prefix;
-    asmcore::Profile profile;                     // the profile it was built with (the EEPROM image is placed by its eeprom_* addresses)
+    asmcore::Profile profile;                     // the profile it was built with (the EEPROM image is placed by its eeprom_* addresses);
+                                                  // its latency already holds the hardware parameters of the request
+    std::vector<std::string> cycleOverrides;      // "latency.alu = 3 (profile: 1)": every number of the cycle model a hardware parameter replaced
     double milliseconds = 0;
 
     BuildSnapshot() = default;

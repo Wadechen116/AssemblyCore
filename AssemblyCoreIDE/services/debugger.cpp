@@ -11,7 +11,10 @@ Debugger::Debugger(SimSession& s, Workspace& w, Settings* settings, std::functio
     : params_(w), session_(s), ws_(w), settings_(settings), latest_(std::move(latest)) {
     if (settings_) trace_.setCapacity((size_t)std::max(1000, std::min(2000000, settings_->getInt("trace.rows", 60000))));
     conns_.add(session_.updated, [this](const SimUpdate& u) { onUpdate(u); });
-    conns_.add(params_.changed, [this] { if (active()) session_.setParams(effectiveParams()); });                  // a changed value reaches the simulator that is running
+    conns_.add(params_.changed, [this] {
+        if (active()) session_.setParams(effectiveParams());                           // a changed value reaches the simulator that is running
+        ws_.setBuildParams(effectiveParams());                                         // ... and the builds: the WCET counts with the same cycle model
+    });
     conns_.add(ws_.projectChanged, [this] { params_.syncWithProject(); });             // the project's .simparams file is the values of the parameters
 }
 

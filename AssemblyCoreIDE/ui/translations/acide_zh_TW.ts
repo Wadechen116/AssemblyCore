@@ -4522,6 +4522,10 @@ An IDE for the Sensor Micro-Sequencer ISA, built on the AssemblyCore assembler.<
         <source>debug_eeprom %1 cannot be used: %2</source>
         <translation>debug_eeprom 指定的 %1 無法使用：%2</translation>
     </message>
+    <message>
+        <source>  Cycle counts and WCET use the simulator&apos;s hardware parameters: %1</source>
+        <translation>  週期數與 WCET 採用模擬器的硬體參數：%1</translation>
+    </message>
 </context>
 <context>
     <name>acide::TypeBlockBox</name>

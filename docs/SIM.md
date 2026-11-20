@@ -16,7 +16,7 @@ asmsim examples/imu_gyro.asm --env examples/imu_env.cfg --scenario examples/imu_
 
 - 全域週期計數器（`Cycle`）。每個 domain 有「下一條指令何時可發出」；排程器永遠挑最早的動作執行。
 - 同一時刻的順序：**計時事件先於兩個 domain**，其次 Main 再 Peri（`[sim] tie_order = peri main` 可對調）。
-- 延遲取自 `asmcore::Latency`（組譯器算 WCET 用的同一份，規格 14.6 要求兩者一致）。預設是規格 14.3／14.4 的**規劃數值**：
+- 延遲取自 `asmcore::Latency`（組譯器算 WCET 用的同一份，規格 14.6 要求兩者一致）。硬體參數（`latency.*`、`clock.*_hz`）蓋在 profile 之上；`asmsim --params`／`--param` 與 IDE 的建置都會把同一組值交給組譯器，所以 WCET 與執行用的是同樣的數字（環境檔的 `[latency]` 只影響模擬器）。預設是規格 14.3／14.4 的**規劃數值**：
   MOV = 1+len、消耗結果槽 = 2+len、EXEC_PUB = 2+len、單位元組 EXEC_CSR = 1+2、ALU = 1（MUL = 2）、BR = 1；
   `EXEC_XFER` = 發出成本 2 + I2C 位元組階段數 × 9 個 SCL 脈衝所需的 ISA 週期（27 MHz／400 kHz：67.5 週期／脈衝，
   與規格表的 1,823／2,430／5,468 週期一致）。
