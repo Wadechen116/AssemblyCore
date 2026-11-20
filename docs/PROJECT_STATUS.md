@@ -244,7 +244,7 @@ Windows 建置在 `/mnt/d/WSL/acbuild_msvc`（`build.bat`、`uitest.bat`），�
 | `docs/BLOCKS_EDITOR.md`、`docs/BLOCKS.md` | 積木編輯器 |
 | `docs/ASM_SYNTAX.md`、`docs/HARDWARE.md`、`docs/DEBUG_INFO.md`、`docs/DISASM.md` | 語法、硬體描述、除錯資訊、反組譯 |
 | `AssemblyCoreIDE/docs/IDE_PLAN.md` | IDE 各階段計畫與狀態 |
-| `AssemblyCoreIDE/docs/DEBUGGING.md`、`ARCHITECTURE.md` | 除錯與架構 |
+| `AssemblyCoreIDE/docs/DEBUGGING.md`、`ARCHITECTURE.md` | 除錯；架構（分層、服務層與 UI 元件、擴充點；2026-11-20 更新） |
 | `docs/EEPROM.md` | EEPROM 映像：建置、驗證、反組譯、從映像除錯 |
 | `docs/HW_FAULT_DETECTION.md` | 給硬體團隊的錯誤偵測對照表（由 `gen_hw_fault_table.py` 產生） |
 | `docs/V31_MIGRATION.md`、`docs/SPEC_V24_VS_V31.md` | v31 遷移檢查清單、v24 與 v31 的差異 |

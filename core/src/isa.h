@@ -1,16 +1,23 @@
 #pragma once
 // ISA encoding tables for Sensor Micro-Sequencer ISA v1.6 r10.
 //
-// Everything the spec text pins down is encoded as written. Everything it does NOT pin down is marked ASSUMED and collected
-// here, in one place, so a correction is a one-line change:
+// Everything the spec text pins down is encoded as written. What it does NOT pin down is an assumption (ASSUMED). Most of the
+// assumptions have moved to the target profile (asmcore.h Profile; keys in profile.cpp, described in profile_info.cpp), so correcting
+// one is a line in a profile file and not a change here. Where each one lives now:
 //
-//   ASSUMED-1  numeric codes of arith_op / cmp_op / logic_op / shift_dir (spec 6.3 lists the names, not the values):
-//              taken in the order the spec lists them.
-//   ASSUMED-2  byte order of multi-byte descriptors in the image (little-endian, like every other multi-byte item in the spec).
-//   ASSUMED-3  width of each ImageLayout offset field (profile.layoutOffsetBytes, default 2) and the order of the fields (the order
-//              in which spec 3.1 lists them).
-//   ASSUMED-4  DeviceMap entry byte: bit 7 = bus_type, bits 6:0 = i2c_addr_7b (spec 9.1 gives the widths, not the packing).
-//   ASSUMED-5  PERI_RESULT_META / ALU_STATUS bit and byte layouts are not needed by the assembler.
+//   ASSUMED-1  numeric codes of arith_op / cmp_op / logic_op (spec 6.3 lists the names, not the values): Profile::alu, keys
+//              alu_arith_* / alu_cmp_* / alu_logic_*; the defaults are the order in which the spec lists the names. The enums
+//              ArithOp / CmpOp / LogicOp below are the LOGICAL operations (the index into those tables), not the encoded numbers;
+//              codec.h translates. shift_dir alone is still fixed here (ShiftDir: SHL = 0, SHR = 1): there is no profile key for it.
+//   ASSUMED-2  byte order of multi-byte descriptors in the image: Profile::bigEndian, key big_endian (default: little-endian, like
+//              every other multi-byte item in the spec).
+//   ASSUMED-3  the image layout. Since spec v31 there is no ImageLayout at the end of the image: the section offsets are sideband
+//              data (*.layout.json). The width of each offset is Profile::layoutOffsetBits, key layout_offset_bits (default 16); the
+//              order of the sections is the order in which the spec lists them (layout.cpp buildImage, image_view.cpp).
+//   ASSUMED-4  the DeviceMap entry: keys device_map_entry_bytes, device_map_bus_shift, device_map_addr_shift (defaults: 1 byte,
+//              bus_type at bit 7, i2c_addr_7b at bits 6:0; spec 9.1 gives the widths, not the packing).
+//   ASSUMED-5  PERI_RESULT_META / ALU_STATUS bit and byte layouts are not needed by the assembler. The simulator's choice of the
+//              ALU_STATUS bits is in sim/impl.cpp.
 #include <cstdint>
 #include <string>
 
@@ -55,10 +62,10 @@ inline const RegionInfo* regionByName(const std::string& upperName) {
 
 // ---- Main ALU (spec 6.3) -----------------------------------------------------------------------------------------------------
 enum AluClass { A_ARITH = 0, A_CMP = 1, A_LOGIC = 2, A_SHIFT = 3 };
-enum ArithOp { ARITH_ADD = 0, ARITH_SUB = 1, ARITH_MUL = 2, ARITH_INC = 3, ARITH_DEC = 4 };   // ASSUMED-1
-enum CmpOp { CMP_EQ = 0, CMP_NE = 1, CMP_LT = 2, CMP_GE = 3 };                                 // ASSUMED-1
-enum LogicOp { LOGIC_AND = 0, LOGIC_OR = 1, LOGIC_XOR = 2, LOGIC_NOT = 3 };                    // ASSUMED-1
-enum ShiftDir { SHIFT_SHL = 0, SHIFT_SHR = 1 };                                                // ASSUMED-1
+enum ArithOp { ARITH_ADD = 0, ARITH_SUB = 1, ARITH_MUL = 2, ARITH_INC = 3, ARITH_DEC = 4 };   // logical operation; its code: Profile::alu (ASSUMED-1)
+enum CmpOp { CMP_EQ = 0, CMP_NE = 1, CMP_LT = 2, CMP_GE = 3 };                                 // logical operation; its code: Profile::alu (ASSUMED-1)
+enum LogicOp { LOGIC_AND = 0, LOGIC_OR = 1, LOGIC_XOR = 2, LOGIC_NOT = 3 };                    // logical operation; its code: Profile::alu (ASSUMED-1)
+enum ShiftDir { SHIFT_SHL = 0, SHIFT_SHR = 1 };                                                // encoded as written here (ASSUMED-1, no profile key)
 
 // ---- Main BR (spec 7.2, 7.3) -------------------------------------------------------------------------------------------------
 enum MainBrType { MB_COND = 0, MB_CASCADE_BEGIN = 1, MB_CASCADE_END = 2, MB_ERET = 3 };   // v31 7.2: 3 = BR.ERET
