@@ -4526,6 +4526,14 @@ An IDE for the Sensor Micro-Sequencer ISA, built on the AssemblyCore assembler.<
         <source>  Cycle counts and WCET use the simulator&apos;s hardware parameters: %1</source>
         <translation>  週期數與 WCET 採用模擬器的硬體參數：%1</translation>
     </message>
+    <message>
+        <source>%1 cycles (%2 executing + %3 fetching the instructions)</source>
+        <translation>%1 個週期（執行 %2 ＋ 取指 %3）</translation>
+    </message>
+    <message>
+        <source>  Fetch time is counted as: %1. Waiting for the other sequencer (shared bus, arbiters) is not counted.</source>
+        <translation>  取指時間的算法：%1。不含等待另一個 sequencer（共用匯流排、仲裁器）的時間。</translation>
+    </message>
 </context>
 <context>
     <name>acide::TypeBlockBox</name>

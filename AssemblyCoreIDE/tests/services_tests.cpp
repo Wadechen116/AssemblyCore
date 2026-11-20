@@ -659,7 +659,9 @@ static void t_build_follows_params() {
     const std::string src = ".main\n.wcet T, a, b\na: MOV CONST(1, 2) -> MAIN_SCRATCHPAD[0..1]\n MOV MAIN_SCRATCHPAD[0..1] -> ALU_OPA\n"
                             " MOV MAIN_SCRATCHPAD[0..1] -> ALU_OPB\n ALU ADD unsigned\nb: JMP b\n";
     auto aluCycles = [](const SnapshotPtr& s) { for (auto& i : s->result.instrs) if (i.text.find("ALU ADD") != std::string::npos) return i.cycles; return -1; };
-    auto wcetOf = [](const SnapshotPtr& s) { return s->result.wcet.empty() ? (int64_t)-1 : (int64_t)s->result.wcet[0].cycles; };
+    // executing only: what the cycle model gives (the fetch time is looked at on its own below)
+    auto wcetOf = [](const SnapshotPtr& s) { return s->result.wcet.empty() ? (int64_t)-1 : (int64_t)(s->result.wcet[0].cycles - s->result.wcet[0].fetchCycles); };
+    auto fetchOf = [](const SnapshotPtr& s) { return s->result.wcet.empty() ? (int64_t)-1 : (int64_t)s->result.wcet[0].fetchCycles; };
     {
         auto fs = std::make_shared<MemoryFileSystem>();
         fs->write("/p/p.acproj", "name = p\nsource = a.asm\n");
@@ -697,6 +699,57 @@ static void t_build_follows_params() {
         check(fired == 2 && same->cycleOverrides.empty() && wcetOf(same) == 10, "set to the profile's own value: built again, nothing listed as overridden", std::to_string(fired));
         ws.setBuildParams(asmcore::SimParams());
         check(fired == 3 && wcetOf(buildNow(ws.snapshot(), lang)) == 10, "all parameters cleared: back to the profile");
+
+        // ---- the time to fetch the instructions is part of the WCET, counted the way the simulator's decoders fetch
+        // default: the I2C EEPROM, one read per region, 400 kHz, 2 address bytes. A read of n bytes is 2 + 2 + n byte phases of 9 SCL pulses (607.5 ISA
+        // cycles each, rounded up over the read) + 2 cycles: 1 byte 3040, 2 bytes 3647, 4 bytes 4862. The path a..b is MOV const (code 1, descriptor 4,
+        // constants 2 = 11549), two MOVs (code 1, descriptor 4 = 7902 each) and the ALU (code 1, descriptor 1 = 6080); the JMP at b is not on it.
+        check(fetchOf(plain) == 11549 + 7902 + 7902 + 6080 && plain->result.wcet[0].cycles == 10 + 33433,
+              "by default the WCET adds the fetching from the I2C EEPROM (33433 cycles for four instructions)", std::to_string(fetchOf(plain)));
+        check(plain->fetchModel == "I2C EEPROM, one read per region, 400000 Hz", "the build says how the fetch time was counted", plain->fetchModel);
+        {
+            int f0 = -1, c0 = -1;
+            for (auto& i : plain->result.instrs) if (i.text.find("ALU ADD") != std::string::npos) { f0 = i.fetchCycles; c0 = i.cycles; }
+            check(f0 == 6080 && c0 == 1, "an instruction keeps its execution cycles; the fetching is beside it", std::to_string(c0) + " / " + std::to_string(f0));
+        }
+        asmcore::SimParams fp;
+        fp.set("fetch.read_mode", "instant", e);
+        ws.setBuildParams(fp);
+        SnapshotPtr inst = buildNow(ws.snapshot(), lang);
+        check(fired == 4 && fetchOf(inst) == 0 && inst->result.wcet[0].cycles == 10 && inst->fetchModel.empty(),
+              "fetch.read_mode = instant: a build is asked for, and nothing is added", std::to_string(fetchOf(inst)));
+        check(inst->result.wcet[0].note.find("placeholders until the real table") != std::string::npos, "... and the note of the WCET is the plain one");
+        fp.set("fetch.read_mode", "per_byte", e);
+        ws.setBuildParams(fp);
+        SnapshotPtr perByte = buildNow(ws.snapshot(), lang);
+        check(fired == 5 && fetchOf(perByte) == 3040 * (7 + 5 + 5 + 2), "per_byte: every byte is a read of its own (19 bytes x 3040)", std::to_string(fetchOf(perByte)));
+        fp.clear("fetch.read_mode");
+        fp.set("clock.i2c_hz", "1000000", e);
+        ws.setBuildParams(fp);
+        SnapshotPtr fast = buildNow(ws.snapshot(), lang);
+        check(fetchOf(fast) < fetchOf(plain) / 2 && fetchOf(fast) > fetchOf(plain) / 3, "a 1 MHz bus: the fetching is 2.5 times shorter",
+              std::to_string(fetchOf(fast)));
+        asmcore::SimParams fe;
+        fe.set("fetch.source", "frontend", e);
+        ws.setBuildParams(fe);
+        SnapshotPtr front = buildNow(ws.snapshot(), lang);
+        check(fetchOf(front) > 0 && fetchOf(front) < 200 && front->fetchModel.find("program SRAM through the Frontend") == 0,
+              "fetch.source = frontend: a few cycles per instruction from the program SRAM", std::to_string(fetchOf(front)) + " " + front->fetchModel);
+        check(front->result.wcet[0].note.find("waiting for the other sequencer") != std::string::npos, "the note says what is not counted");
+        fe.set("frontend.dec_cycles", "5", e);
+        ws.setBuildParams(fe);
+        check(fetchOf(buildNow(ws.snapshot(), lang)) == fetchOf(front) + 4 * 4, "frontend.dec_cycles 1 -> 5: four more cycles for each of the four instructions");
+        asmcore::SimParams sr;
+        sr.set("fetch.source", "sram", e);
+        sr.set("main.fetch_cycles", "3", e);
+        ws.setBuildParams(sr);
+        SnapshotPtr extra = buildNow(ws.snapshot(), lang);
+        check(fetchOf(extra) == 12 && extra->fetchModel == "main.fetch_cycles / peri.fetch_cycles", "fetch.source = sram with main.fetch_cycles = 3: 3 per instruction",
+              std::to_string(fetchOf(extra)) + " " + extra->fetchModel);
+        check(front->result.image(asmcore::Domain::Main).bytes == plain->result.image(asmcore::Domain::Main).bytes && plain->result.debugJson().find("\"fetchCycles\":33433") != std::string::npos
+              && inst->result.debugJson().find("fetch") == std::string::npos, "the image never depends on it; the debug JSON carries the fetch numbers only when there are any");
+        ws.setBuildParams(asmcore::SimParams());
+        fired = 5;                                                           // (the profile tests below count from here)
 
         // the profile is the base, the parameters win over it -- the simulator's order
         fs->write("/p/t.profile", "alu = 3\nmov_byte = 2\n");

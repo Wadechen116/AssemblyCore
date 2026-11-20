@@ -31,7 +31,8 @@ struct BuildInput {
     asmcore::Options options;
     std::string profilePath;
     // The simulator's hardware parameters. The ones that are fields of the cycle model (latency.*, clock.cpu_hz, clock.i2c_hz) are written over
-    // the profile's before assembling, so the listing's cycle column and the WCET are counted with the numbers the simulator runs with.
+    // the profile's before assembling, and the ones that decide how an instruction is fetched (fetch.*, frontend.*, ...) give the fetch time that
+    // the WCET adds: the build counts with the numbers the simulator runs with.
     asmcore::SimParams params;
     std::string prefix;                                     // output path prefix (absolute)
     uint64_t revision = 0;                                  // the workspace revision this was taken at
@@ -67,7 +68,7 @@ public:
     // ---- builds
     BuildInput snapshot() const;
     // The hardware parameters the next builds are made with (BuildInput::params). Whoever owns the parameters (the Debugger) keeps this up to date.
-    // buildParamsChanged fires only when a value of the CYCLE MODEL changed: the other parameters do not change what a build gives. The revision
+    // buildParamsChanged fires only when a value a build depends on changed (the cycle model, the fetching): the others do not change what it gives. The revision
     // does not move: no text was edited.
     void setBuildParams(const asmcore::SimParams& p);
     const asmcore::SimParams& buildParams() const { return buildParams_; }

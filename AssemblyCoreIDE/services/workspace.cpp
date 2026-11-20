@@ -1,3 +1,4 @@
+#include <cstring>
 #include "workspace.h"
 
 #include <algorithm>
@@ -145,11 +146,18 @@ bool Workspace::anyDirty() const {
     return false;
 }
 
-// The values of the parameters that are fields of the cycle model, as text: two sets that give the same text give the same build.
+// The values of the parameters a build depends on, as text: two sets that give the same text give the same build. They are the fields of the cycle
+// model and what decides how long an instruction takes to be fetched.
+static bool buildDependsOn(const asmcore::ParamDef& d) {
+    if (d.latency) return true;
+    for (const char* p : {"fetch.", "frontend.", "main.fetch_cycles", "peri.fetch_cycles", "i2c.ack_delay", "i2c.stretch"})
+        if (d.key.compare(0, std::strlen(p), p) == 0) return true;
+    return false;
+}
 static std::string cycleModelKey(const asmcore::SimParams& p) {
     std::string k;
     for (const asmcore::ParamDef& d : asmcore::paramCatalog())
-        if (d.latency && p.isSet(d.key)) k += d.key + "=" + std::to_string(p.get(d.key)) + ";";
+        if (buildDependsOn(d) && p.isSet(d.key)) k += d.key + "=" + std::to_string(p.get(d.key)) + ";";
     return k;
 }
 

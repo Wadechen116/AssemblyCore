@@ -60,7 +60,8 @@ struct Op {
     bool eventSafe = false;      // ordinary branch that is an event checkpoint (v31 16.3)
     std::vector<uint8_t> extra;  // bytes after the instruction byte: Csr1 imm, CsrM lo8, Xfer1 data / ptr, XferM address bytes
     std::vector<RangeUse> uses;
-    int cycles = 0;
+    int cycles = 0;                   // executing + fetching (what the analyses add up)
+    int fetch = 0;                    // the fetching part of `cycles` (Options::fetchCycles)
     int dev = -1;                // Xfer: DeviceMap index used
     std::string pushLabel;       // SoftRet call transfer: label execution resumes at (WCET pushes it)
     std::string dispatchOf;      // SoftRet return dispatch block: the procedure it returns from

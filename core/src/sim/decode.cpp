@@ -410,6 +410,42 @@ std::vector<DecodedLine> Simulator::decodedProgram(Domain d) const {
     return v;
 }
 
+FetchTimes fetchTimes(const Result& program, const SimConfig& cfg) {
+    FetchTimes t;
+    if (!program.ok) return t;
+    Simulator sim(program, cfg);
+    const Simulator::Impl& I = *sim.p_;
+    for (Domain d : {Domain::Main, Domain::Peri}) {
+        const int k = d == Domain::Main ? 0 : 1;
+        for (const DecodedLine& L : sim.decodedProgram(d)) {
+            const uint64_t c = L.fetchCycles + (uint64_t)std::max(0, I.fetchExtra[k]);
+            if (c) t.cycles[{k, L.pc}] = (int)std::min<uint64_t>(c, 0x3fffffff);
+        }
+    }
+    if (!t.any()) return t;
+    std::string m;
+    if (I.fetchFrontend) m = "program SRAM through the Frontend (SRAM latency " + std::to_string(I.sramLatency) + ", the frontend.* planning values)";
+    else if (I.fetchTimed())
+        m = std::string("I2C EEPROM, ") + (I.fetchMode == 0 ? "one read per region" : "one read per byte") + ", " + std::to_string(I.lat.i2cHz) + " Hz";
+    if (I.fetchExtra[0] || I.fetchExtra[1]) m += std::string(m.empty() ? "" : "; ") + "main.fetch_cycles / peri.fetch_cycles";
+    t.model = m;
+    return t;
+}
+
+Result assembleWithFetch(const std::vector<Source>& sources, const IncludeResolver& resolver, const Options& opt, SimConfig cfg, FetchTimes* used) {
+    if (used) *used = FetchTimes();
+    Result first = assemble(sources, resolver, opt);
+    if (!first.ok) return first;
+    cfg.profile = opt.profile;
+    FetchTimes t = fetchTimes(first, cfg);
+    if (!t.any()) return first;
+    Options o2 = opt;
+    o2.fetchCycles = [&t](Domain d, uint32_t pc) { return t.at(d, pc); };
+    Result second = assemble(sources, resolver, o2);
+    if (used) *used = t;
+    return second;
+}
+
 EepromVerifyReport verifyEepromImage(const Result& program, const SimConfig& cfgIn, const std::vector<uint8_t>& image, const EepromMap* imageMap) {
     EepromVerifyReport rep;
     std::vector<uint8_t> want;

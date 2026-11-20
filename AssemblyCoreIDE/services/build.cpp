@@ -1,5 +1,7 @@
 #include "build.h"
 
+#include "asmcore/sim.h"
+
 #include <chrono>
 
 namespace acide {
@@ -54,7 +56,15 @@ SnapshotPtr buildNow(const BuildInput& in, const asmcore::lang::Language& langua
     asmcore::IncludeResolver res = makeResolver(in);
     for (auto& s : in.sources) snap->sourcePaths.push_back(s.name);
     snap->sources = in.sources;
-    snap->result = asmcore::assemble(in.sources, res, opt);
+    // ... and so is the time to FETCH each instruction (the I2C EEPROM, the program SRAM): the simulator's decoders say what it is for this program with
+    // these parameters, and the program is assembled once more with it. Waiting for the other sequencer is not in it.
+    {
+        asmcore::sim::SimConfig cfg;
+        cfg.params = in.params;
+        asmcore::sim::FetchTimes fetch;
+        snap->result = asmcore::sim::assembleWithFetch(in.sources, res, opt, cfg, &fetch);
+        snap->fetchModel = fetch.model;
+    }
     snap->profile = opt.profile;
     snap->index = asmcore::Index::build(in.sources, language, res);
     snap->map.reset(new asmcore::SourceMap(snap->result));

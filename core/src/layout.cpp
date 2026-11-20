@@ -76,7 +76,8 @@ struct Layout {
                 if (lab.count(o.label)) err(o.loc, "E104", "label '" + o.label + "' is defined twice");
                 lab[o.label] = pc;
             } else {
-                o.cycles = opCycles(o, c.opt.profile);
+                o.fetch = c.opt.fetchCycles ? std::max(0, c.opt.fetchCycles(d, pc)) : 0;
+                o.cycles = opCycles(o, c.opt.profile) + o.fetch;
                 pc += (uint32_t)o.length();
             }
         }
@@ -242,7 +243,7 @@ static WcetResult wcetQuery(Ctx& c, std::vector<Op>& ops, const std::map<const O
     // SoftRet: the return dispatch of a procedure can reach every one of its call sites, but a given execution returns to ONE of
     // them. The analysis is therefore call-string sensitive: a call transfer pushes its return pc, the dispatch block pops it.
     // The dispatch is charged as if every comparison ran (an upper bound).
-    std::map<std::string, int> dispCost;
+    std::map<std::string, int> dispCost, dispFetch;
     std::map<std::string, size_t> dispHead;
     for (size_t i = 0; i < real.size(); i++) {
         const Op* o = real[i];
@@ -251,26 +252,29 @@ static WcetResult wcetQuery(Ctx& c, std::vector<Op>& ops, const std::map<const O
         bool lastOfBlock = i + 1 >= real.size() || real[i + 1]->dispatchOf != o->dispatchOf;
         (void)lastOfBlock;
         dispCost[o->dispatchOf] += o->cycles;
+        dispFetch[o->dispatchOf] += o->fetch;
     }
     typedef std::pair<size_t, std::vector<uint32_t>> Key;
-    std::map<Key, int> memo;
+    typedef std::pair<int, int> Cost;                     // (cycles of the worst path from here, how many of them are fetching)
+    std::map<Key, Cost> memo;
     std::set<Key> onStack;
     bool unbounded = false;
     std::string why;
-    std::function<int(size_t, const std::vector<uint32_t>&)> longest = [&](size_t i, const std::vector<uint32_t>& stk) -> int {
-        if (real[i]->pc == endPc) return 0;
+    std::function<Cost(size_t, const std::vector<uint32_t>&)> longest = [&](size_t i, const std::vector<uint32_t>& stk) -> Cost {
+        if (real[i]->pc == endPc) return Cost(0, 0);
         Key key(i, stk);
         auto m = memo.find(key);
         if (m != memo.end()) return m->second;
-        if (onStack.count(key) || stk.size() > 64) { unbounded = true; why = "a loop is reachable before the end label"; return 0; }
+        if (onStack.count(key) || stk.size() > 64) { unbounded = true; why = "a loop is reachable before the end label"; return Cost(0, 0); }
         onStack.insert(key);
         const Op* o = real[i];
-        int best = 0;
+        Cost best(0, 0);
         bool any = false;
-        auto consider = [&](long k, int edge, const std::vector<uint32_t>& ns) {
+        auto consider = [&](long k, int edge, int edgeFetch, const std::vector<uint32_t>& ns) {
             if (k < 0) return;
             any = true;
-            best = std::max(best, edge + longest((size_t)k, ns));
+            const Cost rest = longest((size_t)k, ns);
+            if (edge + rest.first > best.first) best = Cost(edge + rest.first, edgeFetch + rest.second);
         };
         auto at = [&](uint32_t pc) -> long { auto f = idx.find(pc); return f == idx.end() ? -1 : (long)f->second; };
         if (!o->dispatchOf.empty()) {
@@ -278,7 +282,7 @@ static WcetResult wcetQuery(Ctx& c, std::vector<Op>& ops, const std::map<const O
             else if (stk.empty()) { unbounded = true; why = "the path returns from '" + o->dispatchOf + "' without a call inside the query"; }
             else {
                 std::vector<uint32_t> ns(stk.begin(), stk.end() - 1);
-                consider(at(stk.back()), dispCost[o->dispatchOf], ns);
+                consider(at(stk.back()), dispCost[o->dispatchOf], dispFetch[o->dispatchOf], ns);
             }
         } else {
             bool branch = o->kind == OpKind::MBr || o->kind == OpKind::MCascB || o->kind == OpKind::MCascE || o->kind == OpKind::PBr;
@@ -286,11 +290,11 @@ static WcetResult wcetQuery(Ctx& c, std::vector<Op>& ops, const std::map<const O
                 auto t = target.find(o);
                 std::vector<uint32_t> ns = stk;
                 if (!o->pushLabel.empty() && lab.count(o->pushLabel)) ns.push_back(lab[o->pushLabel]);
-                if (t != target.end()) consider(at(t->second), o->cycles, ns);
+                if (t != target.end()) consider(at(t->second), o->cycles, o->fetch, ns);
                 if (o->kind != OpKind::MCascB && !o->uncond && i + 1 < real.size())
-                    consider((long)i + 1, o->cycles, stk);
+                    consider((long)i + 1, o->cycles, o->fetch, stk);
             } else if (i + 1 < real.size()) {
-                consider((long)i + 1, o->cycles, stk);
+                consider((long)i + 1, o->cycles, o->fetch, stk);
             }
         }
         if (!any && !unbounded) { unbounded = true; why = "the path leaves the code before the end label"; }
@@ -300,10 +304,13 @@ static WcetResult wcetQuery(Ctx& c, std::vector<Op>& ops, const std::map<const O
     };
     auto it = idx.find(startPc);
     if (it == idx.end()) { r.note = "start label is not an instruction"; return r; }
-    int cyc = longest(it->second, std::vector<uint32_t>());
+    const Cost cyc = longest(it->second, std::vector<uint32_t>());
     r.bounded = !unbounded;
-    r.cycles = cyc;
-    r.note = unbounded ? why : "worst path; latency numbers are placeholders until the real table is supplied";
+    r.cycles = cyc.first;
+    r.fetchCycles = cyc.second;
+    r.note = unbounded ? why
+           : c.opt.fetchCycles ? "worst path, executing and fetching its instructions; waiting for the other sequencer (shared bus, arbiters) is not counted; the numbers are placeholders until the real tables are supplied"
+                               : "worst path; latency numbers are placeholders until the real table is supplied";
     return r;
 }
 
@@ -496,7 +503,8 @@ void buildImage(Ctx& c, Domain d, std::vector<Op>& ops) {
         ii.frames = o.frames;
         ii.synthetic = o.synthetic;
         ii.note = o.note;
-        ii.cycles = o.cycles;
+        ii.cycles = o.cycles - o.fetch;
+        ii.fetchCycles = o.fetch;
         auto dr = descOf.find(&o);
         if (dr != descOf.end()) { ii.table = dr->second.table; ii.descIndex = dr->second.index; }
         if (o.kind == OpKind::MBr || o.kind == OpKind::MCascB || o.kind == OpKind::MCascE || o.kind == OpKind::PBr) {

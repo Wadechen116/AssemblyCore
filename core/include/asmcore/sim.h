@@ -219,6 +219,22 @@ struct DecodedLine {
     std::vector<DecodeRead> reads;
     uint64_t fetchCycles = 0;         // what reading them over the I2C bus takes with the parameters now (0 with fetch.read_mode = instant)
 };
+// How long each instruction of a program takes to be FETCHED before it executes, with nobody else on the bus or at the SRAM port: what the decoders
+// of `cfg` (profile, parameters: fetch.source, fetch.read_mode, the I2C clock, frontend.* ...) spend reading its code bytes, its descriptors, its
+// DeviceMap entry and its constants, plus main.fetch_cycles / peri.fetch_cycles. The same numbers the Decoder view shows. Waiting for the other
+// sequencer is NOT in them: that depends on what the other one is doing.
+struct FetchTimes {
+    std::map<std::pair<int, uint32_t>, int> cycles;    // (0 Main / 1 Peri, pc) -> cycles; an instruction that costs nothing is not listed
+    std::string model;                                 // in words: "I2C EEPROM, one read per region, 400000 Hz"; "" when fetching takes no time
+    bool any() const { return !cycles.empty(); }
+    int at(Domain d, uint32_t pc) const { auto it = cycles.find({d == Domain::Main ? 0 : 1, pc}); return it == cycles.end() ? 0 : it->second; }
+};
+FetchTimes fetchTimes(const Result& program, const SimConfig& cfg);
+// assemble(), and when the program is good and fetching takes time, once more with those times (Options::fetchCycles), so that the WCET, the call
+// costs and the event latency count executing + fetching. `opt.profile` is the profile of the simulator too (cfg.profile is replaced by it). The
+// images of the two passes are the same. `used` receives the times of the second pass (empty when there was none).
+Result assembleWithFetch(const std::vector<Source>& sources, const IncludeResolver& resolver, const Options& opt, SimConfig cfg, FetchTimes* used = nullptr);
+
 // fetch.source = frontend. The seven-state Frontend of one sequencer (spec v31, Frontend-001) at this cycle: which state it is in, the instruction it is
 // forming, when it entered each state, and the words of the program SRAM it reads for it. The cycle counts of the states come from the frontend.*
 // parameters, which are planning values until the RTL gives them.
@@ -369,6 +385,7 @@ public:
 
     struct Impl;
 private:
+    friend FetchTimes fetchTimes(const Result& program, const SimConfig& cfg);
     std::unique_ptr<Impl> p_;
 };
 

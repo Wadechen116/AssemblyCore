@@ -886,7 +886,9 @@ void MainWindow::onSnapshot(SnapshotPtr s) {
             auto files = writeArtifacts(*ctx_.workspace.fileSystem(), s->prefix, s->result, ao, err);
             for (auto& f : files) ctx_.log.fire(tr("  wrote %1").arg(fromStd(f)));
             if (!err.empty()) ctx_.log.fire(tr("  cannot write %1").arg(fromStd(err)));
-            for (const asmcore::WcetResult& wc : s->result.wcet) ctx_.log.fire(tr("  WCET %1: %2").arg(fromStd(wc.name), wc.bounded ? tr("%1 cycles").arg(wc.cycles) : tr("unbounded")));
+            for (const asmcore::WcetResult& wc : s->result.wcet) ctx_.log.fire(tr("  WCET %1: %2").arg(fromStd(wc.name), !wc.bounded ? tr("unbounded") : wc.fetchCycles ? tr("%1 cycles (%2 executing + %3 fetching the instructions)").arg(wc.cycles).arg(wc.cycles - wc.fetchCycles).arg(wc.fetchCycles) : tr("%1 cycles").arg(wc.cycles)));
+            if (!s->fetchModel.empty() && !s->result.wcet.empty())
+                ctx_.log.fire(tr("  Fetch time is counted as: %1. Waiting for the other sequencer (shared bus, arbiters) is not counted.").arg(fromStd(s->fetchModel)));
             if (!s->cycleOverrides.empty()) {
                 QStringList l;
                 for (auto& o : s->cycleOverrides) l << fromStd(o);

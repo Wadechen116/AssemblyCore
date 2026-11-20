@@ -29,6 +29,7 @@ struct BuildSnapshot {
     std::string prefix;
     asmcore::Profile profile;                     // the profile it was built with (the EEPROM image is placed by its eeprom_* addresses);
                                                   // its latency already holds the hardware parameters of the request
+    std::string fetchModel;                       // how the fetch time in the WCET was counted ("I2C EEPROM, one read per region, 400000 Hz"); "" = not counted
     std::vector<std::string> cycleOverrides;      // "latency.alu = 3 (profile: 1)": every number of the cycle model a hardware parameter replaced
     double milliseconds = 0;
 

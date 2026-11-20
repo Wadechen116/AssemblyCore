@@ -54,7 +54,16 @@ IDE 用核心的模擬器（`docs/SIM.md`）執行你正在編輯的程式。模
 清單的週期欄與 `.wcet` 的結果，和模擬器用的是同一組數字：profile 的延遲，再蓋上硬體參數中屬於週期模型的值（`latency.*`、`clock.cpu_hz`、`clock.i2c_hz`）。
 在模擬器頁面（架構圖方塊或積木的右鍵、「所有參數」）改這些值，程式會自動重新建置；按 F7 時輸出面板會列出哪些數字來自參數，例如 `latency.alu = 6 (profile: 1)`。
 
-限制：(1) WCET 只計指令本身的執行週期，**不含**取指時間（EEPROM／Frontend）與等共用資源（仲裁器、I2C 匯流排、Data Xfer）的時間，所以實際執行會比 WCET 長；(2) 只跟隨參數（`.simparams` 與模擬器頁面設定的值），環境檔裡的 `[latency]`、`[bus i2c]`、`[params]` 區段不會進到建置；(3) 命令列的 `asmc` 沒有 `--params`，同一個專案用 `asmc` 建置時仍只看 profile（`asmsim --params` 則會套用）。
+WCET 另外計入**取指時間**：硬體把每道指令（程式碼位元組、描述子、常數）讀出來所花的週期，依 `fetch.source`、`fetch.read_mode`、`clock.i2c_hz`、`frontend.*` 等參數計算，和 Decoder 面板顯示的取指週期是同一個數字。輸出面板分開列出，例如 `WCET T: 33443 cycles (10 executing + 33433 fetching the instructions)`，並說明用的是哪一種算法。清單的週期欄仍只是執行週期。
+
+限制：(1) **不含**等另一個 sequencer 的時間（共用 I2C 匯流排、CSR 仲裁器、Status Flag、Data Xfer），那取決於另一邊當時在做什麼，所以兩邊同時執行時實際時間仍可能比 WCET 長；(2) 只跟隨參數（`.simparams` 與模擬器頁面設定的值），環境檔裡的 `[latency]`、`[bus i2c]`、`[params]` 區段不會進到建置；(3) 命令列的 `asmc` 沒有參數檔，同一個專案用 `asmc` 建置時只看 profile、不含取指時間；(4) 取指的數值本身是算出來的規劃值（見下），尚未對照硬體。
+
+**取指時間怎麼算**（沒有硬體時的估算依據）：不是量測，而是依協定計算，與模擬器的解碼器、Decoder 面板用同一份程式。
+
+* 從 I2C EEPROM 取指（預設）：一次讀取 n 個位元組要傳 `2 + 位址位元組數 + n` 個位元組階段（裝置位址＋寫、記憶體位址、重新起始後的裝置位址＋讀、資料），每個階段 9 個 SCL 脈衝（8 位元＋ACK）。週期數＝`⌈9 × 階段數 × clock.cpu_hz ÷ clock.i2c_hz⌉ + 階段數 × (i2c.ack_delay + i2c.stretch) + fetch.transaction_overhead`。27 MHz／400 kHz、2 個位址位元組時：讀 1 個位元組 3,040 週期、2 個 3,647、4 個 4,862。一道指令要讀它的程式碼位元組、描述子（EXEC_XFER 另加 DeviceMap 項目）、常數，各一次讀取（`fetch.read_mode = per_byte` 時每個位元組一次）。例：`ALU ADD` 讀 1＋1 個位元組＝6,080 週期；`MOV`（4 位元組描述子）＝7,902。
+* 從程式 SRAM 取指（`fetch.source = frontend`）：`frontend.*` 各狀態的週期數相加，每道指令只有幾個週期。
+* `fetch.source = sram` 或 `fetch.read_mode = instant`：不計取指時間。
+* 確定的部分：協定的位元數、兩個時脈（27 MHz 為使用者確認、400 kHz 為規格 14.4）。**假設的部分**：解碼器是否每個區域一次讀完、EEPROM 位址位元組數（profile `eeprom_address_bytes`）、每次交易的額外週期（預設 2）、ACK 延遲與時脈延展（預設 0）、Frontend 各狀態的長度。這些都是參數，硬體數值出來後直接改。
 
 ## 防止失控
 

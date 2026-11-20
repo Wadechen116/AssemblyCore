@@ -7,12 +7,12 @@
 | `tool`、`isa` | 產生者（`asmcore`）與 ISA 名稱 |
 | `callModel`、`maxCallDepth` | 呼叫模型、靜態算出的最大呼叫深度 |
 | `domains[]` | `name`、`codeSize`、`imageSize`、`baseWord`／`reservedWords`（在共用程式 SRAM 中的起始 word 與保留的 word 數）、`layout[]`（v31 旁路 layout 的各區 offset）、`sections[]`（`name`、`offset`、`size`、`entries`、`depth`） |
-| `instrs[]` | 每一條指令：`domain`、`pc`、`len`、`file`、`line`、`text`、`cycles`（佔位延遲）、`synthetic`（組譯器產生的呼叫／返回序列）、`note`（有才出現）、`table`／`desc`（用到的描述子表名稱與索引，有才出現）、`branch`／`target`（是分支時出現，`target` 為目標 pc）、`fall`（不會落到下一條時為 `false`，否則省略）、`frames[]`（內嵌展開時的呼叫鏈，最內層在最後，每層有 `proc` 與呼叫點的 `file`/`line`） |
+| `instrs[]` | 每一條指令：`domain`、`pc`、`len`、`file`、`line`、`text`、`cycles`（執行的週期，佔位延遲）、`fetch`（取指的週期；建置有給取指時間且不為 0 時才出現）、`synthetic`（組譯器產生的呼叫／返回序列）、`note`（有才出現）、`table`／`desc`（用到的描述子表名稱與索引，有才出現）、`branch`／`target`（是分支時出現，`target` 為目標 pc）、`fall`（不會落到下一條時為 `false`，否則省略）、`frames[]`（內嵌展開時的呼叫鏈，最內層在最後，每層有 `proc` 與呼叫點的 `file`/`line`） |
 | `procs[]` | `domain`、`name`、`file`/`line`、`emitted`、`startPc`/`endPc`、`callSites`（呼叫點數量）、`slot`（softret：回傳編號所在的 `MAIN_SCRATCHPAD` 位移，-1 為不需要）、`wcetBounded`／`wcetCycles`（從呼叫到返回的最壞週期，取所有呼叫點的最大值；佔位延遲） |
 | `callSites[]` | `domain`、`callee`、`caller`、`file`/`line`、`transferPc`（進入程序的分支）、`returnPc`、`retId`（softret：存入回傳槽的 16 位元編號，0 為不需要）、`wcetBounded`／`wcetCycles` |
 | `symbols[]` | `name`、`kind`、`value`、`file`/`line`：標籤（`main:`／`peri:` 前綴）、`.equ`/`.csr`/`.service`/`.const`/`.devmap` |
 | `vectors[]` | `.vector` 宣告：`domain`、`id`、`label`、`pc`、`file`/`line` |
-| `wcet[]` | 每個查詢的 `name`、`from`、`to`、`bounded`、`cycles`、`note` |
+| `wcet[]` | 每個查詢的 `name`、`from`、`to`、`bounded`、`cycles`（最壞路徑：執行＋取指）、`fetchCycles`（其中取指的部分；不為 0 時才出現）、`note` |
 
 ## 用影子堆疊還原 call stack
 

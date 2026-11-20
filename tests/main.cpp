@@ -933,6 +933,32 @@ static void t_wcet() {
         check(r.wcet[0].bounded && r.wcet[0].cycles == 3 + 3 + 1 + 1 + 3 + 3, "work -> fin = 14 cycles on the longest path (MOV 3, MOV 3, ALU 1, BR 1, two CSR writes of 3)", std::to_string(r.wcet[0].cycles) + " " + r.wcet[0].note);
         check(!r.wcet[1].bounded, "loop -> fin is unbounded (polling loop)", r.wcet[1].note);
     }
+    {   // Options::fetchCycles: the time to fetch each instruction is added to every path, and reported beside the execution
+        Options of = o;
+        of.fetchCycles = [](Domain, uint32_t) { return 100; };
+        Result rf = assemble(v, nullptr, of);
+        // work -> fin runs six instructions on its longest path (fin itself is not on it)
+        check(rf.ok && rf.wcet.size() == 2 && rf.wcet[0].cycles == 14 + 600 && rf.wcet[0].fetchCycles == 600, "with 100 cycles of fetching each: 14 executing + 600 fetching",
+              rf.wcet.size() == 2 ? std::to_string(rf.wcet[0].cycles) + " / " + std::to_string(rf.wcet[0].fetchCycles) : "");
+        check(rf.main.bytes == r.main.bytes, "the image does not depend on the fetch times");
+        bool keeps = rf.instrs.size() == r.instrs.size();
+        for (size_t i = 0; keeps && i < r.instrs.size(); i++) keeps = rf.instrs[i].cycles == r.instrs[i].cycles && rf.instrs[i].fetchCycles == 100 && r.instrs[i].fetchCycles == 0;
+        check(keeps, "InstrInfo::cycles stays the execution; fetchCycles is beside it (0 without the option)");
+        check(r.wcet[0].fetchCycles == 0 && r.map().find("fetching") == std::string::npos && rf.map().find("(14 executing + 600 fetching)") != std::string::npos,
+              "the map shows the two parts only when there is fetching");
+        // the worst path is chosen by the TOTAL: a short path whose instruction is slow to fetch wins over a longer one that is fast
+        Options ow = o;
+        ow.wcetQueries.clear();
+        ow.wcetQueries.push_back("a:z");
+        std::vector<Source> bv{Source{"t.asm", ".main\na: BR.COND PERI_RESULT_VALID, slow\n EXEC_CSR WRITE8 0x10, 1\n EXEC_CSR WRITE8 0x10, 2\n JMP z\nslow: EXEC_CSR WRITE8 0x10, 3\nz: JMP z\n"}};
+        Result plainB = assemble(bv, nullptr, ow);
+        uint32_t slowPc = 0;
+        for (auto& i : plainB.instrs) if (i.text.find(", 3") != std::string::npos) slowPc = i.pc;
+        ow.fetchCycles = [slowPc](Domain, uint32_t pc) { return pc == slowPc ? 1000 : 0; };
+        Result slowB = assemble(bv, nullptr, ow);
+        check(plainB.ok && plainB.wcet[0].cycles == 1 + 3 + 3 + 1 && slowB.ok && slowB.wcet[0].cycles == 1 + 3 + 1000 && slowB.wcet[0].fetchCycles == 1000,
+              "the worst path is the one with the largest total (executing + fetching)", std::to_string(plainB.wcet[0].cycles) + " / " + std::to_string(slowB.wcet[0].cycles));
+    }
     // SoftRet: the return dispatch must not create loops that do not exist (call-string sensitive analysis)
     const std::string calls =
         ".main\n.proc leaf\n EXEC_CSR WRITE8 0x10, 1\n RET\n.endp\n.proc mid\n EXEC_CSR WRITE8 0x10, 2\n CALL leaf\n RET\n.endp\n"

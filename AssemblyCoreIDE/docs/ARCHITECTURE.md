@@ -46,7 +46,7 @@
 
 | 元件 | 責任 |
 |---|---|
-| `BuildService`（`build.*`） | 背景工作緒；最新請求優先、過期結果丟棄；產生 `BuildSnapshot`（`Result`＋`Index`＋`SourceMap`＋每檔診斷）。組譯前把硬體參數中的週期模型蓋在 profile 上（與模擬器同一順序），`cycleOverrides` 記下被取代的數字 |
+| `BuildService`（`build.*`） | 背景工作緒；最新請求優先、過期結果丟棄；產生 `BuildSnapshot`（`Result`＋`Index`＋`SourceMap`＋每檔診斷）。組譯前把硬體參數中的週期模型蓋在 profile 上（與模擬器同一順序），`cycleOverrides` 記下被取代的數字；以核心的 `sim::assembleWithFetch` 組譯，讓 WCET 計入取指時間（`fetchModel` 記下算法） |
 | `artifacts.*` | 把建置結果寫成檔案（`.bin`／`.hex`／`.lst`／`.map`／`.dbg.json`…，檔名與 `asmc` 相同） |
 | `editing.*` | 補全、懸停、重新命名：`(文字, 語言, 索引)` 的純函式 |
 | `auto_fix.*` | 自動修復：依診斷代碼套用「只有一種最可能修法」的修補，重建，直到乾淨或無法再修；可限定檔案／行／代碼 |

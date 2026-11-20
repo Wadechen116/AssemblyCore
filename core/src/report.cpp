@@ -176,7 +176,7 @@ std::string Result::map() const {
     }
     if (!wcet.empty()) {
         o << "\nWCET (placeholder latencies)\n";
-        for (const WcetResult& w : wcet) o << "  " << w.name << "  " << w.from << " -> " << w.to << "  " << (w.bounded ? std::to_string(w.cycles) + " cycles" : "unbounded") << "  (" << w.note << ")\n";
+        for (const WcetResult& w : wcet) o << "  " << w.name << "  " << w.from << " -> " << w.to << "  " << (w.bounded ? std::to_string(w.cycles) + " cycles" + (w.fetchCycles ? " (" + std::to_string(w.cycles - w.fetchCycles) + " executing + " + std::to_string(w.fetchCycles) + " fetching)" : std::string()) : "unbounded") << "  (" << w.note << ")\n";
     }
     return o.str();
 }
@@ -220,6 +220,7 @@ std::string Result::debugJson() const {
         const InstrInfo& ii = instrs[i];
         o << (i ? "," : "") << "\n  {\"domain\":\"" << domainName(ii.domain) << "\",\"pc\":" << ii.pc << ",\"len\":" << ii.length << "," << loc(ii.loc) << ",\"text\":\"" << jsonEsc(ii.text) << "\",\"cycles\":" << ii.cycles
           << ",\"synthetic\":" << (ii.synthetic ? "true" : "false");
+        if (ii.fetchCycles) o << ",\"fetch\":" << ii.fetchCycles;
         if (!ii.note.empty()) o << ",\"note\":\"" << jsonEsc(ii.note) << "\"";
         if (!ii.table.empty()) o << ",\"table\":\"" << ii.table << "\",\"desc\":" << ii.descIndex;
         if (ii.isBranch) o << ",\"branch\":true,\"target\":" << ii.target;
@@ -252,7 +253,7 @@ std::string Result::debugJson() const {
     o << "\n ],\n \"wcet\":[";
     for (size_t i = 0; i < wcet.size(); i++) {
         const WcetResult& w = wcet[i];
-        o << (i ? "," : "") << "\n  {\"name\":\"" << jsonEsc(w.name) << "\",\"from\":\"" << jsonEsc(w.from) << "\",\"to\":\"" << jsonEsc(w.to) << "\",\"bounded\":" << (w.bounded ? "true" : "false") << ",\"cycles\":" << w.cycles << ",\"note\":\"" << jsonEsc(w.note) << "\"}";
+        o << (i ? "," : "") << "\n  {\"name\":\"" << jsonEsc(w.name) << "\",\"from\":\"" << jsonEsc(w.from) << "\",\"to\":\"" << jsonEsc(w.to) << "\",\"bounded\":" << (w.bounded ? "true" : "false") << ",\"cycles\":" << w.cycles << (w.fetchCycles ? ",\"fetchCycles\":" + std::to_string(w.fetchCycles) : std::string()) << ",\"note\":\"" << jsonEsc(w.note) << "\"}";
     }
     o << "\n ]\n}\n";
     return o.str();
