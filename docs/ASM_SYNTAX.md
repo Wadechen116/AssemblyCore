@@ -16,11 +16,16 @@ asmc [選項] file.asm [file2.asm ...]
   -I DIR               .include 的搜尋目錄（同時搜尋含入檔所在目錄）
   --list --map --dbg --hex     產生 .lst / .map / .dbg.json / .hex
   --wcet A:B           Main 標籤 A 到 B 之間的最壞情況週期數（可重複）
+  --params FILE        模擬器的硬體參數檔（.simparams），用於週期數與 WCET
+  --param KEY=VALUE    單一硬體參數，例如 clock.i2c_hz=1000000（可重複；優先於 --params）
+  --fetch-time         以預設參數把取指時間算進 WCET（給了 --params／--param 就已包含）
   --pad-tables         每個描述子表補到 profile 的深度
   --werror             警告視為錯誤
 ```
 
 輸出：`PREFIX.main.bin`、`PREFIX.peri.bin`（映像檔，第 8 節）。有錯誤時不寫任何檔案，結束碼 1。
+
+**WCET 的兩種算法**。不加上面三個選項時，WCET 只是指令的執行週期（原本的行為）。加了任何一個，`asmc` 就和 AssemblyCoreIDE、模擬器用同一種算法：參數中的 `latency.*`、`clock.*_hz` 取代 profile 的數字，並加上硬體取出每道指令的時間（`fetch.source` 預設是 I2C EEPROM；`frontend` 為程式 SRAM；`sram` 或 `fetch.read_mode = instant` 不加）。輸出分開列出，例如 `WCET T: 33443 cycles (10 executing + 33433 fetching the instructions)`。不含等另一個 sequencer 的時間。映像不受這些選項影響。要得到和 IDE 相同的數字：專案有 `.simparams` 就用 `--params 那個檔`，沒有就用 `--fetch-time`。參數清單：`asmsim --list-params`。
 
 建置本專案（只需要 C++17 編譯器與 CMake）：`cmake -S . -B build && cmake --build build && ctest --test-dir build`。
 

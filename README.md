@@ -26,7 +26,7 @@ dist/            Windows 發佈資料夾（dist\msvc2026，不進版本控制）
 ```
 cmake -S . -B build -DCMAKE_PREFIX_PATH=<Qt6 路徑>     # 找不到 Qt6 時只建核心、CLI、服務層與其測試
 cmake --build build
-ctest --test-dir build                                  # 14 項；GUI 測試需 QT_QPA_PLATFORM=offscreen
+ctest --test-dir build                                  # 15 項；GUI 測試需 QT_QPA_PLATFORM=offscreen
 build/asmc --list --map --dbg examples/imu_gyro.asm
 build/asmsim examples/imu_gyro.asm --env examples/imu_env.cfg --scenario examples/imu_gyro.scn --vcd run.vcd
 build/asmdis --main --check imu.main.bin                # 反組譯並確認重新組譯得到同一份映像
@@ -36,7 +36,7 @@ build/asmdis --main --check imu.main.bin                # 反組譯並確認重�
 
 | 平台 | 工具鏈 | 狀態 |
 |---|---|---|
-| Linux（WSL Ubuntu） | GCC 13、Qt 6.5.3、CMake | `ctest` 14/14 通過（2026-11-20） |
+| Linux（WSL Ubuntu） | GCC 13、Qt 6.5.3、CMake | `ctest` 15/15 通過（2026-11-20） |
 | Windows | Visual Studio 2026（MSVC 14.51）、Qt 6.5.3 `msvc2019_64`、CMake＋Ninja | 0 個 `warning C`；核心與服務層測試通過（2026-11-19）；UI 測試自 2026-11-18 起未重跑 |
 | macOS | — | 尚未驗證 |
 

@@ -56,7 +56,7 @@ IDE 用核心的模擬器（`docs/SIM.md`）執行你正在編輯的程式。模
 
 WCET 另外計入**取指時間**：硬體把每道指令（程式碼位元組、描述子、常數）讀出來所花的週期，依 `fetch.source`、`fetch.read_mode`、`clock.i2c_hz`、`frontend.*` 等參數計算，和 Decoder 面板顯示的取指週期是同一個數字。輸出面板分開列出，例如 `WCET T: 33443 cycles (10 executing + 33433 fetching the instructions)`，並說明用的是哪一種算法。清單的週期欄仍只是執行週期。
 
-限制：(1) **不含**等另一個 sequencer 的時間（共用 I2C 匯流排、CSR 仲裁器、Status Flag、Data Xfer），那取決於另一邊當時在做什麼，所以兩邊同時執行時實際時間仍可能比 WCET 長；(2) 只跟隨參數（`.simparams` 與模擬器頁面設定的值），環境檔裡的 `[latency]`、`[bus i2c]`、`[params]` 區段不會進到建置；(3) 命令列的 `asmc` 沒有參數檔，同一個專案用 `asmc` 建置時只看 profile、不含取指時間；(4) 取指的數值本身是算出來的規劃值（見下），尚未對照硬體。
+限制：(1) **不含**等另一個 sequencer 的時間（共用 I2C 匯流排、CSR 仲裁器、Status Flag、Data Xfer），那取決於另一邊當時在做什麼，所以兩邊同時執行時實際時間仍可能比 WCET 長；(2) 只跟隨參數（`.simparams` 與模擬器頁面設定的值），環境檔裡的 `[latency]`、`[bus i2c]`、`[params]` 區段不會進到建置；(3) 命令列的 `asmc` 要加 `--params FILE`、`--param KEY=VALUE` 或 `--fetch-time` 才用同一種算法（數字與 IDE 相同）；不加時只計執行週期；(4) 取指的數值本身是算出來的規劃值（見下），尚未對照硬體。
 
 **取指時間怎麼算**（沒有硬體時的估算依據）：不是量測，而是依協定計算，與模擬器的解碼器、Decoder 面板用同一份程式。
 

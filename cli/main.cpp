@@ -11,6 +11,7 @@
 #include "asmcore/eeprom.h"
 #include "asmcore/diagnostics.h"
 #include "asmcore/profile_info.h"
+#include "asmcore/sim.h"
 
 namespace fs = std::filesystem;
 
@@ -45,6 +46,9 @@ void usage() {
         "  --hex                write PREFIX.main.hex / PREFIX.peri.hex (Intel HEX of the logical images)\n"
         "  --artifacts          write the v31 artifact set next to the images (see below)\n"
         "  --wcet A:B           worst-case cycles between Main labels A and B (repeatable)\n"
+        "  --params FILE        the simulator's hardware parameters (a .simparams file: [params], key = value) for the cycle counts and the WCET\n"
+        "  --param KEY=VALUE    one hardware parameter, e.g. clock.i2c_hz=1000000 (repeatable; wins over --params)\n"
+        "  --fetch-time         count the time to fetch each instruction in the WCET with the default parameters (implied by --params / --param)\n"
         "  --pad-tables         pad every descriptor table to the profile depth\n"
         "  --werror             warnings fail the build\n"
         "  --dataflow M         off | warn (default) | error   the data-flow check (docs/ASM_SYNTAX.md, W5xx)\n"
@@ -61,6 +65,10 @@ void usage() {
         "--artifacts adds: PREFIX.sram.hex (the 32-bit words of the one shared program SRAM), PREFIX.boot.json (boot load plan), PREFIX.memory.json\n"
         "(placement proof), PREFIX.sections.json, PREFIX.descriptors.json, PREFIX.services.json, PREFIX.events.json, PREFIX.validation.json,\n"
         "PREFIX.manifest.json.\n"
+        "--params / --param / --fetch-time make asmc count as AssemblyCoreIDE and the simulator do: the parameters of the cycle model (latency.*,\n"
+        "clock.*_hz) replace the profile's numbers, and the WCET adds what the decoders spend FETCHING each instruction (fetch.source: the I2C EEPROM by\n"
+        "default, the program SRAM with frontend, nothing with sram or fetch.read_mode = instant). Waiting for the other sequencer is not counted.\n"
+        "Without them the WCET is the execution alone, as before. The images never depend on them. `asmsim --list-params` lists the parameters.\n"
         "--eeprom adds what is burned into the I2C EEPROM the decoders fetch from: PREFIX.eeprom.bin (the image), PREFIX.eeprom.hex (Intel HEX for a\n"
         "programmer), PREFIX.eeprom.json (where each of the six regions starts; asmsim --eeprom and asmdis --eeprom read it) and PREFIX.eeprom.sym (the\n"
         "names: labels, CSRs, services, devices -- asmdis --eeprom gives them back to the disassembly). The addresses are the\n"
@@ -72,7 +80,10 @@ void usage() {
 int main(int argc, char** argv) {
     asmcore::Options opt;
     std::vector<std::string> inputs, incDirs;
-    std::string prefix, profilePath;
+    std::string prefix, profilePath, paramsPath;
+    std::vector<std::string> paramArgs;
+    bool withParams = false;
+    asmcore::SimParams params;
     bool profileGaps = false;
     bool list = false, map = false, dbg = false, hex = false, printProfile = false, artifacts = false, eeprom = false;
     for (int i = 1; i < argc; i++) {
@@ -98,6 +109,9 @@ int main(int argc, char** argv) {
         else if (a == "--eeprom") eeprom = true;
         else if (a == "--artifacts") artifacts = true;
         else if (a == "--wcet") opt.wcetQueries.push_back(need("--wcet"));
+        else if (a == "--params") { paramsPath = need("--params"); withParams = true; }
+        else if (a == "--param") { paramArgs.push_back(need("--param")); withParams = true; }
+        else if (a == "--fetch-time") withParams = true;
         else if (a == "--pad-tables") opt.padTables = true;
         else if (a == "--werror") opt.werror = true;
         else if (a == "--dataflow") {
@@ -131,6 +145,21 @@ int main(int argc, char** argv) {
         std::vector<std::string> errs;
         if (!opt.profile.load(text, errs)) { for (auto& e : errs) std::fprintf(stderr, "%s: %s\n", profilePath.c_str(), e.c_str()); return 2; }
     }
+    if (!paramsPath.empty()) {                                           // hardware parameters: a file, then the command line
+        std::string text;
+        std::vector<std::string> errs;
+        if (!readFile(paramsPath, text)) { std::fprintf(stderr, "asmc: cannot read %s\n", paramsPath.c_str()); return 2; }
+        if (!params.load(text, errs)) { for (auto& e : errs) std::fprintf(stderr, "%s: %s\n", paramsPath.c_str(), e.c_str()); return 2; }
+    }
+    for (const std::string& pa : paramArgs) {
+        const size_t eq = pa.find('=');
+        std::string err;
+        if (eq == std::string::npos || !params.set(pa.substr(0, eq), pa.substr(eq + 1), err)) {
+            std::fprintf(stderr, "asmc: --param %s: %s\n", pa.c_str(), err.empty() ? "expected KEY=VALUE" : err.c_str());
+            return 2;
+        }
+    }
+    params.apply(opt.profile.latency);                                   // the cycle model: the parameters win over the profile, as in the simulator
     if (profileGaps) {
         const std::vector<asmcore::ProfileGap> gaps = asmcore::profileGaps(opt.profile);
         if (gaps.empty()) { std::printf("profile %s: every group that needs confirmation is confirmed\n", opt.profile.profileId.c_str()); return 0; }
@@ -165,7 +194,14 @@ int main(int argc, char** argv) {
         return false;
     };
 
-    asmcore::Result r = asmcore::assemble(sources, resolver, opt);
+    // --params / --param / --fetch-time: the cycle model and the fetch time of the simulator (what AssemblyCoreIDE builds with)
+    asmcore::sim::FetchTimes fetch;
+    asmcore::Result r;
+    if (withParams) {
+        asmcore::sim::SimConfig cfg;
+        cfg.params = params;
+        r = asmcore::sim::assembleWithFetch(sources, resolver, opt, cfg, &fetch);
+    } else r = asmcore::assemble(sources, resolver, opt);
     std::fputs(r.diagnosticsText().c_str(), stderr);
     if (!r.diags.empty()) std::fprintf(stderr, "asmc: 'asmc --explain %s' says what a code means and how to fix it (asmc --list-codes lists them all)\n", r.diags[0].code.c_str());
     if (!r.ok) {
@@ -214,7 +250,10 @@ int main(int argc, char** argv) {
     if (map) io &= writeText(prefix + ".map", r.map());
     if (dbg) io &= writeText(prefix + ".dbg.json", r.debugJson());
     for (const asmcore::WcetResult& w : r.wcet)
-        std::printf("WCET %s: %s\n", w.name.c_str(), w.bounded ? (std::to_string(w.cycles) + " cycles").c_str() : "unbounded");
+        std::printf("WCET %s: %s\n", w.name.c_str(), !w.bounded ? "unbounded"
+                    : (std::to_string(w.cycles) + " cycles" + (w.fetchCycles ? " (" + std::to_string(w.cycles - w.fetchCycles) + " executing + " + std::to_string(w.fetchCycles) + " fetching the instructions)" : std::string())).c_str());
+    if (!fetch.model.empty() && !r.wcet.empty())
+        std::printf("fetch time counted as: %s; waiting for the other sequencer (shared bus, arbiters) is not counted\n", fetch.model.c_str());
     if (r.warningCount()) std::printf("%d warning(s)\n", r.warningCount());
     if (!io) { std::fprintf(stderr, "asmc: could not write an output file\n"); return 2; }
     return 0;

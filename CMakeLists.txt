@@ -124,6 +124,7 @@ add_test(NAME asmcore_blocks_edit_tests COMMAND asmcore_blocks_edit_tests)
 find_package(Python3 QUIET COMPONENTS Interpreter)
 if(Python3_FOUND AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/sample/check_samples.py)
   add_test(NAME sample_projects COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/sample/check_samples.py --bin-dir $<TARGET_FILE_DIR:asmc>)
+  add_test(NAME asmc_params COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/check_asmc_params.py --bin-dir $<TARGET_FILE_DIR:asmc>)
 endif()
 
 # The IDE (services + Qt application). Off in a pure core build: cmake -DASMCORE_BUILD_IDE=OFF
