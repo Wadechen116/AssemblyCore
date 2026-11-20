@@ -128,6 +128,7 @@ if(Python3_FOUND AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/sample/check_samples.py)
   add_test(NAME asmc_params COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/check_asmc_params.py --bin-dir $<TARGET_FILE_DIR:asmc>)
   add_test(NAME conformance_kit COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/conformance/make_conformance.py --check --bin-dir $<TARGET_FILE_DIR:asmc> --out ${CMAKE_CURRENT_BINARY_DIR}/conformance_out)
   add_test(NAME timing_kit COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/conformance/make_timing.py --check --bin-dir $<TARGET_FILE_DIR:asmc> --out ${CMAKE_CURRENT_BINARY_DIR}/timing_out)
+  add_test(NAME fault_kit COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/conformance/make_faults.py --check --bin-dir $<TARGET_FILE_DIR:asmc> --out ${CMAKE_CURRENT_BINARY_DIR}/fault_out)
 endif()
 
 # The IDE (services + Qt application). Off in a pure core build: cmake -DASMCORE_BUILD_IDE=OFF
