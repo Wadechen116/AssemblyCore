@@ -23,6 +23,8 @@ void addParam(Readiness& r, const SimParams& p, const char* key) {
     ReadinessItem it;
     it.blocks = 2;
     it.kind = "parameter";
+    it.code = "param_planning";
+    it.value = p.text(key);
     it.id = key;
     it.title = d ? d->help : std::string(key);
     it.why = "the time to fetch an instruction is counted with it, and it is still a planning value (" + p.text(key) + ")";
@@ -50,6 +52,7 @@ Readiness readiness(const Profile& profile, const SimParams* params) {
         ReadinessItem it;
         it.blocks = levelOfGroup(g.group);
         it.kind = "profile";
+        it.code = "group";
         it.id = g.group;
         it.title = g.title;
         it.why = g.why;
@@ -61,7 +64,7 @@ Readiness readiness(const Profile& profile, const SimParams* params) {
     // ---- the fetch time (L2): counted at all, and with numbers somebody has measured
     if (!params) {
         ReadinessItem it;
-        it.blocks = 2; it.kind = "tool"; it.id = "fetch_time";
+        it.blocks = 2; it.kind = "tool"; it.id = "fetch_time"; it.code = "fetch_time";
         it.title = "the time to fetch each instruction is not in the WCET";
         it.why = "this build was made without the hardware parameters, so its WCET counts the execution alone";
         it.fix = "build with the parameters: AssemblyCoreIDE does, asmc with --params FILE / --param KEY=VALUE / --fetch-time";
@@ -72,6 +75,7 @@ Readiness readiness(const Profile& profile, const SimParams* params) {
         if (source == 1 || instant) {
             ReadinessItem it;
             it.blocks = 2; it.kind = "parameter"; it.id = source == 1 ? "fetch.source" : "fetch.read_mode";
+            it.code = source == 1 ? "fetch_off_sram" : "fetch_off_instant";
             it.title = source == 1 ? "fetch.source = sram: fetching takes no time" : "fetch.read_mode = instant: fetching takes no time";
             it.why = "a setting for looking at a program, not the hardware: the WCET then counts the execution alone";
             it.fix = "set fetch.source to how the hardware fetches (eeprom or frontend)" + std::string(instant ? " and fetch.read_mode to sequential or per_byte" : "");
@@ -84,7 +88,7 @@ Readiness readiness(const Profile& profile, const SimParams* params) {
     }
     {   // what the tools cannot bound yet, whatever is confirmed
         ReadinessItem it;
-        it.blocks = 2; it.kind = "tool"; it.id = "shared_waits";
+        it.blocks = 2; it.kind = "tool"; it.id = "shared_waits"; it.code = "shared_waits";
         it.title = "the WCET does not bound the waiting for the other sequencer";
         it.why = "Main and Peri share the I2C bus / the program SRAM port, the CSR arbiter, the Status Flag unit and Data Xfer; how long one waits depends on what the other is doing, and the WCET analysis looks at one sequencer alone";
         it.fix = "not available yet: until the tools bound these waits, add the longest wait by hand (the simulator shows them) and treat every WCET as planning-only";

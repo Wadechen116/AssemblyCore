@@ -90,7 +90,7 @@
 | 除錯面板（`debug_panels.cpp`） | `state`、`memory`、`signals`、`csrs`、`watch`、`callstack`、`breakpoints`、`events`、`decoder`、`sram`、`autodebug` |
 | 分頁（`DocumentTab`） | 硬體設計器（`hardware_designer.*`）、積木編輯器（`block_editor.*`）、模擬器頁面（`sim_panels.*` 的 `SimulatorTab`：架構圖 `isa_top_view.*`＋執行時間軸） |
 | 積木畫布 | `block_scene`（畫布與拖放）、`block_view`（縮放、平移）、`block_painter`（繪圖）、`block_toolbox`、`typeblock_box`、`field_editor`、`comment_edit`、`generated_code_pane`、`custom_block_dialog` |
-| 其他 | 狀態列的就緒等級標示與說明視窗（`MainWindow::showReadiness`，資料來自 `BuildSnapshot::readiness`）、`cursor_bar`（Main／Peri 雙游標工具列）、`eeprom_tool`（EEPROM 視窗）、`find_bar`、`theme`、`templates`、`i18n` |
+| 其他 | 狀態列的就緒等級標示與說明視窗（`MainWindow::showReadiness`，資料來自 `BuildSnapshot::readiness`，各缺口的文字在 `readiness_texts.*`）、`cursor_bar`（Main／Peri 雙游標工具列）、`eeprom_tool`（EEPROM 視窗）、`find_bar`、`theme`、`templates`、`i18n` |
 
 主題用 token 名稱（`lang::tokName`）對應顏色，可由設定檔覆寫，不寫死在程式裡。
 

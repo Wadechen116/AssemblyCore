@@ -2252,6 +2252,92 @@ The decoder made of the bytes: %4</source>
     </message>
 </context>
 <context>
+    <name>ProfileGroup</name>
+    <message>
+        <source>Program counter and code size</source>
+        <translation>程式計數器與程式大小</translation>
+    </message>
+    <message>
+        <source>Optional hardware features</source>
+        <translation>選用的硬體功能</translation>
+    </message>
+    <message>
+        <source>Program SRAM placement</source>
+        <translation>程式 SRAM 的配置</translation>
+    </message>
+    <message>
+        <source>I2C EEPROM (program store)</source>
+        <translation>I2C EEPROM（程式儲存）</translation>
+    </message>
+    <message>
+        <source>Image layout and alignment</source>
+        <translation>映像版面與對齊</translation>
+    </message>
+    <message>
+        <source>Descriptor byte order</source>
+        <translation>描述子的位元組順序</translation>
+    </message>
+    <message>
+        <source>DeviceMap entry packing</source>
+        <translation>DeviceMap 項目的排列</translation>
+    </message>
+    <message>
+        <source>ALU sub-operation numbers</source>
+        <translation>ALU 子運算的編碼數值</translation>
+    </message>
+    <message>
+        <source>Hardware events</source>
+        <translation>硬體事件</translation>
+    </message>
+    <message>
+        <source>Latency numbers</source>
+        <translation>延遲數值</translation>
+    </message>
+</context>
+<context>
+    <name>ProfileGroupWhy</name>
+    <message>
+        <source>How far the code may grow and how wide the program counter is. The spec leaves the PC width and any narrower code limit to the target; ordinary branches still reach only bytes 0..255.</source>
+        <translation>程式可以長到多大、程式計數器有幾位元。規格把 PC 寬度與更小的程式上限留給目標硬體決定；一般的分支仍然只能到達位元組 0..255。</translation>
+    </message>
+    <message>
+        <source>Whether a non-overlapping MOV inside one region is allowed, and whether CSR read-back bytes carry a valid bit. The v31 spec does not decide either; the RTL tests do.</source>
+        <translation>同一區域內不重疊的 MOV 是否允許，以及 CSR 讀回的位元組是否帶有有效位元。v31 規格兩者都沒有決定，要由 RTL 測試決定。</translation>
+    </message>
+    <message>
+        <source>Where the Main and Peri images sit in the one shared SRAM and how much room each has. The spec shows a toy layout only; the real depth, base addresses and capacities are RTL parameters.</source>
+        <translation>Main 與 Peri 的映像放在共用 SRAM 的哪裡、各有多少空間。規格只給了示意的配置；實際的深度、起始位址與容量是 RTL 參數。</translation>
+    </message>
+    <message>
+        <source>The EEPROM the decoders fetch the code, the descriptor tables, the const pool and the DeviceMap from: its size, I2C address, address width and where each region starts. Planning values until the board and the RTL give them.</source>
+        <translation>解碼器讀取程式碼、描述子表、常數池與 DeviceMap 的那顆 EEPROM：容量、I2C 位址、位址寬度，以及各區域的起始位置。在電路板與 RTL 提供之前都是規劃值。</translation>
+    </message>
+    <message>
+        <source>How wide the sideband offset latches are and how sections are aligned. Not stated by the spec; wrong values make the hardware read the wrong table.</source>
+        <translation>旁路的 offset 暫存器有多寬、各區段如何對齊。規格沒有寫；數值錯了，硬體會讀到錯的表。</translation>
+    </message>
+    <message>
+        <source>In which byte order multi-byte descriptors are stored. v31 says to concatenate &apos;in the existing byte order&apos; and leaves the serialization to the target; the SRAM lane mapping alone does not settle it.</source>
+        <translation>多位元組的描述子以什麼位元組順序儲存。v31 只說「依既有的位元組順序」串接，把序列化方式留給目標硬體；單靠 SRAM 的 lane 對應無法確定。</translation>
+    </message>
+    <message>
+        <source>Which bits of a DeviceMap entry hold the bus type and the I2C address, and how many bytes an entry takes. The spec gives only the bit widths.</source>
+        <translation>DeviceMap 項目的哪些位元是匯流排類型、哪些是 I2C 位址，以及一筆項目占幾個位元組。規格只給了位元寬度。</translation>
+    </message>
+    <message>
+        <source>The spec names ADD, SUB, MUL, CMP.EQ ... but never gives their numeric codes. The numbers here are placeholders: a wrong code makes the hardware do a different operation.</source>
+        <translation>規格列出了 ADD、SUB、MUL、CMP.EQ 等名稱，但沒有給它們的編碼數值。這裡的數值是暫定的：編碼錯了，硬體會執行另一種運算。</translation>
+    </message>
+    <message>
+        <source>Number of events and the cycles to enter a handler and return from it. Vector sources, priorities and the cycle bounds are defined by the target.</source>
+        <translation>事件的數量，以及進入處理程序與返回所需的週期。向量來源、優先順序與週期上界由目標硬體定義。</translation>
+    </message>
+    <message>
+        <source>Cycle counts used for the listing, WCET and the simulator. They are the PLANNING numbers of spec section 14, not signoff values; response times are only as good as these.</source>
+        <translation>清單、WCET 與模擬器使用的週期數。它們是規格第 14 章的「規劃」數值，不是簽核值；回應時間的可信度取決於這些數值。</translation>
+    </message>
+</context>
+<context>
     <name>ProjectPanel</name>
     <message>
         <source>Sources</source>
@@ -2398,6 +2484,112 @@ The decoder made of the bytes: %4</source>
     <message>
         <source>Show it in the All parameters window</source>
         <translation>在「所有參數」視窗中顯示</translation>
+    </message>
+</context>
+<context>
+    <name>Readiness</name>
+    <message>
+        <source>This group also stands for the shift direction bit (SHL = 0, SHR = 1), which has no key of its own.</source>
+        <translation>這一組同時代表移位方向位元（SHL = 0、SHR = 1），它沒有自己的鍵。</translation>
+    </message>
+    <message>
+        <source>Check the values against the RTL / the board, then add the group to the profile: confirmed = ..., %1</source>
+        <translation>對照 RTL／電路板確認數值，然後把這一組加進 profile：confirmed = ..., %1</translation>
+    </message>
+    <message>
+        <source>The time to fetch an instruction is counted with it, and it is still a planning value (%1).</source>
+        <translation>取指時間是用它計算的，而它目前仍是規劃值（%1）。</translation>
+    </message>
+    <message>
+        <source>Measure it or check it against the RTL, then mark it in the .simparams file: %1.status = measured (or confirmed)</source>
+        <translation>量測它或對照 RTL 確認，然後在 .simparams 檔標記：%1.status = measured（或 confirmed）</translation>
+    </message>
+    <message>
+        <source>fetch.source = sram: fetching takes no time</source>
+        <translation>fetch.source = sram：取指不花時間</translation>
+    </message>
+    <message>
+        <source>fetch.read_mode = instant: fetching takes no time</source>
+        <translation>fetch.read_mode = instant：取指不花時間</translation>
+    </message>
+    <message>
+        <source>A setting for looking at a program, not the hardware: the WCET then counts the execution alone.</source>
+        <translation>這是觀察程式用的設定，不是硬體的行為：此時 WCET 只計執行週期。</translation>
+    </message>
+    <message>
+        <source>Set fetch.source to how the hardware fetches (eeprom or frontend).</source>
+        <translation>把 fetch.source 設成硬體實際的取指方式（eeprom 或 frontend）。</translation>
+    </message>
+    <message>
+        <source>Set fetch.read_mode to how the hardware reads (sequential or per_byte).</source>
+        <translation>把 fetch.read_mode 設成硬體實際的讀取方式（sequential 或 per_byte）。</translation>
+    </message>
+    <message>
+        <source>The time to fetch each instruction is not in the WCET</source>
+        <translation>WCET 沒有計入每道指令的取指時間</translation>
+    </message>
+    <message>
+        <source>This build was made without the hardware parameters, so its WCET counts the execution alone.</source>
+        <translation>這次建置沒有帶硬體參數，所以 WCET 只計執行週期。</translation>
+    </message>
+    <message>
+        <source>Build with the parameters (AssemblyCoreIDE does; asmc with --params, --param or --fetch-time).</source>
+        <translation>帶著參數建置（AssemblyCoreIDE 會自動帶；asmc 要加 --params、--param 或 --fetch-time）。</translation>
+    </message>
+    <message>
+        <source>The WCET does not bound the waiting for the other sequencer</source>
+        <translation>WCET 沒有涵蓋等另一個 sequencer 的時間</translation>
+    </message>
+    <message>
+        <source>Main and Peri share the I2C bus / the program SRAM port, the CSR arbiter, the Status Flag unit and Data Xfer. How long one waits depends on what the other is doing, and the WCET analysis looks at one sequencer alone.</source>
+        <translation>Main 與 Peri 共用 I2C 匯流排／程式 SRAM 的讀取埠、CSR 仲裁器、Status Flag 單元與 Data Xfer。一邊要等多久取決於另一邊當時在做什麼，而 WCET 分析一次只看一個 sequencer。</translation>
+    </message>
+    <message>
+        <source>Not available yet. Until the tools bound these waits, add the longest wait by hand (the simulator shows them) and treat every WCET as planning-only.</source>
+        <translation>工具尚未支援。在工具能對這些等待定出上界之前，請自行加上最長的等待時間（模擬器會顯示），並把所有 WCET 視為僅供規劃。</translation>
+    </message>
+</context>
+<context>
+    <name>ReadinessParam</name>
+    <message>
+        <source>Where the decoders fetch the program from</source>
+        <translation>解碼器從哪裡取指</translation>
+    </message>
+    <message>
+        <source>How a decoder reads an instruction from the I2C EEPROM</source>
+        <translation>解碼器如何從 I2C EEPROM 讀出一道指令</translation>
+    </message>
+    <message>
+        <source>Extra cycles of every EEPROM read of a decoder</source>
+        <translation>解碼器每次讀 EEPROM 的額外週期</translation>
+    </message>
+    <message>
+        <source>Extra cycles per byte for the acknowledge</source>
+        <translation>每個位元組 ACK 的額外週期</translation>
+    </message>
+    <message>
+        <source>Clock stretching per byte</source>
+        <translation>每個位元組的時脈延展</translation>
+    </message>
+    <message>
+        <source>Read latency of the program SRAM</source>
+        <translation>程式 SRAM 的讀取延遲</translation>
+    </message>
+    <message>
+        <source>How the two Frontends share the SRAM port</source>
+        <translation>兩個 Frontend 如何共用 SRAM 讀取埠</translation>
+    </message>
+    <message>
+        <source>Cycles of the Frontend in CMD_HOLD</source>
+        <translation>Frontend 在 CMD_HOLD 的週期數</translation>
+    </message>
+    <message>
+        <source>Cycles of the Frontend in CMD_DEC</source>
+        <translation>Frontend 在 CMD_DEC 的週期數</translation>
+    </message>
+    <message>
+        <source>Cycles of the Frontend in CMD_FIRE</source>
+        <translation>Frontend 在 CMD_FIRE 的週期數</translation>
     </message>
 </context>
 <context>

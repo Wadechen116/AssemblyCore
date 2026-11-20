@@ -23,6 +23,7 @@
 
 #include "artifacts.h"
 #include "asmcore/readiness.h"
+#include "readiness_texts.h"
 #include "asmcore/blocks.h"
 #include "block_editor.h"
 #include "cursor_bar.h"
@@ -864,9 +865,10 @@ static QString readinessHtml(const asmcore::Readiness& r, bool haveBuild) {
             shown = it.blocks;
         }
         const QString kind = it.kind == "profile" ? MainWindow::tr("profile group") : it.kind == "parameter" ? MainWindow::tr("hardware parameter") : MainWindow::tr("not in the tools yet");
-        h += "<li><b>" + esc(it.title) + "</b> <span style='color:gray'>(" + kind.toHtmlEscaped() + ": <code>" + esc(it.id) + "</code>)</span>";
-        if (!it.why.empty()) h += "<br>" + esc(it.why);
-        h += "<br><i>" + esc(it.fix) + "</i></li>";
+        const ReadinessWords words = readinessWords(it);                 // in the language of the interface
+        h += "<li><b>" + words.title.toHtmlEscaped() + "</b> <span style='color:gray'>(" + kind.toHtmlEscaped() + ": <code>" + esc(it.id) + "</code>)</span>";
+        if (!words.why.isEmpty()) h += "<br>" + words.why.toHtmlEscaped();
+        h += "<br><i>" + words.fix.toHtmlEscaped() + "</i></li>";
     }
     if (shown != -1) h += "</ul>";
     return h;

@@ -66,7 +66,7 @@
 | 新的積木種類 | `core/src/blocks.cpp` 的 `Registry::defaults()`（選項取自語言詞彙）；元件在 `blocks_values.cpp`，參照在 `blocks_symbols.cpp` |
 | 硬體描述（`.achw`）的欄位、產生器 | `core/src/hardware.cpp`（`asmcore/hardware.h`） |
 | profile 鍵的說明、範圍、未確認群組 | `core/src/profile_info.cpp`（鍵的解析在 `profile.cpp`；可確認的群組名稱兩邊都有一份，測試會檢查一致） |
-| 就緒等級的判定規則（哪一組擋哪一級、哪些參數要量測） | `core/src/readiness.cpp`（`levelOfGroup`、`readiness()`）；文字說明在同檔與 IDE 的 `main_window.cpp`（`readinessHtml`） |
+| 就緒等級的判定規則（哪一組擋哪一級、哪些參數要量測） | `core/src/readiness.cpp`（`levelOfGroup`、`readiness()`）；英文說明在同檔。IDE 的說明視窗用自己的句子（`ui/readiness_texts.cpp`，依 `ReadinessItem::code` 組成，可翻譯）：新增一種缺口要在兩邊都加，新增或改寫 profile 群組的標題／說明要同步那個檔的表格（UI 測試會檢查），再更新翻譯 |
 
 ## IDE
 

@@ -33,6 +33,9 @@
 #include <fstream>
 #include <sstream>
 
+#include "asmcore/profile_info.h"
+#include "asmcore/readiness.h"
+#include "readiness_texts.h"
 #include "app_shell.h"
 #include "block_editor.h"
 #include "isa_top_view.h"
@@ -259,6 +262,40 @@ private slots:
                  qPrintable(t1.left(600)));
         w.grab().save(outDirFree() + "/acide_readiness.png");
         win->grab().save(outDirFree() + "/acide_readiness_window.png");
+    }
+    // Every gap the readiness check can name has words of the interface (so it can be shown in the user's language): the profile groups' titles and
+    // explanations are the core's own texts offered for translation -- this fails when the core changes one and readiness_texts.cpp does not follow.
+    void everyReadinessGapHasWordsOfTheInterface() {
+        int n = 0;
+        const char* const* texts = readinessTextsForTranslation(n);
+        QSet<QString> offered;
+        for (int i = 0; i < n; i++) offered.insert(QString::fromUtf8(texts[i]));
+        for (const asmcore::ProfileGroup& g : asmcore::profileGroups()) {
+            if (!g.confirmable) continue;
+            QVERIFY2(offered.contains(QString::fromStdString(g.title)), qPrintable("title of group " + QString::fromStdString(g.name)));
+            QVERIFY2(offered.contains(QString::fromStdString(g.why)), qPrintable("explanation of group " + QString::fromStdString(g.name)));
+        }
+        // every parameter the check can name, under each way of fetching
+        std::string e;
+        for (const char* source : {"eeprom", "frontend"}) {
+            asmcore::SimParams p;
+            p.set("fetch.source", source, e);
+            for (const asmcore::ReadinessItem& it : asmcore::readiness(asmcore::Profile(), &p).missing) {
+                QVERIFY2(!it.code.empty(), qPrintable(QString::fromStdString(it.id)));
+                if (it.code == "param_planning") QVERIFY2(readinessHasParamTitle(it.id), qPrintable(QString::fromStdString(it.id)));
+                const ReadinessWords w = readinessWords(it);
+                QVERIFY(!w.title.isEmpty() && !w.fix.isEmpty());
+            }
+        }
+        // in Traditional Chinese nothing of a gap stays in English prose (keys and names such as fetch.source, RTL, WCET do)
+        QVERIFY(installLanguage("zh_TW"));
+        asmcore::SimParams p;
+        for (const asmcore::ReadinessItem& it : asmcore::readiness(asmcore::Profile(), &p).missing) {
+            const ReadinessWords w = readinessWords(it);
+            auto chinese = [](const QString& s) { for (QChar c : s) if (c.unicode() >= 0x4E00 && c.unicode() <= 0x9FFF) return true; return false; };
+            QVERIFY2(chinese(w.title) && chinese(w.fix) && (w.why.isEmpty() || chinese(w.why)), qPrintable(QString::fromStdString(it.id) + ": " + w.title + " / " + w.why + " / " + w.fix));
+        }
+        installLanguage("en");
     }
     void closeProjectFromTheFileMenu() {
         Fixture f;

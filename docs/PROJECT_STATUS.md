@@ -36,7 +36,7 @@ AssemblyCore 是 Sensor Micro-Sequencer ISA v1.6 r10（規格 v31）的組譯器
 | 核心：積木（模型 125、元件 200、編輯 125） | 450 |
 | IDE 服務層：積木 | 267 |
 | IDE 服務層：其餘 | 456 |
-| IDE 介面（offscreen，六個測試類別） | 137 通過、1 略過（長時間浸泡測試，需 `ACIDE_SOAK_SECONDS` 才跑） |
+| IDE 介面（offscreen，六個測試類別） | 138 通過、1 略過（長時間浸泡測試，需 `ACIDE_SOAK_SECONDS` 才跑） |
 | 範例專案、`asmc` 參數選項（9 項檢查）、建置檔一致性、翻譯完整性 | 各 1 項，通過 |
 
 **使用前要知道的限制**：模擬器與 WCET 的許多數值是規劃值或假設，尚未對照 RTL／FPGA（見第 7 節）。在硬體答覆之前，模擬結果可用來理解行為與比較方案，不能當作時序簽核的依據。
@@ -171,6 +171,7 @@ M1–M6（畫布、拖放、欄位編輯、工具箱、專案整合、效能與�
 * **L2 目前無法達到**：WCET 還不能對「等另一個 sequencer」的時間定出上界（見 2.14 的限制），這一項會一直列在缺口裡，直到工具支援。
 * 對應的決定（使用者同意）：移位方向 `shift_dir` 沒有自己的鍵，隨 `alu` 群組一起確認；取指相關參數屬 L2，以 `.simparams` 的 `KEY.status = measured` 判斷（`fetch.source = sram` 或 `fetch.read_mode = instant` 是觀察用的設定，本身就擋住 L2）。
 * 哪裡看得到：IDE 狀態列右下的「Readiness: L0」（橘＝L0、藍＝L1、綠＝L2），點一下開啟說明視窗（可以做什麼、不可宣稱什麼、還缺哪些、各自怎麼補；不是強制回應視窗，會跟著建置更新）；F7 的輸出在有 WCET 且未達 L2 時註明「僅供規劃」；`asmc --readiness` 列出同一份清單；`validation.json` 有 `readiness` 欄。
+* 說明視窗全部有中文：等級、可做／不可宣稱，以及每個缺口的標題、原因與補法（`ui/readiness_texts.cpp`；核心只說「缺什麼」——`ReadinessItem::code`、`id`、`value`——句子由介面組成）。profile 群組的標題與說明是核心原文的翻譯，測試會在核心改了文字而介面沒跟上時失敗。`asmc --readiness` 的文字仍是英文。
 * 順帶修正的錯誤：`eeprom` 群組在表格中是可確認的，但 profile 的載入器不接受 `confirmed = eeprom`，所以它永遠無法被確認；已修，並加測試確保兩邊一致。
 
 ---

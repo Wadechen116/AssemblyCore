@@ -242,6 +242,11 @@ struct ReadinessItem {
     int blocks = 1;               // the level this keeps the build from reaching: 1 or 2
     std::string kind;             // "profile" (a group of the profile), "parameter" (a hardware parameter of the simulator), "tool" (the tools cannot do it yet)
     std::string id;               // the profile group, the parameter key, or a short name
+    // What kind of gap, for a front end that words it itself (in another language): "group" (an unconfirmed profile group), "param_planning" (a
+    // hardware parameter that is still a planning value; `value` holds it), "fetch_off_sram" / "fetch_off_instant" (a setting under which fetching
+    // takes no time), "fetch_time" (built without the parameters), "shared_waits" (the waits the WCET does not bound).
+    std::string code;
+    std::string value;
     std::string title;            // what it is
     std::string why;              // why it matters
     std::string fix;              // what to do about it
