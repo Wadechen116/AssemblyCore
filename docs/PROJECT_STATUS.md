@@ -148,7 +148,7 @@ M1–M6（畫布、拖放、欄位編輯、工具箱、專案整合、效能與�
 
 依影響大小排列，問題表在第 7 節：
 
-1. **編碼假設**（7.4）：ALU 子運算碼的數值、描述子位元組序、DeviceMap 位元排列、ALU_STATUS 旗標位置。這是唯一會讓燒錄映像本身出錯的一類。
+1. **編碼假設**（7.4）：ALU 子運算碼的數值、移位方向位元（D6，兩份規格說法不一致）、描述子位元組序、DeviceMap 位元排列、ALU_STATUS 旗標位置。這是唯一會讓燒錄映像本身出錯的一類。
 2. **硬體錯誤偵測表**（2.9）：55 列，共享頁面至 2026-11-20 為止 0 筆答覆。答覆後調整模擬器的 fault 時機（B5／R4 分支目標、B6 指令中間的目標）。
 3. **S7 的硬體規則**（7.2 的 B3–B9）。
 4. **Frontend 與計時器的 RTL 數值**（7.5）。
@@ -298,11 +298,19 @@ Windows 建置在 `/mnt/d/WSL/acbuild_msvc`（`build.bat`、`uitest.bat`），�
 
 | # | 問題 | 目前的假設 | 答覆 |
 |---|---|---|---|
-| D1 | ALU 子運算碼的數值（arith／cmp／logic／shift） | 依規格列出名稱的順序：ADD=0、SUB=1、MUL=2、INC=3、DEC=4；EQ=0、NE=1、LT=2、GE=3；AND=0、OR=1、XOR=2、NOT=3；SHL=0、SHR=1 | |
+| D1 | ALU 子運算碼的數值（arith／cmp／logic） | 依規格列出名稱的順序：ADD=0、SUB=1、MUL=2、INC=3、DEC=4；EQ=0、NE=1、LT=2、GE=3；AND=0、OR=1、XOR=2、NOT=3。可由 profile 的 `alu_*` 鍵改，不必改程式 | |
 | D2 | 多位元組描述子在映像中的位元組序 | 小端 | |
 | D3 | DeviceMap 每筆的位元排列 | 1 位元組：bit 7＝bus_type、bits 6:0＝I2C 位址 | |
 | D4 | ALU_STATUS 各旗標的位元位置 | bit0 cmp_true、1 zero、2 negative、3 carry_u、4 borrow_u、5 overflow_s、6 ov16 | |
 | D5 | negative 旗標取哪一位 | 低 16 位元的符號位 | |
+| D6 | 移位方向位元 `shift_dir`（SHIFT 描述子的 bit 4）：0 是 SHL 還是 SHR？ | SHL=0、SHR=1（依名稱列出的順序）。**寫死在 `core/src/isa.h`，沒有 profile 鍵**，數值不同時要改程式 | |
+
+D6 單獨列出的原因：兩份規格的說法不一致（2026-11-20 查證）。
+
+* 交接文件（`MicroISA_v31_assembly_compiler_handoff.md` 第 556 行）點名缺數值的只有 ARITH／CMP／LOGIC，並寫「SHIFT 欄位與規則已明確，可依定義 encode」。v31 遷移只把那三組做成 profile 鍵，依據就是這句。
+* 規格 PDF（`MicroISA_Spec_v31.pdf` 6.3、6.7 節，第 28、31 頁）給了欄位位置 `[4]=shift_dir`，6.7 的表格以 `SHL`／`SHR` 配 `signed_mode` 0／1 說明語意；從 PDF 抽出的文字裡找不到「SHL 是 0 還是 1」的數值（表格轉文字可能有遺漏，請以原文件為準）。
+
+處理方式：先問 RTL 負責人。答 SHL=0 → 不必改，只把「假設」改成「已確認」；答相反 → 改 `isa.h` 的 `ShiftDir` 一行；答「依目標而定」→ 才做成 profile 鍵。
 
 ### 7.5 Frontend、開機載入與計時器的 RTL 數值
 

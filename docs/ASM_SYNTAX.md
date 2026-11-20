@@ -281,15 +281,16 @@ Peri:  程式碼 | PeriXferOneByteDesc | PeriXferMultiByteDesc | PeriPublishDesc
 
 | # | 假設 | 規格書狀況 | 如何改 |
 |---|---|---|---|
-| 1 | ALU 子運算碼：arith ADD=0 SUB=1 MUL=2 INC=3 DEC=4；cmp EQ=0 NE=1 LT=2 GE=3；logic AND=0 OR=1 XOR=2 NOT=3；shift SHL=0 SHR=1 | 6.3 只列名稱 | `isa.h` |
+| 1 | ALU 子運算碼：arith ADD=0 SUB=1 MUL=2 INC=3 DEC=4；cmp EQ=0 NE=1 LT=2 GE=3；logic AND=0 OR=1 XOR=2 NOT=3 | 6.3 只列名稱 | profile `alu_*`（見第 11 項） |
 | 2 | 多位元組描述子在映像檔中為小端 | 未規定 | profile `big_endian` |
 | 3 | ImageLayout 旁路欄位寬 16 位元，順序同 3.1 列舉 | v31 只說是 sideband，寬度由 profile | profile `layout_offset_bits` |
 | 4 | DeviceMap 項目 1 位元組：bit7 = bus_type，bit6:0 = I2C 位址 | 只給位元寬度 | profile `device_map_entry_bytes`、`_bus_shift`、`_addr_shift` |
 | 5 | 描述子表只輸出用到的項目（`--pad-tables` 可補滿） | 3.1 允許兩種 | `--pad-tables` |
 | 6 | 延遲數值採規格 14.3／14.4 的**規劃數值**（MOV = 1+len、一位元組 CSR = 1+2、BR = 1…），CSR_ACCESS_CYC = 2、CSR_BYTE_CYC = 2 是我取的 | 7.4.5 要求實作提供最終表 | profile `[latency]` 鍵 |
 | 7 | 普通 BR 的目標欄位 8 位元（0..255）；程式大小上限由 PC 寬度與容量決定，兩者是不同的限制 | v31 7.2 | profile `main_pc_width`、`peri_pc_width`、`max_code_bytes` |
-| 10 | 實體 SRAM：深度 1024 word、Main 基底 0、Peri 基底 512、各 2048 位元組 | v31 只給玩具例 | profile `physical_sram_depth_words`、`*_image_base_word`、`*_capacity_bytes` |
+| 10 | 實體 SRAM：深度 1024 word、Main 基底 0、Peri 基底 512、各 2048 位元組 | v31 只給玩具例 | profile `sram_depth_words`、`*_image_base_word`、`*_capacity_bytes` |
 | 11 | ALU 子運算碼數值可由 profile 重映射（兩版規格都沒定義數值） | 未規定 | profile `alu_*` |
+| 12 | 移位方向位元 `shift_dir`（SHIFT 描述子 bit 4）：SHL=0、SHR=1 | 交接文件說 SHIFT 已明確可依定義編碼；規格 6.3／6.7 只見名稱，未見數值（兩者不一致，待 RTL 確認） | `isa.h` 的 `ShiftDir`（沒有 profile 鍵） |
 | 8 | CSR 位址、service_id、DeviceMap 由使用者的 `.csr`/`.service`/`.devmap` 提供 | 規格只給名稱 | 你的 `.inc` |
 | 9 | （已解決）v31 5.1 明定：常數池只能進 scratchpad，csrbuf 只是 MOV 來源；同區域只禁止重疊（是否容許不重疊的自拷貝仍需 RTL 測試確認，profile `same_region_mov`） | v31 5.1、5.2 | `lower.cpp` `movChecks`、profile |
 
