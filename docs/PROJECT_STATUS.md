@@ -226,7 +226,7 @@ M1–M6（畫布、拖放、欄位編輯、工具箱、專案整合、效能與�
 ## 4. 工作約定（持續有效）
 
 * **回覆一律用繁體中文。**
-* **每一次實作都要搭配一次文件更新**（使用者要求，2026-11-20；起因是多份文件落後程式碼二到四週）。程式與受影響的文件在同一個提交裡更新，提交訊息的「修改項目」寫明更新了哪些文件；確實不需要更新時也要寫明。至少檢查：本文（狀態表、第 2、3、7 節、測試數量）、`AssemblyCoreIDE/docs/IDE_PLAN.md`、`docs/V31_MIGRATION.md` 的勾選、`docs/EXTENDING.md`（檔案、鍵、擴充點有搬動時）、`docs/DEBUG_INFO.md` 與 `docs/LANG_SERVICE.md`（介面有變時）、`README.md` 的現況摘要、`sample/README.md`（新增範例時）、該功能自己的說明文件。
+* **每一次實作都要搭配一次文件更新**（使用者要求，2026-11-20；起因是多份文件落後程式碼二到四週）。程式與受影響的文件在同一個提交裡更新，提交訊息的「修改項目」寫明更新了哪些文件；確實不需要更新時也要寫明。至少檢查：本文（狀態表、第 2、3、7 節、測試數量）、`AssemblyCoreIDE/docs/IDE_PLAN.md`、`docs/V31_MIGRATION.md` 的勾選、`docs/EXTENDING.md`（檔案、鍵、擴充點有搬動時）、`docs/DEBUG_INFO.md` 與 `docs/LANG_SERVICE.md`（介面有變時）、`README.md` 的現況摘要、`sample/README.md`（新增範例時）、`docs/SIM_VS_SPEC.md`（模擬器的行為、預設值或 fault 有任何改變時）、該功能自己的說明文件。
 * 每完成一個階段，更新 `D:\swork\AssemblyCore\dist\msvc2026`；若 `AssemblyCoreIDE.exe` 被占用（IDE 開著），不要強制結束，請使用者關閉。
 * **相容是硬性要求**：舊檔案與舊 IDE 必須能照常運作；新的模擬行為預設關閉。
 * 大階段開始前先列出工作項目請使用者確認；錯誤訊息要能讓人知道怎麼修。
