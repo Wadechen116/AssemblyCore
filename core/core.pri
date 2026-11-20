@@ -17,6 +17,7 @@ CORE_SOURCES = \
     $$ASMCORE_DIR/src/diag_names.cpp \
     $$ASMCORE_DIR/src/hardware.cpp \
     $$ASMCORE_DIR/src/profile_info.cpp \
+    $$ASMCORE_DIR/src/readiness.cpp \
     $$ASMCORE_DIR/src/blocks.cpp \
     $$ASMCORE_DIR/src/blocks_import.cpp \
     $$ASMCORE_DIR/src/blocks_values.cpp \

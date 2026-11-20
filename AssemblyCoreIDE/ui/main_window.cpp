@@ -17,9 +17,12 @@
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QStatusBar>
+#include <QTextBrowser>
+#include <QDialog>
 #include <QVBoxLayout>
 
 #include "artifacts.h"
+#include "asmcore/readiness.h"
 #include "asmcore/blocks.h"
 #include "block_editor.h"
 #include "cursor_bar.h"
@@ -69,6 +72,13 @@ MainWindow::MainWindow(AppContext& ctx, PanelRegistry& panels, QWidget* parent) 
     caretLabel_ = new QLabel;
     debugLabel_ = new QLabel(tr("Debug: off"));
     debugLabel_->setObjectName("debugStatus");
+    readinessChip_ = new QPushButton;
+    readinessChip_->setObjectName("readinessChip");
+    readinessChip_->setFlat(true);
+    readinessChip_->setToolTip(tr("How far the outputs of the build may be trusted (L0 structural, L1 binary-approved, L2 timing-approved): click to see what is missing"));
+    connect(readinessChip_, &QPushButton::clicked, this, [this] { showReadiness(); });
+    statusBar()->addPermanentWidget(readinessChip_);
+    refreshReadiness(nullptr);
     paramsChip_ = new QPushButton;
     paramsChip_->setObjectName("paramsChip");
     paramsChip_->setFlat(true);
@@ -704,6 +714,7 @@ void MainWindow::endProject() {
     if (!closeProject()) return;                    // asks about unsaved changes; Cancel keeps everything as it was
     ctx_.workspace.closeProject();
     ctx_.snapshot.reset();
+    refreshReadiness(nullptr);
     ctx_.log.fire(tr("Closed project %1").arg(name));
     updateTitle();
 }
@@ -721,6 +732,7 @@ bool MainWindow::openProject(const QString& file) {
     ctx_.settings.pushRecent("recent.projects", path);
     updateRecentMenu();
     ctx_.snapshot.reset();
+    refreshReadiness(nullptr);
     ctx_.debugger.loadBreakpoints();
     restoreSession();
     if (tabs_->count() == 0 && !ctx_.workspace.project().sources.empty()) openFile(ctx_.workspace.project().absolute(ctx_.workspace.project().sources[0]));
@@ -757,6 +769,7 @@ bool MainWindow::newProject(const QString& file) {
     ctx_.settings.pushRecent("recent.projects", path);
     updateRecentMenu();
     ctx_.snapshot.reset();
+    refreshReadiness(nullptr);
     openFile(main);
     updateTitle();
     return true;
@@ -822,6 +835,70 @@ void MainWindow::updateTitle() {
     }
 }
 
+// ---- readiness ---------------------------------------------------------------------------------------------------------------------
+QString MainWindow::readinessLevelName(int level) {
+    return level <= 0 ? tr("L0 structural") : level == 1 ? tr("L1 binary-approved") : tr("L2 timing-approved");
+}
+
+QString MainWindow::readinessChipText() const { return readinessChip_ ? readinessChip_->text() : QString(); }
+
+// The explanation as a page: the level, what it allows, what must not be claimed, and what is missing (the next level's first).
+static QString readinessHtml(const asmcore::Readiness& r, bool haveBuild) {
+    auto esc = [](const std::string& s) { return fromStd(s).toHtmlEscaped(); };
+    const char* colour = r.level <= 0 ? "#b45309" : r.level == 1 ? "#1d4ed8" : "#15803d";
+    QString h = QString("<h2 style='color:%1'>%2</h2>").arg(colour, MainWindow::readinessLevelName(r.level).toHtmlEscaped());
+    if (!haveBuild) h += "<p><i>" + MainWindow::tr("No build yet: this is the level of the default profile.").toHtmlEscaped() + "</i></p>";
+    const QString may = r.level <= 0 ? MainWindow::tr("Check the program (syntax, fields, ranges, data flow), look at the layout, simulate and compare alternatives.")
+                      : r.level == 1 ? MainWindow::tr("Burn the images: the encoding, the placement and the load plan are the hardware's.")
+                                     : MainWindow::tr("Sign off the timing: the WCET and the event latency are bounded with confirmed numbers.");
+    const QString mayNot = r.level <= 0 ? MainWindow::tr("That the image boots or runs correctly on the hardware, or that any cycle count is a guarantee.")
+                         : r.level == 1 ? MainWindow::tr("That a WCET or an event latency is a guarantee: the timing is planning-only.")
+                                        : MainWindow::tr("Timing behaviour of an architecture nobody has validated in RTL.");
+    h += "<p><b>" + MainWindow::tr("You may:").toHtmlEscaped() + "</b> " + may.toHtmlEscaped() + "<br><b>" + MainWindow::tr("Do not claim:").toHtmlEscaped() + "</b> " + mayNot.toHtmlEscaped() + "</p>";
+    h += "<p>" + MainWindow::tr("The level is decided by what has been confirmed against the hardware, not by whether the program builds. It changes nothing that is computed.").toHtmlEscaped() + "</p>";
+    int shown = -1;
+    for (const asmcore::ReadinessItem& it : r.missing) {
+        if (it.blocks != shown) {
+            if (shown != -1) h += "</ul>";
+            h += "<h3>" + MainWindow::tr("Missing for %1").arg(MainWindow::readinessLevelName(it.blocks)).toHtmlEscaped() + "</h3><ul>";
+            shown = it.blocks;
+        }
+        const QString kind = it.kind == "profile" ? MainWindow::tr("profile group") : it.kind == "parameter" ? MainWindow::tr("hardware parameter") : MainWindow::tr("not in the tools yet");
+        h += "<li><b>" + esc(it.title) + "</b> <span style='color:gray'>(" + kind.toHtmlEscaped() + ": <code>" + esc(it.id) + "</code>)</span>";
+        if (!it.why.empty()) h += "<br>" + esc(it.why);
+        h += "<br><i>" + esc(it.fix) + "</i></li>";
+    }
+    if (shown != -1) h += "</ul>";
+    return h;
+}
+
+void MainWindow::refreshReadiness(const SnapshotPtr& s) {
+    const asmcore::Readiness r = s ? s->readiness : asmcore::readiness(asmcore::Profile(), &ctx_.debugger.simParams().params());
+    readinessChip_->setText(tr("Readiness: L%1").arg(r.level));
+    readinessChip_->setStyleSheet(r.level <= 0 ? "color:#b45309; font-weight:bold" : r.level == 1 ? "color:#1d4ed8; font-weight:bold" : "color:#15803d; font-weight:bold");
+    if (readinessWindow_)
+        if (auto* page = readinessWindow_->findChild<QTextBrowser*>("readinessPage")) page->setHtml(readinessHtml(r, s != nullptr));
+}
+
+QWidget* MainWindow::showReadiness() {
+    if (!readinessWindow_) {
+        auto* d = new QDialog(this);
+        d->setObjectName("readinessWindow");
+        d->setWindowTitle(tr("Readiness of the build"));
+        d->resize(720, 560);
+        auto* lay = new QVBoxLayout(d);
+        auto* page = new QTextBrowser(d);
+        page->setObjectName("readinessPage");
+        page->setOpenLinks(false);
+        lay->addWidget(page);
+        readinessWindow_ = d;
+    }
+    refreshReadiness(ctx_.snapshot);
+    readinessWindow_->show();                                        // not modal: it stays beside the work and follows the builds
+    readinessWindow_->raise();
+    return readinessWindow_;
+}
+
 // ---- builds ------------------------------------------------------------------------------------------------------------------------
 void MainWindow::scheduleBuild() {
     if (!ctx_.workspace.hasProject()) return;
@@ -871,6 +948,7 @@ void MainWindow::onSnapshot(SnapshotPtr s) {
         }
     }
     for (auto& kv : editors_) kv.second->setSnapshot(s);
+    refreshReadiness(s);
     int e = s->result.errorCount(), w = s->result.warningCount();
     buildLabel_->setText(e ? tr("%1 error(s), %2 warning(s)").arg(e).arg(w)
                            : w ? tr("OK, %1 warning(s) - %2 ms").arg(w).arg(s->milliseconds, 0, 'f', 0) : tr("OK - %1 ms").arg(s->milliseconds, 0, 'f', 0));
@@ -887,6 +965,8 @@ void MainWindow::onSnapshot(SnapshotPtr s) {
             for (auto& f : files) ctx_.log.fire(tr("  wrote %1").arg(fromStd(f)));
             if (!err.empty()) ctx_.log.fire(tr("  cannot write %1").arg(fromStd(err)));
             for (const asmcore::WcetResult& wc : s->result.wcet) ctx_.log.fire(tr("  WCET %1: %2").arg(fromStd(wc.name), !wc.bounded ? tr("unbounded") : wc.fetchCycles ? tr("%1 cycles (%2 executing + %3 fetching the instructions)").arg(wc.cycles).arg(wc.cycles - wc.fetchCycles).arg(wc.fetchCycles) : tr("%1 cycles").arg(wc.cycles)));
+            if (!s->result.wcet.empty() && s->readiness.level < 2)
+                ctx_.log.fire(tr("  The WCET is planning-only, not a guarantee: readiness is %1 (click the level in the status bar to see what is missing).").arg(readinessLevelName(s->readiness.level)));
             if (!s->fetchModel.empty() && !s->result.wcet.empty())
                 ctx_.log.fire(tr("  Fetch time is counted as: %1. Waiting for the other sequencer (shared bus, arbiters) is not counted.").arg(fromStd(s->fetchModel)));
             if (!s->cycleOverrides.empty()) {

@@ -11,6 +11,7 @@
 #include "asmcore/eeprom.h"
 #include "asmcore/diagnostics.h"
 #include "asmcore/profile_info.h"
+#include "asmcore/readiness.h"
 #include "asmcore/sim.h"
 
 namespace fs = std::filesystem;
@@ -56,6 +57,8 @@ void usage() {
         "  --eeprom             also write the EEPROM image (see below)\n"
         "  --print-profile      print the effective profile and exit\n"
         "  --profile-gaps       list what the effective profile still leaves unconfirmed (planning values) and exit\n"
+        "  --readiness          the readiness level of the profile (and the parameters given): L0 structural / L1 binary-approved /\n"
+        "                       L2 timing-approved, what it allows, what is missing for the next one; then exit\n"
         "  --explain CODE       what a diagnostic code means and how to fix it (e.g. E202, W514), with its spec v31 name\n"
         "  --list-codes         every diagnostic code with its spec v31 name\n"
         "  -h, --help           this text\n"
@@ -84,7 +87,7 @@ int main(int argc, char** argv) {
     std::vector<std::string> paramArgs;
     bool withParams = false;
     asmcore::SimParams params;
-    bool profileGaps = false;
+    bool profileGaps = false, showReadiness = false;
     bool list = false, map = false, dbg = false, hex = false, printProfile = false, artifacts = false, eeprom = false;
     for (int i = 1; i < argc; i++) {
         std::string a = argv[i];
@@ -124,6 +127,7 @@ int main(int argc, char** argv) {
         else if (a == "--no-warn") opt.suppress.push_back(need("--no-warn"));
         else if (a == "--print-profile") printProfile = true;
         else if (a == "--profile-gaps") profileGaps = true;
+        else if (a == "--readiness") showReadiness = true;
         else if (a == "--explain") {
             std::string code = need("--explain");
             for (auto& ch : code) ch = (char)std::toupper((unsigned char)ch);
@@ -160,6 +164,10 @@ int main(int argc, char** argv) {
         }
     }
     params.apply(opt.profile.latency);                                   // the cycle model: the parameters win over the profile, as in the simulator
+    if (showReadiness) {
+        std::fputs(asmcore::readinessText(asmcore::readiness(opt.profile, withParams ? &params : nullptr)).c_str(), stdout);
+        return 0;
+    }
     if (profileGaps) {
         const std::vector<asmcore::ProfileGap> gaps = asmcore::profileGaps(opt.profile);
         if (gaps.empty()) { std::printf("profile %s: every group that needs confirmation is confirmed\n", opt.profile.profileId.c_str()); return 0; }
@@ -252,6 +260,12 @@ int main(int argc, char** argv) {
     for (const asmcore::WcetResult& w : r.wcet)
         std::printf("WCET %s: %s\n", w.name.c_str(), !w.bounded ? "unbounded"
                     : (std::to_string(w.cycles) + " cycles" + (w.fetchCycles ? " (" + std::to_string(w.cycles - w.fetchCycles) + " executing + " + std::to_string(w.fetchCycles) + " fetching the instructions)" : std::string())).c_str());
+    {
+        const asmcore::Readiness rd = r.readinessSet ? r.readiness : asmcore::readiness(opt.profile);
+        if (!r.wcet.empty() && rd.level < 2)
+            std::printf("the WCET is planning-only, not a guarantee: readiness is %s (asmc --readiness says what is missing)\n", asmcore::readinessName(rd.level));
+        if (artifacts) std::printf("readiness: %s (asmc --readiness)\n", asmcore::readinessName(rd.level));
+    }
     if (!fetch.model.empty() && !r.wcet.empty())
         std::printf("fetch time counted as: %s; waiting for the other sequencer (shared bus, arbiters) is not counted\n", fetch.model.c_str());
     if (r.warningCount()) std::printf("%d warning(s)\n", r.warningCount());

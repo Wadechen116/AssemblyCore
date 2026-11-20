@@ -1,4 +1,5 @@
 // UI tests (Qt Test, run with QT_QPA_PLATFORM=offscreen).
+#include <QTextBrowser>
 #include <QSplitter>
 #include <QApplication>
 #include <QtTest>
@@ -218,6 +219,46 @@ private slots:
         w.buildNow(true);
         for (int i = 0; i < 600 && !lines.join("\n").contains("Build "); i++) QTest::qWait(10);
         QVERIFY2(lines.join("\n").contains("hardware parameters: latency.alu = 6 (profile: 1)"), qPrintable(lines.join(" | ")));
+    }
+    // The readiness level (L0 / L1 / L2) is in the status bar, and a click explains it: what it allows, what is missing. It is decided by what the
+    // profile has confirmed, not by whether the program builds; confirming the encoding and placement groups raises it to L1.
+    void theReadinessLevelIsShownAndExplained() {
+        Fixture f;
+        f.ctx.snapshot.reset();
+        PanelRegistry panels;
+        registerBuiltinPanels(panels);
+        MainWindow w(f.ctx, panels);
+        w.setQuiet(true);
+        w.show();
+        auto* chip = w.findChild<QPushButton*>("readinessChip");
+        QVERIFY(chip && chip->isVisibleTo(&w));
+        QCOMPARE(w.readinessChipText(), QString("Readiness: L0"));          // before any build: the default profile
+        QVERIFY(w.openProject("/w/p.acproj"));
+        QVERIFY(waitBuild(f, w));
+        QVERIFY(f.ctx.snapshot->result.ok);                                 // it builds -- and is L0 all the same
+        QCOMPARE(f.ctx.snapshot->readiness.level, 0);
+        QCOMPARE(w.readinessChipText(), QString("Readiness: L0"));
+        QTest::mouseClick(chip, Qt::LeftButton);
+        auto* win = w.findChild<QWidget*>("readinessWindow");
+        QVERIFY(win && win->isVisible() && !win->isModal());
+        auto* page = win->findChild<QTextBrowser*>("readinessPage");
+        QVERIFY(page);
+        const QString t0 = page->toPlainText();
+        QVERIFY2(t0.contains("L0 structural") && t0.contains("Missing for L1 binary-approved") && t0.contains("ALU sub-operation numbers")
+                 && t0.contains("Do not claim:") && t0.contains("confirmed = ..., alu"), qPrintable(t0.left(600)));
+        QVERIFY(t0.contains("Missing for L2 timing-approved") && t0.contains("waiting for the other sequencer"));
+        // the profile confirms every encoding / placement group: L1, and the open window follows the build
+        f.fs->write("/w/t.profile", "confirmed = pc_width, same_region, placement, eeprom, layout, descriptor_endian, device_map, alu\n");
+        f.fs->write("/w/p.acproj", "name = p\nsource = main.asm\nprofile = t.profile\n");
+        QVERIFY(w.openProject("/w/p.acproj"));
+        QVERIFY(waitBuild(f, w));
+        for (int i = 0; i < 300 && w.readinessChipText() != "Readiness: L1"; i++) QTest::qWait(10);
+        QCOMPARE(w.readinessChipText(), QString("Readiness: L1"));
+        const QString t1 = page->toPlainText();
+        QVERIFY2(t1.contains("L1 binary-approved") && !t1.contains("Missing for L1") && t1.contains("Missing for L2 timing-approved") && t1.contains("Latency numbers"),
+                 qPrintable(t1.left(600)));
+        w.grab().save(outDirFree() + "/acide_readiness.png");
+        win->grab().save(outDirFree() + "/acide_readiness_window.png");
     }
     void closeProjectFromTheFileMenu() {
         Fixture f;

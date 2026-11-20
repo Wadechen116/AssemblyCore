@@ -7,6 +7,8 @@
 #include <string>
 #include <vector>
 
+#include "asmcore/readiness.h"
+#include "asmcore/profile_info.h"
 #include "asmcore/asmcore.h"
 #include "asmcore/lang.h"
 #include "asmcore/index.h"
@@ -916,6 +918,60 @@ static void t_call_rules() {
     check(pr.ok && pr.peri.codeSize == 3, "Peri inline expansion (2-byte body, final RET dropped, + 1-byte JMP = 3 bytes)", codes(pr) + std::to_string(pr.peri.codeSize));
 }
 
+// Readiness levels (spec v31 handoff 9.3): decided by what is confirmed, never by whether the program assembles.
+static void t_readiness() {
+    section("Readiness levels L0 / L1 / L2");
+    auto has = [](const Readiness& r, const std::string& id) { for (auto& i : r.missing) if (i.id == id) return true; return false; };
+    auto blocks = [](const Readiness& r, const std::string& id) { for (auto& i : r.missing) if (i.id == id) return i.blocks; return 0; };
+    Profile p;
+    Readiness r0 = readiness(p);
+    check(r0.level == 0 && std::string(readinessName(r0.level)) == "L0 structural", "the default profile is L0: nothing is confirmed");
+    check(has(r0, "alu") && blocks(r0, "alu") == 1 && has(r0, "latency") && blocks(r0, "latency") == 2 && blocks(r0, "events") == 2 && blocks(r0, "eeprom") == 1,
+          "encoding and placement groups block L1, the timing groups block L2");
+    check(!r0.missing.empty() && r0.missing.front().blocks == 1 && r0.missing.back().blocks == 2, "what blocks the next level is listed first");
+    check(has(r0, "fetch_time") && has(r0, "shared_waits"), "without the hardware parameters the fetch time is not counted, and the shared waits are never bounded");
+    // every group the table calls confirmable can be written in a profile (the loader and the table must not drift apart)
+    std::string all;
+    for (const ProfileGroup& g : profileGroups()) if (g.confirmable) all += (all.empty() ? "" : ", ") + g.name;
+    Profile pa;
+    std::vector<std::string> errs;
+    check(pa.load("confirmed = " + all + "\n", errs) && errs.empty(), "every confirmable group is accepted by 'confirmed = ...'", errs.empty() ? "" : errs[0]);
+    // L1: the encoding / placement / boot interface groups
+    Profile p1;
+    check(p1.load("confirmed = pc_width, same_region, placement, eeprom, layout, descriptor_endian, device_map\n", errs), "a profile with seven groups confirmed loads");
+    check(readiness(p1).level == 0 && readiness(p1).missing.front().id == "alu", "one encoding group missing (alu): still L0, and it is the first thing listed");
+    p1.confirmed.insert("alu");
+    Readiness r1 = readiness(p1);
+    check(r1.level == 1 && std::string(readinessName(1)) == "L1 binary-approved" && r1.missing.front().blocks == 2, "all eight confirmed: L1, and only timing is missing");
+    // L2 needs the timing groups, the fetch parameters measured, and a bound on the shared waits -- which the tools do not give yet
+    p1.confirmed.insert("latency");
+    p1.confirmed.insert("events");
+    SimParams sp;
+    Readiness r2 = readiness(p1, &sp);
+    check(r2.level == 1 && !has(r2, "fetch_time") && has(r2, "fetch.source") && has(r2, "fetch.read_mode") && has(r2, "i2c.stretch") && !has(r2, "frontend.dec_cycles"),
+          "with the parameters: the fetch time is counted, and the EEPROM fetch parameters must be measured");
+    std::string e;
+    for (const char* k : {"fetch.source", "fetch.read_mode", "fetch.transaction_overhead", "i2c.ack_delay", "i2c.stretch"}) sp.setStatus(k, "measured", e);
+    Readiness r3 = readiness(p1, &sp);
+    check(r3.level == 1 && r3.missing.size() == 1 && r3.missing[0].id == "shared_waits" && r3.missing[0].kind == "tool",
+          "everything confirmed and measured: still L1 -- the one thing left is the wait for the other sequencer, which the WCET does not bound",
+          std::to_string(r3.missing.size()));
+    SimParams fe;
+    fe.set("fetch.source", "frontend", e);
+    Readiness r4 = readiness(p1, &fe);
+    check(has(r4, "frontend.dec_cycles") && has(r4, "frontend.sram_latency") && !has(r4, "i2c.stretch"), "fetch.source = frontend: the frontend.* parameters are the ones to measure");
+    SimParams in;
+    in.set("fetch.read_mode", "instant", e);
+    Readiness r5 = readiness(p1, &in);
+    check(has(r5, "fetch.read_mode") && !has(r5, "fetch.source"), "fetch.read_mode = instant is a setting for watching, not the hardware: it blocks L2 by itself");
+    // the reports
+    check(readinessText(r0).find("readiness: L0 structural") == 0 && readinessText(r0).find("missing for L1 binary-approved:") != std::string::npos
+          && readinessText(r0).find("do not claim:") != std::string::npos, "the text says the level, what it allows and what is missing");
+    check(readinessJson(r1).find("{\"level\":1,\"name\":\"L1 binary-approved\"") == 0, "JSON form");
+    Result res = build(".main\nh: JMP h\n");
+    check(res.ok && res.validationReportJson().find("\"readiness\":{\"level\":0") != std::string::npos, "the validation report carries the level: a program that assembles is still L0");
+}
+
 static void t_wcet() {
     section("WCET and reachability");
     const std::string src =
@@ -1280,6 +1336,7 @@ int main() {
     t_call_models();
     t_call_rules();
     t_wcet();
+    t_readiness();
     t_misc();
     t_dataflow();
     t_columns();

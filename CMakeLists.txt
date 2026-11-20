@@ -27,6 +27,7 @@ add_library(asmcore STATIC
   core/src/diag_names.cpp
   core/src/hardware.cpp
   core/src/profile_info.cpp
+  core/src/readiness.cpp
   core/src/blocks.cpp
   core/src/blocks_import.cpp
   core/src/blocks_values.cpp

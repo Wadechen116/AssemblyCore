@@ -4534,6 +4534,90 @@ An IDE for the Sensor Micro-Sequencer ISA, built on the AssemblyCore assembler.<
         <source>  Fetch time is counted as: %1. Waiting for the other sequencer (shared bus, arbiters) is not counted.</source>
         <translation>  取指時間的算法：%1。不含等待另一個 sequencer（共用匯流排、仲裁器）的時間。</translation>
     </message>
+    <message>
+        <source>How far the outputs of the build may be trusted (L0 structural, L1 binary-approved, L2 timing-approved): click to see what is missing</source>
+        <translation>建置結果可以相信到什麼程度（L0 結構、L1 二進位核准、L2 時序核准）：點一下看還缺什麼</translation>
+    </message>
+    <message>
+        <source>L0 structural</source>
+        <translation>L0 結構</translation>
+    </message>
+    <message>
+        <source>L1 binary-approved</source>
+        <translation>L1 二進位核准</translation>
+    </message>
+    <message>
+        <source>L2 timing-approved</source>
+        <translation>L2 時序核准</translation>
+    </message>
+    <message>
+        <source>No build yet: this is the level of the default profile.</source>
+        <translation>尚未建置：這是預設 profile 的等級。</translation>
+    </message>
+    <message>
+        <source>Check the program (syntax, fields, ranges, data flow), look at the layout, simulate and compare alternatives.</source>
+        <translation>檢查程式（語法、欄位、範圍、資料流）、查看版面、模擬並比較不同做法。</translation>
+    </message>
+    <message>
+        <source>Burn the images: the encoding, the placement and the load plan are the hardware&apos;s.</source>
+        <translation>燒錄映像：編碼、擺放位置與載入計畫都與硬體一致。</translation>
+    </message>
+    <message>
+        <source>Sign off the timing: the WCET and the event latency are bounded with confirmed numbers.</source>
+        <translation>簽核時序：WCET 與事件延遲以已確認的數值算出上界。</translation>
+    </message>
+    <message>
+        <source>That the image boots or runs correctly on the hardware, or that any cycle count is a guarantee.</source>
+        <translation>這份映像能在硬體上開機或正確執行，或任何週期數是保證值。</translation>
+    </message>
+    <message>
+        <source>That a WCET or an event latency is a guarantee: the timing is planning-only.</source>
+        <translation>WCET 或事件延遲是保證值：時序僅供規劃。</translation>
+    </message>
+    <message>
+        <source>Timing behaviour of an architecture nobody has validated in RTL.</source>
+        <translation>未經 RTL 驗證的架構時序行為。</translation>
+    </message>
+    <message>
+        <source>You may:</source>
+        <translation>可以做：</translation>
+    </message>
+    <message>
+        <source>Do not claim:</source>
+        <translation>不可宣稱：</translation>
+    </message>
+    <message>
+        <source>The level is decided by what has been confirmed against the hardware, not by whether the program builds. It changes nothing that is computed.</source>
+        <translation>等級取決於哪些數值已對照硬體確認，與程式是否建置成功無關；它不會改變任何計算結果。</translation>
+    </message>
+    <message>
+        <source>Missing for %1</source>
+        <translation>要達到 %1 還缺</translation>
+    </message>
+    <message>
+        <source>profile group</source>
+        <translation>profile 群組</translation>
+    </message>
+    <message>
+        <source>hardware parameter</source>
+        <translation>硬體參數</translation>
+    </message>
+    <message>
+        <source>not in the tools yet</source>
+        <translation>工具尚未支援</translation>
+    </message>
+    <message>
+        <source>Readiness: L%1</source>
+        <translation>就緒等級：L%1</translation>
+    </message>
+    <message>
+        <source>Readiness of the build</source>
+        <translation>建置的就緒等級</translation>
+    </message>
+    <message>
+        <source>  The WCET is planning-only, not a guarantee: readiness is %1 (click the level in the status bar to see what is missing).</source>
+        <translation>  WCET 僅供規劃，不是保證值：就緒等級為 %1（點狀態列的等級看還缺什麼）。</translation>
+    </message>
 </context>
 <context>
     <name>acide::TypeBlockBox</name>

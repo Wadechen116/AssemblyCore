@@ -53,6 +53,7 @@ board.achw ──asmhw gen / 設計器──►  board.gen.inc      （組譯器
 - 表單由「每個鍵的說明表」產生（`asmcore/profile_info.h`），每個群組一個頁籤：描述子表深度、PC 寬度、SRAM 配置、映像佈局與對齊、描述子位元組序、DeviceMap 排列、ALU 子運算碼、softret、重置狀態、事件、延遲數字。範圍由程式碼決定，不會填出載入器拒絕的值。
 - **只改那一行**：保留檔案的註解、順序與縮排；重複的鍵改最後一個（載入器採用的那個）；沒有的鍵附加在檔尾。修改立即成為工作區的未存檔緩衝區，下一次建置／除錯就用新值。
 - **缺口清單**：規格沒有給、也沒有人確認過的數值（ALU 編號、描述子位元組序、SRAM 配置、DeviceMap 排列、映像佈局、PC 寬度、事件、延遲、兩項選用硬體功能）是「規劃值」。工具照樣能用它們，但頁面頂端明講「結果只能當規劃參考」。硬體負責人確認某群組後，勾選該頁籤的確認框，profile 多一行 `confirmed = alu, placement`。
+- **就緒等級**：缺口決定建置結果可以相信到什麼程度。編碼／擺放類的八組（`pc_width`、`same_region`、`placement`、`eeprom`、`layout`、`descriptor_endian`、`device_map`、`alu`）全部確認是 L1（可燒錄）；`latency`、`events` 屬於 L2（時序）。IDE 狀態列顯示目前等級，`asmc --readiness` 列出還缺什麼。說明見 `docs/PROJECT_STATUS.md` 2.15。
 - 命令列：`asmc --profile-gaps` 列出缺口、原因與涵蓋的鍵；`asmc --artifacts` 的 `manifest.json` 記錄 `unconfirmed`。
 - 可確認的群組：`pc_width`、`same_region`、`placement`、`layout`、`descriptor_endian`、`device_map`、`alu`、`events`、`latency`。
 

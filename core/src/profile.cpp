@@ -140,10 +140,10 @@ bool Profile::load(const std::string& text, std::vector<std::string>& errors) {
             for (size_t i = 0; i <= v.size(); i++) {
                 if (i < v.size() && v[i] != ',' && v[i] != ' ' && v[i] != '\t') { cur += (char)std::tolower((unsigned char)v[i]); continue; }
                 if (cur.empty()) continue;
-                static const char* const known[] = {"pc_width", "same_region", "placement", "layout", "descriptor_endian", "device_map", "alu", "events", "latency"};
+                static const char* const known[] = {"pc_width", "same_region", "placement", "eeprom", "layout", "descriptor_endian", "device_map", "alu", "events", "latency"};
                 bool okName = false;
                 for (const char* g : known) if (cur == g) okName = true;
-                if (!okName) { errors.push_back("profile line " + std::to_string(n) + ": '" + cur + "' is not a group that can be confirmed (pc_width, same_region, placement, layout, descriptor_endian, device_map, alu, events, latency)"); ok = false; }
+                if (!okName) { errors.push_back("profile line " + std::to_string(n) + ": '" + cur + "' is not a group that can be confirmed (pc_width, same_region, placement, eeprom, layout, descriptor_endian, device_map, alu, events, latency)"); ok = false; }
                 else confirmed.insert(cur);
                 cur.clear();
             }

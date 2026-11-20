@@ -236,6 +236,21 @@ struct DomainImage {
 };
 const char* const* layoutFieldNames(Domain d);          // the six ImageLayout field names, in order (main_move_desc_offset ...)
 
+// How far what the tools produce may be trusted (spec v31 handoff 9.3). The level is decided by what has been CONFIRMED against the hardware, never by
+// whether the program assembles: see readiness.h.
+struct ReadinessItem {
+    int blocks = 1;               // the level this keeps the build from reaching: 1 or 2
+    std::string kind;             // "profile" (a group of the profile), "parameter" (a hardware parameter of the simulator), "tool" (the tools cannot do it yet)
+    std::string id;               // the profile group, the parameter key, or a short name
+    std::string title;            // what it is
+    std::string why;              // why it matters
+    std::string fix;              // what to do about it
+};
+struct Readiness {
+    int level = 0;                // 0 structural, 1 binary-approved, 2 RTL/timing-approved
+    std::vector<ReadinessItem> missing;      // everything between here and L2, the ones that block the next level first
+};
+
 struct Result {
     bool ok = false;              // no errors (and no warnings if Options::werror)
     std::vector<Diagnostic> diags;
@@ -251,6 +266,10 @@ struct Result {
     std::string callModel;        // "inline" | "softret"
 
     Profile profile;              // the target profile the program was assembled for (artifacts quote it)
+    // The readiness of this build when the one who built it knows more than the profile (the hardware parameters: sim::assembleWithFetch sets it).
+    // Not set: readiness(profile) -- the reports use that.
+    Readiness readiness;
+    bool readinessSet = false;
 
     std::string listing() const;
     std::string map() const;

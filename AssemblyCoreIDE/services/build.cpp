@@ -64,6 +64,7 @@ SnapshotPtr buildNow(const BuildInput& in, const asmcore::lang::Language& langua
         asmcore::sim::FetchTimes fetch;
         snap->result = asmcore::sim::assembleWithFetch(in.sources, res, opt, cfg, &fetch);
         snap->fetchModel = fetch.model;
+        snap->readiness = snap->result.readiness;                    // (decided by the profile and these parameters, not by whether it assembles)
     }
     snap->profile = opt.profile;
     snap->index = asmcore::Index::build(in.sources, language, res);

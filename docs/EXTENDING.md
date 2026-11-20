@@ -65,7 +65,8 @@
 | 新的助記符、指示字、子運算、具名參數出現在補全／上色／懸停 | `core/src/lang.cpp` 的 `Language::defaults()`（區域與分支條件直接取自 `isa.h`，其餘在這裡逐項 `add`）；或由呼叫端 `Language::add(Entry)` |
 | 新的積木種類 | `core/src/blocks.cpp` 的 `Registry::defaults()`（選項取自語言詞彙）；元件在 `blocks_values.cpp`，參照在 `blocks_symbols.cpp` |
 | 硬體描述（`.achw`）的欄位、產生器 | `core/src/hardware.cpp`（`asmcore/hardware.h`） |
-| profile 鍵的說明、範圍、未確認群組 | `core/src/profile_info.cpp`（鍵的解析在 `profile.cpp`） |
+| profile 鍵的說明、範圍、未確認群組 | `core/src/profile_info.cpp`（鍵的解析在 `profile.cpp`；可確認的群組名稱兩邊都有一份，測試會檢查一致） |
+| 就緒等級的判定規則（哪一組擋哪一級、哪些參數要量測） | `core/src/readiness.cpp`（`levelOfGroup`、`readiness()`）；文字說明在同檔與 IDE 的 `main_window.cpp`（`readinessHtml`） |
 
 ## IDE
 

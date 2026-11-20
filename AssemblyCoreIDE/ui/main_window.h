@@ -43,6 +43,11 @@ public:
     BlockEditor* openBlocks(const std::string& acblkPath);             // the block editor tab of a .acblk file
     QWidget* openTab(const std::string& path);
     // The simulator page (parameters, execution, the ISA Top diagram): one per window, shown if it is open. A .simparams file opened anywhere brings its values into it.
+    // The readiness level of the newest build (L0 / L1 / L2), explained: what it allows, what must not be claimed, what is missing for the next
+    // level. A window that stays open beside the work (not modal); it follows the builds.
+    QWidget* showReadiness();
+    static QString readinessLevelName(int level);     // "L0 structural" ..., translated
+    QString readinessChipText() const;                // for tests: what the status bar says
     QWidget* openSimulator();                         // any non-text tab kind registered in TabRegistry (by extension)
     bool newHardware(const QString& achwPath);                         // File -> Hardware -> New: create, attach to the project, open
     bool adoptHardware(const QString& incPath, const QString& envPath, const QString& achwPath);
@@ -123,6 +128,9 @@ private:
     void setSimSpeed(int64_t cyclesPerSecond);               // 0 = full speed; refused (with a message) outside 0 .. 1e9
     void stepSimSpeed(int direction);                        // +1 faster, -1 slower: the next preset
     void syncSpeedBox();
+    QPushButton* readinessChip_ = nullptr;                   // "L0" in the status bar: a click explains the level (showReadiness)
+    QWidget* readinessWindow_ = nullptr;
+    void refreshReadiness(const SnapshotPtr& s);
     QPushButton* paramsChip_ = nullptr;                      // "Parameters: 3 changed" in the status bar: a click opens the simulator page
     QAction* quickParamsAct_ = nullptr;
     bool pendingStart_ = false;                            // a build is awaited before the debug session starts

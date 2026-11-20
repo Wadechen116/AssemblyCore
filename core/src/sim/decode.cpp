@@ -1,6 +1,7 @@
 // The decoder's view of the program: what it makes of the bytes it fetches (from the EEPROM through the region registers), compared with what the
 // assembler produced. This is what the hardware runs; the source text is what was meant.
 #include <cstdio>
+#include "asmcore/readiness.h"
 #include <cstdlib>
 
 #include "asmcore/disasm.h"
@@ -435,6 +436,8 @@ FetchTimes fetchTimes(const Result& program, const SimConfig& cfg) {
 Result assembleWithFetch(const std::vector<Source>& sources, const IncludeResolver& resolver, const Options& opt, SimConfig cfg, FetchTimes* used) {
     if (used) *used = FetchTimes();
     Result first = assemble(sources, resolver, opt);
+    first.readiness = readiness(opt.profile, &cfg.params);              // built with the hardware parameters: they are part of what the level is decided by
+    first.readinessSet = true;
     if (!first.ok) return first;
     cfg.profile = opt.profile;
     FetchTimes t = fetchTimes(first, cfg);
@@ -442,6 +445,8 @@ Result assembleWithFetch(const std::vector<Source>& sources, const IncludeResolv
     Options o2 = opt;
     o2.fetchCycles = [&t](Domain d, uint32_t pc) { return t.at(d, pc); };
     Result second = assemble(sources, resolver, o2);
+    second.readiness = first.readiness;
+    second.readinessSet = true;
     if (used) *used = t;
     return second;
 }

@@ -7,6 +7,7 @@
 
 #include "asmcore/diagnostics.h"
 #include "asmcore/profile_info.h"
+#include "asmcore/readiness.h"
 #include "asmcore/profile_info.h"
 #include "asmcore/sram.h"
 #include "codec.h"
@@ -259,7 +260,8 @@ std::string Result::eventVectorsJson() const {
 // ---- validation_report.json ------------------------------------------------------------------------------------------------------------
 std::string Result::validationReportJson() const {
     std::ostringstream o;
-    o << "{\n \"spec\":\"" << kSpec << "\",\n \"profile\":" << q(profile.profileId) << ",\n \"ok\":" << (ok ? "true" : "false") << ",\n \"errors\":" << errorCount() << ",\n \"warnings\":" << warningCount() << ",\n \"diagnostics\":[";
+    o << "{\n \"spec\":\"" << kSpec << "\",\n \"profile\":" << q(profile.profileId) << ",\n \"ok\":" << (ok ? "true" : "false") << ",\n \"errors\":" << errorCount() << ",\n \"warnings\":" << warningCount()
+      << ",\n \"readiness\":" << readinessJson(readinessSet ? readiness : asmcore::readiness(profile)) << ",\n \"diagnostics\":[";
     for (size_t i = 0; i < diags.size(); i++) {
         const Diagnostic& d = diags[i];
         o << (i ? "," : "") << "\n  {\"severity\":\"" << (d.sev == Diagnostic::Error ? "error" : d.sev == Diagnostic::Warning ? "warning" : "note") << "\",\"code\":" << q(d.code) << ",\"file\":" << q(d.loc.file) << ",\"line\":" << d.loc.line

@@ -19,6 +19,7 @@ asmc [選項] file.asm [file2.asm ...]
   --params FILE        模擬器的硬體參數檔（.simparams），用於週期數與 WCET
   --param KEY=VALUE    單一硬體參數，例如 clock.i2c_hz=1000000（可重複；優先於 --params）
   --fetch-time         以預設參數把取指時間算進 WCET（給了 --params／--param 就已包含）
+  --readiness          列出就緒等級（L0 結構／L1 二進位核准／L2 時序核准）、可以做什麼、還缺什麼，然後結束
   --pad-tables         每個描述子表補到 profile 的深度
   --werror             警告視為錯誤
 ```
