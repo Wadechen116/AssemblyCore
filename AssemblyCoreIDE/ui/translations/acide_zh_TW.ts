@@ -3748,6 +3748,14 @@ The decoder made of the bytes: %4</source>
         <source>Related (the hardware around it, the decoder)</source>
         <translation>相關參數（周邊硬體、解碼器）</translation>
     </message>
+    <message>
+        <source>(none)</source>
+        <translation>（不指定）</translation>
+    </message>
+    <message>
+        <source>Set &quot;%1&quot;</source>
+        <translation>設定「%1」</translation>
+    </message>
 </context>
 <context>
     <name>acide::BlockToolbox</name>

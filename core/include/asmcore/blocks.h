@@ -32,6 +32,7 @@ struct FieldDef {
     std::string help;
     long long lo = 0, hi = 0;                // Int: the range that makes sense (checked only for plain number literals; names and expressions are fine); lo == hi == 0: no range
     std::string when;                        // shown only while the condition holds: "op=SHL,SHR" or "op!=AND,OR" (a field of the same block); "" = always
+    std::string fill;                        // what it gets when an edit makes it appear and it is empty (the amount of a shift: "1"); "" = it is left a hole
 };
 
 // A value socket: another block plugs into it (an expression). `accepts` are the value types the socket takes.

@@ -326,6 +326,57 @@ namespace {
 
 // The shared frame of the mutating operations: work on a copy of the sections, check the rules on every section that changed (only
 // violations that are NEW count), and commit only if nothing is refused.
+// After an edit, for every block of the sections it touched:
+//  - the text mirror of a socket says what is plugged into it. A component that is edited in place (the list of an operation / a sign / a condition that is
+//    plugged into an instruction) changes the text of the instruction, and the mirror has to follow: the conditions of the other parts ("the amount
+//    shows for a shift") and the checks read it, and a file whose mirror differs from its component drops the component when it is read;
+//  - a part that the edit HID (it was shown before, its condition does not hold now) is emptied: left as it was it is still written into the text
+//    ("ALU AND unsigned"), where nobody can see it or take it out. A part that was hidden already (a file written by hand) is left alone.
+void whenParts(const Block& b, const Registry& reg, std::map<std::string, std::set<std::string>>& shown) {
+    shown[b.id];                                                                                  // (the block was there, whatever it showed)
+    if (const BlockDef* d = reg.find(b.type)) {
+        for (const FieldDef& f : d->fields) if (!f.when.empty() && partVisible(f.when, b)) shown[b.id].insert(f.name);
+        for (const InputDef& in : d->inputs) if (!in.when.empty() && partVisible(in.when, b)) shown[b.id].insert(in.name);
+    }
+    for (const auto& st : b.stacks) for (const Block& c : st.second) whenParts(c, reg, shown);
+    for (const auto& v : b.values) for (const Block& c : v.second) whenParts(c, reg, shown);
+}
+void settle(Block& b, const Registry& reg, const std::map<std::string, std::set<std::string>>& shownBefore) {
+    for (auto& v : b.values) for (Block& c : v.second) settle(c, reg, shownBefore);              // (inside out: a mirror is the text of what is inside)
+    for (auto& st : b.stacks) for (Block& c : st.second) settle(c, reg, shownBefore);
+    const BlockDef* d = reg.find(b.type);
+    if (!d) return;
+    for (const InputDef& in : d->inputs) {
+        if (!in.derive.empty() || !b.field(in.name)) continue;
+        if (const Block* child = b.value(in.name)) {
+            const std::string text = valueText(*child, reg, &in);
+            auto bare = [](const std::string& t) { std::string o; for (char ch : t) if (!std::isspace((unsigned char)ch)) o += ch; return o; };
+            if (bare(b.get(in.name)) != bare(text)) b.set(in.name, text);                        // (spaces apart they are the same text: the mirror keeps its own)
+        }
+    }
+    const auto was = shownBefore.find(b.id);
+    if (was == shownBefore.end()) return;                                                         // (a new block: nothing was shown before)
+    auto hide = [&](const std::string& name, const std::string& when) {
+        if (when.empty() || partVisible(when, b) || !was->second.count(name)) return;
+        if (b.value(name)) b.clearValue(name);
+        if (b.field(name) && !b.get(name).empty()) b.set(name, "");
+    };
+    // (not a block whose parts are one composite text -- a transfer: len= and ext= say which form it is. They stay on the block, with the problem.)
+    bool composite = false;
+    for (const InputDef& in : d->inputs) if (in.derive.compare(0, 4, "arg:") == 0) composite = true;
+    if (!composite) {
+        for (const FieldDef& f : d->fields) hide(f.name, f.when);
+        for (const InputDef& in : d->inputs) hide(in.name, in.when);
+    }
+    // ... and a part that the edit made appear gets its first value, if it has one (FieldDef::fill)
+    for (const FieldDef& f : d->fields) {
+        if (f.fill.empty() || was->second.count(f.name) || b.value(f.name) || !b.get(f.name).empty()) continue;
+        std::string when = f.when;                                                                // (the condition may be the socket's of the same name)
+        if (when.empty()) for (const InputDef& in : d->inputs) if (in.name == f.name) when = in.when;
+        if (!when.empty() && partVisible(when, b)) b.set(f.name, f.fill);
+    }
+}
+
 Outcome run(Editor& ed, Document& doc, const Registry& reg, const RuleOptions& opt, EditHistory* history, const std::string& label, const std::string& mergeKey, bool dryRun,
             const std::function<bool(Work&, std::set<size_t>&, Outcome&)>& mutate) {
     Outcome out;
@@ -346,6 +397,11 @@ Outcome run(Editor& ed, Document& doc, const Registry& reg, const RuleOptions& o
     // only matters for sections that kept their index: compare by key regardless of section (keys contain the block id)
     std::set<std::string> allBefore;
     for (auto& kv : before) allBefore.insert(kv.second.begin(), kv.second.end());
+    {
+        std::map<std::string, std::set<std::string>> shownBefore;
+        for (const Section& sec : doc.sections) for (const Block& b : sec.blocks) whenParts(b, reg, shownBefore);
+        for (size_t i : touched) if (i < work.size()) for (Block& b : work[i].blocks) settle(b, reg, shownBefore);
+    }
     pruneEmptyFloating(work, touched);
     for (size_t i : touched) {
         if (i >= work.size()) continue;

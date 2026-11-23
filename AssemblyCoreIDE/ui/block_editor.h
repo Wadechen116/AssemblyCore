@@ -83,6 +83,8 @@ public:
     CustomBlockDialog* customDialog() const { return customDialog_; }
     QString errorText() const;                       // why the file could not be shown ("" if fine)
     QString infoText() const;
+    static QString noneText();                                // what the empty option of a list is called in the menus
+    void addHiddenChoices(QMenu& menu, const std::string& blockId);   // the optional lists of a block that are not drawn on it (see the .cpp)
     QMenu* choiceMenu() const { return choiceMenu_; }         // the menu of a closed choice while it is open (for tests)
     void jumpTo(const QString& kind);                         // "floating" / "raw" / "problems": select the next such block and show it (the counts of the status line are links)
     void selectBlock(const std::string& id, bool reveal = true);

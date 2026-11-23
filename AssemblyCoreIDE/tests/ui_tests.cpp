@@ -4311,6 +4311,243 @@ private slots:
         r.ed->grab().save(outDir() + "/blocks_cascade.png");
     }
 
+    // Every part of every kind of block that is picked from a list: the menu opens on it, lists the options (the empty one by a name, not as a row with
+    // no text), and every option that is picked is what the program then holds and what the block shows; undo takes it back.
+    void everyListOfEveryBlockWorks() {
+        namespace B = asmcore::blocks;
+        DragRig r(".main\nh: JMP h\n");
+        auto& s = r.ed->session();
+        r.sc().setAnimationsEnabled(false);
+        int parts = 0, options = 0;
+        std::set<std::string> covered;
+        for (const B::BlockDef& def : s.registry().all()) {
+            bool hasList = false;
+            for (const B::FieldDef& f : def.fields) if (!f.options.empty()) hasList = true;
+            if (!hasList) continue;
+            const bool peri = !(def.domains & B::kMain);
+            std::string err;
+            QVERIFY(s.load(B::serializeDocument(B::importAsm(peri ? ".peri\nh: JMP h\n" : ".main\nh: JMP h\n", "prog"), s.registry()), err));
+            QApplication::processEvents();
+            s.select({s.document().sections[0].blocks[0].id});
+            emit r.ed->toolbox().activated(QString::fromStdString("type:" + def.type));          // (as the toolbox makes it)
+            QApplication::processEvents();
+            r.v().showContent();
+            QApplication::processEvents();
+            std::vector<BlockScene::EditTarget> targets;
+            for (const auto& e : r.sc().editTargets()) { const B::Block* bb = s.document().find(e.blockId); if (bb && bb->type == def.type && !e.options.empty()) targets.push_back(e); }
+            for (const auto& t0 : targets) {
+                parts++;
+                covered.insert(def.type + "." + t0.part);
+                const QByteArray where = QByteArray(def.type.c_str()) + "." + t0.part.c_str();
+                auto target = [&]() { BlockScene::EditTarget t; for (const auto& e : r.sc().editTargets()) if (e.blockId == t0.blockId && e.part == t0.part) t = e; return t; };
+                const B::FieldDef* fd = nullptr;
+                for (const B::FieldDef& f : def.fields) if (f.name == t0.part) fd = &f;
+                QVERIFY2(fd, where.constData());
+                for (const std::string& o : t0.options) {
+                    BlockScene::EditTarget t = target();
+                    if (t.blockId.empty()) break;                                                // (an optional list set to nothing is off the block: the other test)
+                    r.v().showBlock(t.rect);
+                    QApplication::processEvents();
+                    t = target();
+                    QTest::mouseDClick(r.v().viewport(), Qt::LeftButton, Qt::NoModifier, r.at(t.rect.center()));
+                    QApplication::processEvents();
+                    QMenu* m = r.ed->choiceMenu();
+                    QVERIFY2(m && m->isVisible(), (where + ": the menu opens on a double click").constData());
+                    QStringList items, want;
+                    QAction* pick = nullptr;
+                    int marked = 0;
+                    for (QAction* a : m->actions()) {
+                        if (a->isSeparator()) continue;
+                        items << a->text();
+                        QVERIFY2(!a->text().trimmed().isEmpty(), (where + ": a row of the menu has no text").constData());
+                        if (a->isChecked()) marked++;
+                        if (a->data().isValid() && a->data().toString() == QString::fromStdString(o)) pick = a;
+                    }
+                    for (const std::string& x : t.options) want << (x.empty() ? BlockEditor::noneText() : QString::fromStdString(x));
+                    if (t.open) want << "Other value...";
+                    QVERIFY2(items == want, (where + ": the menu lists [" + items.join(" | ").toUtf8() + "]").constData());
+                    const bool inList = std::find(t.options.begin(), t.options.end(), t.text) != t.options.end();
+                    QVERIFY2(marked == (inList ? 1 : 0), (where + ": the current value is the one marked").constData());
+                    QVERIFY2(pick, (where + ": '" + o.c_str() + "' is in the menu").constData());
+                    const std::string was = t.text;
+                    pick->trigger();
+                    m->close();
+                    QApplication::processEvents();
+                    QTest::qWait(2);
+                    options++;
+                    const B::Block* b = s.document().find(t0.blockId);
+                    QVERIFY2(b && B::partText(*b, def, t0.part, s.registry()) == o, (where + " = '" + o.c_str() + "': the program holds it").constData());
+                    const BlockScene::EditTarget after = target();
+                    if (o.empty() && fd->optional && after.blockId.empty()) continue;            // (nothing stated: not drawn on a component)
+                    QVERIFY2(!after.blockId.empty() && after.text == o, (where + " = '" + o.c_str() + "': the block shows it").constData());
+                    if (was != o) {
+                        QVERIFY2(s.undo(), where.constData());
+                        QApplication::processEvents();
+                        QVERIFY2(target().text == was, (where + ": undo gives the value back").constData());
+                        QVERIFY(s.redo());
+                        QApplication::processEvents();
+                    }
+                }
+            }
+        }
+        QVERIFY2(parts >= 15 && options >= 100, qPrintable(QString("%1 parts, %2 options").arg(parts).arg(options)));
+        for (const char* k : {"alu.op", "alu.mode", "br_cond.cond", "br_peri.cond", "if.cond", "while.cond", "wait.cond", "xfer.rw", "loop.mode", "expr_bin.op", "expr_un.op", "v_bin.op", "v_cmp.op",
+                              "alu_op.value", "sign_mode.value", "cond_main_c.value", "cond_peri_c.value"})
+            QVERIFY2(covered.count(k), k);
+    }
+
+    // An option component that is plugged into an instruction and changed there: the instruction follows (its text mirror, the parts it shows, its checks).
+    // The mirror stayed what it was: a shift picked on the component had no amount to fill in and no problem shown, and the text did not assemble.
+    void anInstructionFollowsTheListOfAComponentPluggedIntoIt() {
+        namespace B = asmcore::blocks;
+        DragRig r(".main\n ALU ADD unsigned\nh: JMP h\n");
+        auto& s = r.ed->session();
+        r.sc().setAnimationsEnabled(false);
+        B::Document doc = B::importAsm(".main\n ALU ADD unsigned\nh: JMP h\n", "prog");
+        B::reconcileDocument(doc, s.registry());
+        std::string alu;
+        for (auto& sec : doc.sections) for (auto& b : sec.blocks) if (b.type == "alu") { B::Block c = doc.make("alu_op"); c.set("value", "ADD"); b.setValue("op", c); alu = b.id; }
+        std::string err;
+        QVERIFY(s.load(B::serializeDocument(doc, s.registry()), err));
+        QApplication::processEvents();
+        const std::string comp = s.document().find(alu)->value("op")->id;
+        auto pick = [&](const std::string& id, const std::string& part, const std::string& value) {
+            BlockScene::EditTarget t;
+            for (const auto& e : r.sc().editTargets()) if (e.blockId == id && e.part == part) t = e;
+            if (t.blockId.empty()) return false;
+            r.v().showBlock(t.rect);
+            QApplication::processEvents();
+            for (const auto& e : r.sc().editTargets()) if (e.blockId == id && e.part == part) t = e;
+            QTest::mouseDClick(r.v().viewport(), Qt::LeftButton, Qt::NoModifier, r.at(t.rect.center()));
+            QApplication::processEvents();
+            QMenu* m = r.ed->choiceMenu();
+            if (!m) return false;
+            bool done = false;
+            for (QAction* a : m->actions()) if (!done && a->data().isValid() && a->data().toString() == QString::fromStdString(value)) { a->trigger(); done = true; }
+            m->close();
+            QApplication::processEvents();
+            return done;
+        };
+        auto line = [&]() { QStringList l; for (int ln : s.generated().linesOf(alu)) l << QString::fromStdString(s.generated().text).split('\n').value(ln - 1).trimmed(); return l.join(" / "); };
+        auto shows = [&](const char* part) { for (const auto& e : r.sc().editTargets()) if (e.blockId == alu && e.part == part) return true; return false; };
+        auto assembles = [&]() { asmcore::Options opt; return asmcore::assemble({asmcore::Source{"p.asm", s.generated().text}}, nullptr, opt).ok; };
+        QCOMPARE(line(), QString("ALU ADD unsigned"));
+        // a shift: the amount appears with a first value, and the text assembles
+        QVERIFY(pick(comp, "value", "SHL"));
+        QCOMPARE(QString::fromStdString(s.document().find(alu)->get("op")), QString("SHL"));       // (the text mirror follows the component)
+        QVERIFY2(shows("amount") && shows("mode"), "a shift shows its amount");
+        QCOMPARE(line(), QString("ALU SHL 1 unsigned"));
+        QVERIFY(assembles());
+        // a logic operation: the sign (which it does not have) goes with the part that showed it, and nothing warns
+        const size_t problems = s.problems().size();
+        QVERIFY(pick(comp, "value", "AND"));
+        QCOMPARE(line(), QString("ALU AND"));
+        QVERIFY2(!shows("amount") && !shows("mode"), "a logic operation has neither an amount nor a sign");
+        QVERIFY(s.problems().size() <= problems && assembles());
+        // one undo step each
+        QVERIFY(s.undo());
+        QApplication::processEvents();
+        QCOMPARE(line(), QString("ALU SHL 1 unsigned"));
+        // read again from the file: the component is kept (a mirror that differs from its component drops it)
+        const std::string saved = B::serializeDocument(s.document(), s.registry());
+        QVERIFY(s.load(saved, err));
+        QVERIFY(s.document().find(alu) && s.document().find(alu)->value("op") && s.document().find(alu)->value("op")->get("value") == "SHL");
+        // text written by hand that states what the operation does not have: it is on the block (it is in the text), to be seen and taken out
+        QVERIFY(s.load(B::serializeDocument(B::importAsm(".main\n ALU AND unsigned\nh: JMP h\n", "prog"), s.registry()), err));
+        QApplication::processEvents();
+        for (const auto& sec : s.document().sections) for (const auto& b : sec.blocks) if (b.type == "alu") alu = b.id;
+        QVERIFY2(shows("mode"), "the sign that is in the text is on the block");
+        QVERIFY(pick(alu, "mode", ""));
+        QCOMPARE(line(), QString("ALU AND"));
+        // a transfer turned into a write: the byte to write is a hole to fill in, and the parts that said what was read stay
+        QVERIFY(s.load(B::serializeDocument(B::importAsm(".devmap DEV = 0x2A, addr_len=1\n.peri\n EXEC_XFER READ dev=DEV, addr=0x10, addrlen=1, ptr=0\nh: JMP h\n", "prog"), s.registry()), err));
+        QApplication::processEvents();
+        std::string xfer;
+        for (const auto& sec : s.document().sections) for (const auto& b : sec.blocks) if (b.type == "xfer") xfer = b.id;
+        QVERIFY(!xfer.empty() && pick(xfer, "rw", "WRITE"));
+        bool dataHole = false;
+        for (const auto& e : r.sc().editTargets()) if (e.blockId == xfer && e.part == "data") dataHole = true;
+        QVERIFY2(dataHole, "a write shows where its byte goes");
+        bool said = false;
+        for (const auto& p : s.problems()) if (p.blockId == xfer && p.message.find("data") != std::string::npos) said = true;
+        QVERIFY2(said, "... and says that it is missing");
+    }
+
+    // The optional lists of a component are not drawn while they are empty (a number has no "bits" until it is given some). They had no way in: the
+    // context menu of the block has them, each a submenu; set back to nothing they are off the block again and still there in the menu.
+    void theOptionalListsOfAComponentAreInItsContextMenu() {
+        namespace B = asmcore::blocks;
+        DragRig r(".main\nh: JMP h\n");
+        auto& s = r.ed->session();
+        r.sc().setAnimationsEnabled(false);
+        struct Case { const char* type; std::vector<const char*> fields; };
+        const std::vector<Case> cases = {{"num", {"kind", "sign", "width"}}, {"v_bin", {"mode"}}, {"v_cmp", {"mode"}}, {"region_main_scratchpad", {"alias"}}, {"region_alu_opa", {"alias"}}};
+        int picked = 0;
+        for (const Case& c : cases) {
+            std::string err;
+            QVERIFY(s.load(B::serializeDocument(B::importAsm(".main\nh: JMP h\n", "prog"), s.registry()), err));
+            QApplication::processEvents();
+            s.select({s.document().sections[0].blocks[0].id});
+            emit r.ed->toolbox().activated(QString("type:") + c.type);
+            QApplication::processEvents();
+            std::string id;
+            for (const auto& e : r.sc().editTargets()) { const B::Block* b = s.document().find(e.blockId); if (b && b->type == c.type) id = b->id; }
+            if (id.empty()) for (const auto& sec : s.document().sections) for (const auto& b : sec.blocks) if (b.type == c.type) id = b.id;
+            QVERIFY2(!id.empty(), c.type);
+            const B::BlockDef* def = s.registry().find(c.type);
+            for (const char* field : c.fields) {
+                const QByteArray where = QByteArray(c.type) + "." + field;
+                const B::FieldDef* fd = nullptr;
+                for (const B::FieldDef& f : def->fields) if (f.name == field) fd = &f;
+                QVERIFY2(fd && fd->optional && !fd->options.empty(), where.constData());
+                auto onBlock = [&]() { for (const auto& e : r.sc().editTargets()) if (e.blockId == id && e.part == field) return true; return false; };
+                auto submenu = [&](QMenu& menu) { r.ed->addHiddenChoices(menu, id); return menu.findChild<QMenu*>(QString("hiddenChoice:") + field); };
+                QVERIFY2(!onBlock(), (where + ": empty, it is not drawn").constData());
+                for (const std::string& o : fd->options) {
+                    if (o.empty()) continue;
+                    QMenu menu;
+                    QMenu* sub = submenu(menu);
+                    QVERIFY2(sub, (where + ": it is in the context menu while it is not on the block").constData());
+                    QAction* act = nullptr;
+                    for (QAction* a : sub->actions()) { QVERIFY2(!a->text().trimmed().isEmpty(), where.constData()); if (a->data().toString() == QString::fromStdString(o)) act = a; }
+                    QVERIFY2(act, (where + ": " + o.c_str()).constData());
+                    act->trigger();
+                    QApplication::processEvents();
+                    picked++;
+                    QVERIFY2(s.document().find(id)->get(field) == o, (where + " = " + o.c_str() + ": the program holds it").constData());
+                    QVERIFY2(onBlock(), (where + ": with a value it is on the block").constData());
+                    QMenu again;
+                    QVERIFY2(!submenu(again), (where + ": ... and not twice in the context menu").constData());
+                    // back to nothing, from the list on the block itself
+                    BlockScene::EditTarget t;
+                    for (const auto& e : r.sc().editTargets()) if (e.blockId == id && e.part == field) t = e;
+                    r.v().showBlock(t.rect);
+                    QApplication::processEvents();
+                    for (const auto& e : r.sc().editTargets()) if (e.blockId == id && e.part == field) t = e;
+                    QTest::mouseDClick(r.v().viewport(), Qt::LeftButton, Qt::NoModifier, r.at(t.rect.center()));
+                    QApplication::processEvents();
+                    QMenu* m = r.ed->choiceMenu();
+                    QVERIFY2(m, where.constData());
+                    QAction* none = nullptr;
+                    for (QAction* a : m->actions()) if (a->data().isValid() && a->data().toString().isEmpty()) none = a;
+                    if (none) {
+                        QCOMPARE(none->text(), BlockEditor::noneText());
+                        none->trigger();
+                        m->close();
+                        QApplication::processEvents();
+                        QVERIFY2(s.document().find(id)->get(field).empty() && !onBlock(), (where + ": set to nothing it is off the block").constData());
+                    } else {                                                                       // (a list without an empty option: emptied by undo)
+                        m->close();
+                        QApplication::processEvents();
+                        QVERIFY(s.undo());
+                        QApplication::processEvents();
+                    }
+                }
+            }
+        }
+        QVERIFY2(picked >= 12, qPrintable(QString::number(picked)));
+    }
+
     void aClosedChoiceIsPickedFromAMenuThatStays() {
         DragRig r(".main\ntop: MOV CONST(5, 2) -> MAIN_SCRATCHPAD[0..1]\n JMP top\n");
         auto& s = r.ed->session();

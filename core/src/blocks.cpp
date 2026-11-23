@@ -152,6 +152,7 @@ const Registry& Registry::defaults() {
             op.open = true;
             FieldDef amount = F("amount", "by", FieldKind::Int, 1, 8);
             amount.optional = true;
+            amount.fill = "1";                   // (picking SHL / SHR from the list gives a shift by one, not an instruction that does not assemble)
             FieldDef mode = F("mode", "as", FieldKind::Choice);
             mode.options = {"", "unsigned", "signed"};
             mode.open = true;

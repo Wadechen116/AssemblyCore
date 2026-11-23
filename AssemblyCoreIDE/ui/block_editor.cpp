@@ -807,6 +807,7 @@ void BlockEditor::showContextMenu(const QPointF& scenePos, const QPoint& globalP
         if (scene_->editTargetAt(scenePos, et) && !et.flag) add(tr("Edit..."), [this, et] { beginFieldEdit(et); });
         BlockScene::CommentTarget ct;
         if (scene_->commentTargetOf(blockId, ct)) add(ct.text.empty() ? tr("Add a comment...") : tr("Edit the comment..."), [this, ct] { beginCommentEdit(ct); });
+        addHiddenChoices(menu, blockId);
         const QPoint at = globalPos;
         QAction* params = add(tr("Set parameters..."), [this, blockId, at] { editInstructionParams(blockId, at); }, !instructionParamsOf(blockId).empty());
         params->setObjectName("blockSetParams");
@@ -878,6 +879,42 @@ void BlockEditor::editInstructionParams(const std::string& blockId, const QPoint
 // A closed choice (only the listed values make sense: for / forever, ...) is picked from a menu that opens under the part. A menu is what Windows users
 // know (the right-button menus work the same way) and it stays until something is picked or Esc is pressed; a drop-down list opened in the middle of a double
 // click was closed again by the click that was still going on.
+QString BlockEditor::noneText() { return tr("(none)"); }
+
+// The lists of a block that are not on it now: an optional choice that is empty is not drawn on a component (a number has no "bits" until it is given
+// some; a calculation is not "as signed" until it is said), so there was no way to give it a value -- and one that was set back to nothing was gone
+// for good. The context menu of the block has them, each a submenu.
+void BlockEditor::addHiddenChoices(QMenu& menu, const std::string& blockId) {
+    const asmcore::blocks::Block* b = session_.document().find(blockId);
+    const asmcore::blocks::BlockDef* def = b ? session_.registry().find(b->type) : nullptr;
+    if (!def) return;
+    std::set<std::string> shown;
+    for (const BlockScene::EditTarget& e : scene_->editTargets()) if (e.blockId == blockId) shown.insert(e.part);
+    for (const asmcore::blocks::FieldDef& f : def->fields) {
+        if (f.kind != asmcore::blocks::FieldKind::Choice || f.options.empty() || !f.optional || shown.count(f.name)) continue;
+        if (b->value(f.name)) continue;                                                  // (a component is plugged in: that is the value)
+        if (!f.when.empty() && f.when.compare(0, f.name.size() + 2, f.name + "!=") != 0 && !asmcore::blocks::partVisible(f.when, *b)) continue;   // (does not apply now: an amount of something that is not a shift)
+        const QString label = f.label.empty() ? QString::fromUtf8(f.name.c_str()) : QCoreApplication::translate("BlockField", f.label.c_str());
+        QMenu* sub = menu.addMenu(tr("Set \"%1\"").arg(label));
+        sub->setObjectName(QString("hiddenChoice:") + QString::fromUtf8(f.name.c_str()));
+        BlockScene::EditTarget t;
+        t.blockId = blockId;
+        t.part = f.name;
+        t.kind = f.kind;
+        t.text = b->get(f.name);
+        t.options = f.options;
+        t.open = f.open;
+        for (const std::string& o : f.options) {
+            const QString text = QString::fromUtf8(o.c_str());
+            QAction* a = sub->addAction(text.isEmpty() ? noneText() : text);
+            a->setData(text);
+            a->setCheckable(true);
+            a->setChecked(o == t.text);
+            connect(a, &QAction::triggered, this, [this, t, text] { applyFieldValue(t, text); });
+        }
+    }
+}
+
 void BlockEditor::showChoiceMenu(const BlockScene::EditTarget& t) {
     if (choiceMenu_) { choiceMenu_->close(); choiceMenu_->deleteLater(); choiceMenu_ = nullptr; }
     auto* menu = new QMenu(this);
@@ -886,7 +923,8 @@ void BlockEditor::showChoiceMenu(const BlockScene::EditTarget& t) {
     const QString current = QString::fromUtf8(t.text.c_str());
     for (const std::string& o : t.options) {
         const QString text = QString::fromUtf8(o.c_str());
-        QAction* a = menu->addAction(text);
+        QAction* a = menu->addAction(text.isEmpty() ? noneText() : text);                 // (the option "nothing stated" was a row with no text)
+        a->setData(text);
         a->setCheckable(true);
         a->setChecked(text == current);
         connect(a, &QAction::triggered, this, [this, t, text] { applyFieldValue(t, text); });

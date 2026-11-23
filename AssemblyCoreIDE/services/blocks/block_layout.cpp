@@ -300,7 +300,9 @@ struct LayoutEngine::Run {
         double maxChildH = 0;
         // a socket shows if its condition holds; the parts of a composite text ("dev=.., addr=..") show only while the text is split into them (or empty)
         auto inputVisible = [&](const InputDef& in) {
-            if (!asmcore::blocks::partVisible(in.when, b)) return false;
+            // (a part whose condition does not hold is not shown -- unless it holds something: that is written into the text, so it is shown, to be
+            // seen and taken out. "ALU AND unsigned" from a file written by hand.)
+            if (!asmcore::blocks::partVisible(in.when, b) && !b.value(in.name) && b.get(in.name).empty()) return false;
             if (in.derive.compare(0, 4, "arg:") == 0) {
                 bool any = false;
                 for (const InputDef& o : def->inputs) if (o.derive == in.derive && b.value(o.name)) any = true;
@@ -353,7 +355,7 @@ struct LayoutEngine::Run {
             };
             for (size_t fi = 0; fi < def->fields.size(); fi++) {
                 const FieldDef& f = def->fields[fi];
-                if (!asmcore::blocks::partVisible(f.when, b)) continue;
+                if (!asmcore::blocks::partVisible(f.when, b) && !b.value(f.name) && b.get(f.name).empty()) continue;
                 const int si = socketNamed(f.name);
                 if (si >= 0) { if (inputVisible(def->inputs[(size_t)si])) parts.push_back({true, (size_t)si}); continue; }
                 if (derivedAway(f.name)) continue;
