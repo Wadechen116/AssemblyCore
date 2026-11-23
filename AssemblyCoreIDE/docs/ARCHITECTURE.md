@@ -118,5 +118,5 @@
 - CMake：頂層 `ASMCORE_BUILD_IDE`（預設 ON）；找不到 Qt6 時只建服務層與其測試。
 - QMake：`AssemblyCoreIDE.pro` 與 `sources.pri`（檔案清單）；`tests/check_build_files.py` 檢查兩邊的清單一致。
 - 平台差異：`services/` 與 `ui/` 沒有任何 `#ifdef _WIN32`／`Q_OS_*`；唯一的編譯器條件是 `ui/msvc_stdext_compat.h`（VS 2026 的 STL 配 Qt 6.5 所需）。原先規劃的 `ui/platform/` 目錄並不存在，目前也不需要。
-- 工具：`tools/md2pdf.cpp`（Markdown 轉 PDF，只用 Qt）。
+- 工具：`tools/md2pdf.cpp`（Markdown 轉 PDF，只用 Qt；支援圖片、表格不跨頁、`--font-size`）。
 - 測試：`tests/services_tests.cpp`、`tests/blocks_tests.cpp`（無 Qt）、`tests/ui_tests.cpp`（Qt Test，offscreen）。

@@ -16,7 +16,8 @@
 
 | 檔案 | 說明 |
 |---|---|
-| `HW_TEAM_GUIDE.md`、`HW_TEAM_GUIDE.pdf` | **給硬體團隊的使用說明**（PDF 由 Markdown 轉出：`md2pdf HW_TEAM_GUIDE.md HW_TEAM_GUIDE.pdf --title "…"`，改了 Markdown 要重轉）：四層怎麼跑、測試平台要準備什麼、要回報什麼（流程導向；本文件則說明設計與自我檢查） |
+| `HW_TEAM_GUIDE.md`、`HW_TEAM_GUIDE.pdf` | **給硬體團隊的使用說明**（第 2 版，19 頁）：背景知識、測試平台的準備、載入映像、`c01` 逐步範例、四層各一章、回報、疑難排解、名詞；附 11 張圖。PDF 由 Markdown 轉出，改了 Markdown 要重轉：`md2pdf HW_TEAM_GUIDE.md HW_TEAM_GUIDE.pdf --title "給硬體團隊：四層驗證的使用說明" --font-size 14.5` |
+| `figures/make_figures.py`、`figures/fig*.svg` | 說明文件的 11 張圖（SVG，純文字）。請改產生器再執行它，不要直接改 SVG；`--check`（`ctest` 的 `guide_figures`）確認兩者一致、文字沒有超出方框 |
 | `EXPECTED.md` | **從這裡開始**：每支測試每個位址的預期值、取決於什麼假設、結果不同時怎麼判讀 |
 | `cNN_*.asm`、`bNN_*.asm` | 測試程式的原始碼（c＝第 1 層，b＝第 2 層） |
 | `*.expected.csv` | 同一份預期值，CSV（UTF-8，可用 Excel 開） |
@@ -138,7 +139,7 @@
    `f_<編號>_carrier.*` 是未改動的載體，它的 `.lst` 可以看出受測指令原本是什麼；載體本身會正常跑到結尾，可以先用它確認測試平台沒問題。
 3. 記錄三個標記與硬體的反應，填進 `faults_result_template.csv` 或 `docs/HW_FAULT_DETECTION.md` 的「硬體偵測級別」欄。
 
-Peri 的案例（P、R、U、X）需要測試平台在位址 `0x2F` 有一個會回 ACK 的 I2C 裝置。
+EXEC_XFER 的案例（X 開頭）需要測試平台在位址 `0x2F` 有一個會回 ACK 的 I2C 裝置；其餘 Peri 的案例（P、R、U 開頭）不發出 I2C 交易。
 
 **這個工具本身驗證過什麼**：每支載體在模擬器上都正常跑到結尾（所以錯誤只來自那一兩個位元組的改動）；每份改過的映像都在受測指令處報出表格所列的錯誤碼；
 三種格式（邏輯映像、EEPROM、SRAM 字）的內容逐位元組一致。

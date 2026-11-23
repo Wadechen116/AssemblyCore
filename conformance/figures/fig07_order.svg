@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="600" viewBox="0 0 1000 600">
+<rect x="0" y="0" width="1000" height="600" fill="#ffffff"/>
+<text x="500" y="26" font-family="WenQuanYi Zen Hei" font-size="22.0" font-weight="bold" text-anchor="middle" fill="#1f2937">圖 7　建議的進行順序</text>
+<rect x="60" y="56" width="300" height="60" rx="6" fill="#fff1dc" stroke="#c0771a" stroke-width="1.6"/>
+<text x="210.0" y="80.78" font-family="WenQuanYi Zen Hei" font-size="17.4" font-weight="bold" text-anchor="middle" fill="#1f2937">準備</text>
+<text x="210.0" y="103.748" font-family="WenQuanYi Zen Hei" font-size="15.7" font-weight="normal" text-anchor="middle" fill="#374151">載入方式、CSR 寫入紀錄</text>
+<line x1="210" y1="116" x2="210" y2="146" stroke="#6b7280" stroke-width="1.8"/>
+<polygon points="210.0,146.0 205.0,135.0 215.0,135.0" fill="#6b7280"/>
+<rect x="60" y="146" width="300" height="60" rx="6" fill="#e8f0fb" stroke="#3b6fb5" stroke-width="1.6"/>
+<text x="210.0" y="170.78" font-family="WenQuanYi Zen Hei" font-size="17.4" font-weight="bold" text-anchor="middle" fill="#1f2937">第 1 層　c01</text>
+<text x="210.0" y="193.748" font-family="WenQuanYi Zen Hei" font-size="15.7" font-weight="normal" text-anchor="middle" fill="#374151">只用到 CSR 寫入與跳躍</text>
+<line x1="360" y1="176" x2="470" y2="176" stroke="#c0392b" stroke-width="1.8"/>
+<polygon points="470.0,176.0 459.0,181.0 459.0,171.0" fill="#c0392b"/>
+<text x="415" y="168" font-family="WenQuanYi Zen Hei" font-size="15.1" font-weight="normal" text-anchor="middle" fill="#c0392b">不符</text>
+<rect x="470" y="140" width="480" height="72" rx="6" fill="#fde9e7" stroke="#c0392b" stroke-width="1.6"/>
+<text x="710.0" y="159.8528" font-family="WenQuanYi Zen Hei" font-size="16.8" font-weight="bold" text-anchor="middle" fill="#1f2937">先停下來，把紀錄給我們</text>
+<text x="710.0" y="182.0552" font-family="WenQuanYi Zen Hei" font-size="15.1" font-weight="normal" text-anchor="middle" fill="#374151">多半是載入、位元組序或區段位置的問題</text>
+<text x="710.0" y="204.2576" font-family="WenQuanYi Zen Hei" font-size="15.1" font-weight="normal" text-anchor="middle" fill="#374151">後面的測試都以它為前提</text>
+<line x1="210" y1="206" x2="210" y2="240" stroke="#6b7280" stroke-width="1.8"/>
+<polygon points="210.0,240.0 205.0,229.0 215.0,229.0" fill="#6b7280"/>
+<text x="240" y="228" font-family="WenQuanYi Zen Hei" font-size="15.1" font-weight="normal" text-anchor="middle" fill="#4b5563">相符</text>
+<rect x="60" y="240" width="300" height="60" rx="6" fill="#e8f0fb" stroke="#3b6fb5" stroke-width="1.6"/>
+<text x="210.0" y="264.78000000000003" font-family="WenQuanYi Zen Hei" font-size="17.4" font-weight="bold" text-anchor="middle" fill="#1f2937">第 1 層　c02 – c09</text>
+<text x="210.0" y="287.74800000000005" font-family="WenQuanYi Zen Hei" font-size="15.7" font-weight="normal" text-anchor="middle" fill="#374151">MOV、ALU、cascade、CSR 讀取</text>
+<line x1="210" y1="300" x2="210" y2="334" stroke="#6b7280" stroke-width="1.8"/>
+<polygon points="210.0,334.0 205.0,323.0 215.0,323.0" fill="#6b7280"/>
+<rect x="60" y="334" width="300" height="60" rx="6" fill="#fff1dc" stroke="#c0771a" stroke-width="1.6"/>
+<text x="210.0" y="358.78000000000003" font-family="WenQuanYi Zen Hei" font-size="17.4" font-weight="bold" text-anchor="middle" fill="#1f2937">第 3 層　t01_alu</text>
+<text x="210.0" y="381.74800000000005" font-family="WenQuanYi Zen Hei" font-size="15.7" font-weight="normal" text-anchor="middle" fill="#374151">量一道 ALU 的週期數</text>
+<line x1="360" y1="364" x2="470" y2="364" stroke="#6b7280" stroke-width="1.8"/>
+<polygon points="470.0,364.0 459.0,369.0 459.0,359.0" fill="#6b7280"/>
+<text x="415" y="356" font-family="WenQuanYi Zen Hei" font-size="15.1" font-weight="normal" text-anchor="middle" fill="#4b5563">同時回答</text>
+<rect x="470" y="328" width="480" height="72" rx="6" fill="#fffbe6" stroke="#b59b2a" stroke-width="1.6"/>
+<text x="710.0" y="347.8528" font-family="WenQuanYi Zen Hei" font-size="16.8" font-weight="bold" text-anchor="middle" fill="#1f2937">取指方式：約 5 個週期 → 從 SRAM</text>
+<text x="710.0" y="370.0552" font-family="WenQuanYi Zen Hei" font-size="15.1" font-weight="normal" text-anchor="middle" fill="#374151">約 6,081 個週期 → 每道指令經 I2C 讀 EEPROM</text>
+<text x="710.0" y="392.2576" font-family="WenQuanYi Zen Hei" font-size="15.1" font-weight="normal" text-anchor="middle" fill="#374151">這決定之後所有時間怎麼看</text>
+<line x1="210" y1="394" x2="210" y2="432" stroke="#6b7280" stroke-width="1.8"/>
+<polygon points="210.0,432.0 205.0,421.0 215.0,421.0" fill="#6b7280"/>
+<line x1="110" y1="432" x2="890" y2="432" stroke="#6b7280" stroke-width="1.8"/>
+<line x1="140" y1="432" x2="140" y2="462" stroke="#6b7280" stroke-width="1.8"/>
+<polygon points="140.0,462.0 135.0,451.0 145.0,451.0" fill="#6b7280"/>
+<rect x="40" y="462" width="200" height="84" rx="6" fill="#e7f4ea" stroke="#3d8b56" stroke-width="1.6"/>
+<text x="140.0" y="488.4096" font-family="WenQuanYi Zen Hei" font-size="16.2" font-weight="bold" text-anchor="middle" fill="#1f2937">不需要額外準備</text>
+<text x="140.0" y="509.8464" font-family="WenQuanYi Zen Hei" font-size="14.5" font-weight="normal" text-anchor="middle" fill="#374151">t02 – t04、t05、t08</text>
+<text x="140.0" y="531.2832" font-family="WenQuanYi Zen Hei" font-size="14.5" font-weight="normal" text-anchor="middle" fill="#374151">第 4 層 X 以外的案例</text>
+<line x1="380" y1="432" x2="380" y2="462" stroke="#6b7280" stroke-width="1.8"/>
+<polygon points="380.0,462.0 375.0,451.0 385.0,451.0" fill="#6b7280"/>
+<rect x="280" y="462" width="200" height="84" rx="6" fill="#e7f4ea" stroke="#3d8b56" stroke-width="1.6"/>
+<text x="380.0" y="488.4096" font-family="WenQuanYi Zen Hei" font-size="16.2" font-weight="bold" text-anchor="middle" fill="#1f2937">需要 I2C 裝置模型</text>
+<text x="380.0" y="509.8464" font-family="WenQuanYi Zen Hei" font-size="14.5" font-weight="normal" text-anchor="middle" fill="#374151">c10、b03、b04、t06</text>
+<text x="380.0" y="531.2832" font-family="WenQuanYi Zen Hei" font-size="14.5" font-weight="normal" text-anchor="middle" fill="#374151">第 4 層 X 開頭的案例</text>
+<line x1="620" y1="432" x2="620" y2="462" stroke="#6b7280" stroke-width="1.8"/>
+<polygon points="620.0,462.0 615.0,451.0 625.0,451.0" fill="#6b7280"/>
+<rect x="520" y="462" width="200" height="84" rx="6" fill="#e7f4ea" stroke="#3d8b56" stroke-width="1.6"/>
+<text x="620.0" y="499.12800000000004" font-family="WenQuanYi Zen Hei" font-size="16.2" font-weight="bold" text-anchor="middle" fill="#1f2937">先填 conf_board.inc</text>
+<text x="620.0" y="520.5648" font-family="WenQuanYi Zen Hei" font-size="14.5" font-weight="normal" text-anchor="middle" fill="#374151">b01、t07</text>
+<line x1="860" y1="432" x2="860" y2="462" stroke="#6b7280" stroke-width="1.8"/>
+<polygon points="860.0,462.0 855.0,451.0 865.0,451.0" fill="#6b7280"/>
+<rect x="760" y="462" width="200" height="84" rx="6" fill="#e7f4ea" stroke="#3d8b56" stroke-width="1.6"/>
+<text x="860.0" y="499.12800000000004" font-family="WenQuanYi Zen Hei" font-size="16.2" font-weight="bold" text-anchor="middle" fill="#1f2937">兩者都需要</text>
+<text x="860.0" y="520.5648" font-family="WenQuanYi Zen Hei" font-size="14.5" font-weight="normal" text-anchor="middle" fill="#374151">b02、b05</text>
+<text x="500" y="576" font-family="WenQuanYi Zen Hei" font-size="16.2" font-weight="normal" text-anchor="middle" fill="#4b5563">這四組彼此獨立，哪一組的條件先具備就先做；每完成一支都可以回報，不必等全部做完</text>
+</svg>

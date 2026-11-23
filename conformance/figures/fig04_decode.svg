@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="430" viewBox="0 0 1000 430">
+<rect x="0" y="0" width="1000" height="430" fill="#ffffff"/>
+<text x="500" y="26" font-family="WenQuanYi Zen Hei" font-size="22.0" font-weight="bold" text-anchor="middle" fill="#1f2937">圖 4　一道指令怎麼解：c01 的第一道指令（位元組 00 5A）</text>
+<text x="40" y="70" font-family="WenQuanYi Zen Hei" font-size="17.4" font-weight="bold" text-anchor="start" fill="#1f2937">① 指令位元組</text>
+<rect x="60" y="86" width="120" height="54" rx="6" fill="#e8f0fb" stroke="#3b6fb5" stroke-width="1.6"/>
+<text x="120.0" y="121.352" font-family="WenQuanYi Zen Hei" font-size="23.2" font-weight="bold" text-anchor="middle" fill="#1f2937">0x00</text>
+<line x1="180" y1="113" x2="250" y2="113" stroke="#6b7280" stroke-width="1.8"/>
+<polygon points="250.0,113.0 239.0,118.0 239.0,108.0" fill="#6b7280"/>
+<rect x="250" y="86" width="40" height="54" rx="6" fill="#fff1dc" stroke="#c0771a" stroke-width="1.6"/>
+<text x="270.0" y="120.9344" font-family="WenQuanYi Zen Hei" font-size="22.0" font-weight="bold" text-anchor="middle" fill="#1f2937">0</text>
+<rect x="294" y="86" width="40" height="54" rx="6" fill="#fff1dc" stroke="#c0771a" stroke-width="1.6"/>
+<text x="314.0" y="120.9344" font-family="WenQuanYi Zen Hei" font-size="22.0" font-weight="bold" text-anchor="middle" fill="#1f2937">0</text>
+<rect x="338" y="86" width="40" height="54" rx="6" fill="#e7f4ea" stroke="#3d8b56" stroke-width="1.6"/>
+<text x="358.0" y="120.9344" font-family="WenQuanYi Zen Hei" font-size="22.0" font-weight="bold" text-anchor="middle" fill="#1f2937">0</text>
+<rect x="382" y="86" width="40" height="54" rx="6" fill="#e7f4ea" stroke="#3d8b56" stroke-width="1.6"/>
+<text x="402.0" y="120.9344" font-family="WenQuanYi Zen Hei" font-size="22.0" font-weight="bold" text-anchor="middle" fill="#1f2937">0</text>
+<rect x="426" y="86" width="40" height="54" rx="6" fill="#e7f4ea" stroke="#3d8b56" stroke-width="1.6"/>
+<text x="446.0" y="120.9344" font-family="WenQuanYi Zen Hei" font-size="22.0" font-weight="bold" text-anchor="middle" fill="#1f2937">0</text>
+<rect x="470" y="86" width="40" height="54" rx="6" fill="#e7f4ea" stroke="#3d8b56" stroke-width="1.6"/>
+<text x="490.0" y="120.9344" font-family="WenQuanYi Zen Hei" font-size="22.0" font-weight="bold" text-anchor="middle" fill="#1f2937">0</text>
+<rect x="514" y="86" width="40" height="54" rx="6" fill="#e7f4ea" stroke="#3d8b56" stroke-width="1.6"/>
+<text x="534.0" y="120.9344" font-family="WenQuanYi Zen Hei" font-size="22.0" font-weight="bold" text-anchor="middle" fill="#1f2937">0</text>
+<rect x="558" y="86" width="40" height="54" rx="6" fill="#e7f4ea" stroke="#3d8b56" stroke-width="1.6"/>
+<text x="578.0" y="120.9344" font-family="WenQuanYi Zen Hei" font-size="22.0" font-weight="bold" text-anchor="middle" fill="#1f2937">0</text>
+<text x="292" y="162" font-family="WenQuanYi Zen Hei" font-size="15.1" font-weight="normal" text-anchor="middle" fill="#c0771a">bit 7:6</text>
+<text x="292" y="180" font-family="WenQuanYi Zen Hei" font-size="15.7" font-weight="bold" text-anchor="middle" fill="#c0771a">opcode = 00</text>
+<text x="468" y="162" font-family="WenQuanYi Zen Hei" font-size="15.1" font-weight="normal" text-anchor="middle" fill="#3d8b56">bit 5:0</text>
+<text x="468" y="180" font-family="WenQuanYi Zen Hei" font-size="15.7" font-weight="bold" text-anchor="middle" fill="#3d8b56">arg = 0（描述子的索引）</text>
+<rect x="660" y="78" width="300" height="70" rx="6" fill="#f4f5f7" stroke="#8a93a0" stroke-width="1.6"/>
+<text x="810.0" y="97.4096" font-family="WenQuanYi Zen Hei" font-size="16.2" font-weight="bold" text-anchor="middle" fill="#1f2937">Main 的 opcode</text>
+<text x="810.0" y="118.84639999999999" font-family="WenQuanYi Zen Hei" font-size="14.5" font-weight="normal" text-anchor="middle" fill="#374151">00 EXEC_CSR　01 分支</text>
+<text x="810.0" y="140.2832" font-family="WenQuanYi Zen Hei" font-size="14.5" font-weight="normal" text-anchor="middle" fill="#374151">10 MOV　　　11 ALU</text>
+<text x="40" y="232" font-family="WenQuanYi Zen Hei" font-size="17.4" font-weight="bold" text-anchor="start" fill="#1f2937">② 用 arg 查描述子表</text>
+<rect x="60" y="248" width="250" height="58" rx="6" fill="#e7f4ea" stroke="#3d8b56" stroke-width="1.6"/>
+<text x="185.0" y="272.12800000000004" font-family="WenQuanYi Zen Hei" font-size="16.2" font-weight="bold" text-anchor="middle" fill="#1f2937">CSR 單位元組描述子[0]</text>
+<text x="185.0" y="293.56480000000005" font-family="WenQuanYi Zen Hei" font-size="14.5" font-weight="normal" text-anchor="middle" fill="#374151">位於 layout 的位移 24</text>
+<line x1="310" y1="277" x2="370" y2="277" stroke="#6b7280" stroke-width="1.8"/>
+<polygon points="370.0,277.0 359.0,282.0 359.0,272.0" fill="#6b7280"/>
+<rect x="370" y="248" width="130" height="58" rx="6" fill="#e7f4ea" stroke="#3d8b56" stroke-width="1.6"/>
+<text x="435.0" y="285.352" font-family="WenQuanYi Zen Hei" font-size="23.2" font-weight="bold" text-anchor="middle" fill="#1f2937">0x0600</text>
+<line x1="500" y1="277" x2="560" y2="277" stroke="#6b7280" stroke-width="1.8"/>
+<polygon points="560.0,277.0 549.0,282.0 549.0,272.0" fill="#6b7280"/>
+<rect x="560" y="240" width="400" height="74" rx="6" fill="#fffbe6" stroke="#b59b2a" stroke-width="1.6"/>
+<text x="760.0" y="272.12800000000004" font-family="WenQuanYi Zen Hei" font-size="14.5" font-weight="normal" text-anchor="middle" fill="#374151">bit 15:14 = 00 → WRITE8（直接寫入）</text>
+<text x="760.0" y="293.56480000000005" font-family="WenQuanYi Zen Hei" font-size="14.5" font-weight="normal" text-anchor="middle" fill="#374151">bit 11:0 = 0x600 → CSR 位址</text>
+<text x="40" y="362" font-family="WenQuanYi Zen Hei" font-size="17.4" font-weight="bold" text-anchor="start" fill="#1f2937">③ 指令的下一個位元組是立即值</text>
+<rect x="60" y="376" width="120" height="44" rx="6" fill="#e8f0fb" stroke="#3b6fb5" stroke-width="1.6"/>
+<text x="120.0" y="405.9344" font-family="WenQuanYi Zen Hei" font-size="22.0" font-weight="bold" text-anchor="middle" fill="#1f2937">0x5A</text>
+<line x1="180" y1="398" x2="370" y2="398" stroke="#6b7280" stroke-width="1.8"/>
+<polygon points="370.0,398.0 359.0,403.0 359.0,393.0" fill="#6b7280"/>
+<text x="275" y="390" font-family="WenQuanYi Zen Hei" font-size="15.1" font-weight="normal" text-anchor="middle" fill="#4b5563">要寫入的值</text>
+<rect x="370" y="372" width="590" height="52" rx="6" fill="#fff1dc" stroke="#c0771a" stroke-width="1.6"/>
+<text x="665.0" y="404.4728" font-family="WenQuanYi Zen Hei" font-size="18.0" font-weight="bold" text-anchor="middle" fill="#1f2937">結果：CSR 匯流排上出現一次寫入　位址 0x600　值 0x5A</text>
+</svg>

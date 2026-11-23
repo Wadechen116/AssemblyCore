@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="356" viewBox="0 0 1000 356">
+<rect x="0" y="0" width="1000" height="356" fill="#ffffff"/>
+<text x="500" y="26" font-family="WenQuanYi Zen Hei" font-size="22.0" font-weight="bold" text-anchor="middle" fill="#1f2937">圖 11　四層各回答一個問題，由下往上越來越深</text>
+<rect x="118" y="50" width="764" height="56" rx="6" fill="#fde9e7" stroke="#c0392b" stroke-width="1.6"/>
+<text x="138" y="84" font-family="WenQuanYi Zen Hei" font-size="18.0" font-weight="bold" text-anchor="start" fill="#1f2937">第 4 層　錯誤偵測</text>
+<text x="328" y="84" font-family="WenQuanYi Zen Hei" font-size="16.2" font-weight="normal" text-anchor="start" fill="#374151">遇到不該執行的指令，硬體怎麼反應？</text>
+<text x="862" y="74" font-family="WenQuanYi Zen Hei" font-size="15.7" font-weight="bold" text-anchor="end" fill="#c0392b">48 份映像</text>
+<text x="862" y="94" font-family="WenQuanYi Zen Hei" font-size="14.5" font-weight="normal" text-anchor="end" fill="#4b5563">以硬體為準</text>
+<rect x="92" y="116" width="816" height="56" rx="6" fill="#fff1dc" stroke="#c0771a" stroke-width="1.6"/>
+<text x="112" y="150" font-family="WenQuanYi Zen Hei" font-size="18.0" font-weight="bold" text-anchor="start" fill="#1f2937">第 3 層　時間</text>
+<text x="302" y="150" font-family="WenQuanYi Zen Hei" font-size="16.2" font-weight="normal" text-anchor="start" fill="#374151">每道指令花幾個週期？</text>
+<text x="888" y="140" font-family="WenQuanYi Zen Hei" font-size="15.7" font-weight="bold" text-anchor="end" fill="#c0771a">8 支程式</text>
+<text x="888" y="160" font-family="WenQuanYi Zen Hei" font-size="14.5" font-weight="normal" text-anchor="end" fill="#4b5563">沒有對錯，量了回填</text>
+<rect x="66" y="182" width="868" height="56" rx="6" fill="#e7f4ea" stroke="#3d8b56" stroke-width="1.6"/>
+<text x="86" y="216" font-family="WenQuanYi Zen Hei" font-size="18.0" font-weight="bold" text-anchor="start" fill="#1f2937">第 2 層　行為</text>
+<text x="276" y="216" font-family="WenQuanYi Zen Hei" font-size="16.2" font-weight="normal" text-anchor="start" fill="#374151">做事的順序和模擬器一樣嗎？</text>
+<text x="914" y="206" font-family="WenQuanYi Zen Hei" font-size="15.7" font-weight="bold" text-anchor="end" fill="#3d8b56">5 支程式</text>
+<text x="914" y="226" font-family="WenQuanYi Zen Hei" font-size="14.5" font-weight="normal" text-anchor="end" fill="#4b5563">有預期的順序</text>
+<rect x="40" y="248" width="920" height="56" rx="6" fill="#e8f0fb" stroke="#3b6fb5" stroke-width="1.6"/>
+<text x="60" y="282" font-family="WenQuanYi Zen Hei" font-size="18.0" font-weight="bold" text-anchor="start" fill="#1f2937">第 1 層　編碼</text>
+<text x="250" y="282" font-family="WenQuanYi Zen Hei" font-size="16.2" font-weight="normal" text-anchor="start" fill="#374151">工具產生的位元組，硬體解成同一道指令嗎？</text>
+<text x="940" y="272" font-family="WenQuanYi Zen Hei" font-size="15.7" font-weight="bold" text-anchor="end" fill="#3b6fb5">10 支程式</text>
+<text x="940" y="292" font-family="WenQuanYi Zen Hei" font-size="14.5" font-weight="normal" text-anchor="end" fill="#4b5563">有預期的值</text>
+<text x="500" y="338" font-family="WenQuanYi Zen Hei" font-size="16.2" font-weight="normal" text-anchor="middle" fill="#4b5563">下面一層不過，上面一層的結果就無法解讀——所以從第 1 層的 c01 開始</text>
+</svg>
