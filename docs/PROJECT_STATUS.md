@@ -86,7 +86,7 @@ M1–M6（畫布、拖放、欄位編輯、工具箱、專案整合、效能與�
 
 ### 2.5 工具（md2pdf）
 
-`AssemblyCoreIDE/tools/md2pdf.cpp`：只用 Qt 把 Markdown 轉成 A4 PDF（支援中文與表格）。用法 `md2pdf INPUT.md OUTPUT.pdf [--title 標題] [--font-size 點數]`。2026-11-23 起：支援圖片（`![說明](檔.svg)`，路徑相對於 Markdown；SVG 以列印解析度讀入，圖寬等於版面寬）；**表格不被頁面切開**（放不下就整張移到下一頁，上方以冒號結尾的引言或標題跟著走；超過一頁長的表格除外）；標題不會單獨留在頁尾；短的程式碼區塊不被切開；`--font-size` 設定內文字級（預設 10，印出來約 7 pt；14.5 約 10 pt）。結尾會報告加了幾個分頁、還有幾張表格被切開。MSVC 上需要專案已有的 `ui/msvc_stdext_compat.h`（已加進 CMake）。
+`AssemblyCoreIDE/tools/md2pdf.cpp`：只用 Qt 把 Markdown 轉成 A4 PDF（支援中文與表格）。用法 `md2pdf INPUT.md OUTPUT.pdf [--title 標題] [--font-size 點數]`。2026-11-23 起：支援圖片（`![說明](檔.svg)`，路徑相對於 Markdown；SVG 以 1800 像素寬讀入，約 260 dpi，圖寬等於版面寬）；**表格不被頁面切開**（放不下就整張移到下一頁，上方以冒號結尾的引言或標題跟著走；超過一頁長的表格除外）；標題不會單獨留在頁尾；短的程式碼區塊不被切開；`--font-size` 設定內文字級（預設 10，印出來約 7 pt；14.5 約 10 pt）。結尾會報告加了幾個分頁、還有幾張表格被切開。MSVC 上需要專案已有的 `ui/msvc_stdext_compat.h`（已加進 CMake）。
 
 ### 2.6 計時器、Status Flag 與長時間執行（2026-11-04，`2bb63fa`、`f0ee607`）
 

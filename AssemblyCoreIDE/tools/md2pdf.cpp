@@ -75,7 +75,7 @@ void loadImages(QTextDocument& doc, const QString& markdown, const QString& dir)
         const QString name = it.next().captured(1);
         QImageReader reader(QFileInfo(name).isAbsolute() ? name : dir + "/" + name);
         if (reader.format() == "svg" && reader.size().isValid())                         // a drawing: enough pixels for print (it is as wide as the page)
-            reader.setScaledSize(reader.size() * (2400.0 / reader.size().width()));
+            reader.setScaledSize(reader.size() * (1800.0 / reader.size().width()));
         QImage img = reader.read();
         if (img.isNull()) { std::fprintf(stderr, "md2pdf: cannot load the image %s\n", qPrintable(name)); continue; }
         doc.addResource(QTextDocument::ImageResource, QUrl(name), img);
