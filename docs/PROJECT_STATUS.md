@@ -245,6 +245,18 @@ M1–M6（畫布、拖放、欄位編輯、工具箱、專案整合、效能與�
 
 測試（`ui_tests.cpp`，三項）：`everyListOfEveryBlockWorks`、`anInstructionFollowsTheListOfAComponentPluggedIntoIt`、`theOptionalListsOfAComponentAreInItsContextMenu`。
 
+### 2.22 積木：可輸入的下拉清單一展開就消失（2026-11-23）
+
+使用者回報：積木上的清單有兩種——彈出式選單可以正常選；另一種真正的下拉清單一展開就消失，無法選。
+
+後者是 `FieldEditor`（可以打字的方框，附一個下拉清單，列出合適的名稱：標籤、CSR、裝置、常數…）。原因：**方框裡的文字剛好是清單中的一項時**（例如跳到 `start`，而程式裡有 `start` 這個標籤），按箭頭展開清單會讓輸入框失去焦點，Qt 的下拉方塊此時自己發出 `activated`（文字等於某一項），程式把它當成「使用者選好了」而關閉整個編輯框。文字不在清單裡的部位（例如數字）不受影響，所以看起來是「有些可以、有些不行」。
+
+修正（`ui/field_editor.cpp`）：只有清單剛被關上（`hidePopup`，同一次呼叫內）之後的 `activated` 才算選取。
+
+順帶（`ui/block_editor.cpp`，`choiceMenuPosition`）：彈出式選單放不下時原本會被系統往上推、蓋在游標上；現在依序放在部位的下方、上方、旁邊，不會蓋住部位本身。
+
+測試：`theDropDownOfATypedPartStaysOpenAndPicks`（每個有清單的可輸入部位：箭頭展開後留著；從清單點一項會成為該部位的值）、`theMenuOfAPartIsNeverUnderThePointer`（定位規則，以及五個範式裡每個選單）。
+
 ## 3. 後續計畫與未完成項目
 
 ### 3.1 等硬體答覆（阻塞模擬結果的可信度）

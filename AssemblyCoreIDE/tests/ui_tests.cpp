@@ -6,6 +6,7 @@
 #include <QtTest>
 
 #include <QDir>
+#include <QStyleOptionComboBox>
 #include <QListWidget>
 #include <QComboBox>
 #include <QTableView>
@@ -4546,6 +4547,140 @@ private slots:
             }
         }
         QVERIFY2(picked >= 12, qPrintable(QString::number(picked)));
+    }
+
+    // The menu of a part never lies over the part (where the pointer is): the long lists (the ALU operation, the conditions) that did not fit under
+    // their part were slid up the screen until they did -- over the pointer, in the middle of the double click that asked for them.
+    void theMenuOfAPartIsNeverUnderThePointer() {
+        namespace B = asmcore::blocks;
+        // where it goes
+        const QRect screen(0, 0, 1920, 1040);
+        auto place = [&](const QSize& menu, const QRect& part) { return QRect(BlockEditor::choiceMenuPosition(menu, part, screen), menu); };
+        const QSize small(134, 90), tall(134, 442), huge(194, 1200);
+        for (const QRect& part : {QRect(500, 100, 60, 22), QRect(500, 500, 60, 22), QRect(500, 900, 60, 22), QRect(500, 1010, 60, 22), QRect(1880, 600, 38, 22), QRect(2, 1015, 30, 22)})
+            for (const QSize& m : {small, tall, huge}) {
+                const QRect g = place(m, part);
+                QVERIFY2(!g.intersects(part), qPrintable(QString("a menu %1x%2 for the part at %3,%4 lies over it (%5,%6)").arg(m.width()).arg(m.height()).arg(part.x()).arg(part.y()).arg(g.x()).arg(g.y())));
+                if (m.height() <= screen.height()) QVERIFY2(screen.contains(g), qPrintable(QString("the menu %1x%2 at %3,%4 is on the screen").arg(m.width()).arg(m.height()).arg(g.x()).arg(g.y())));
+            }
+        QCOMPARE(place(small, QRect(500, 100, 60, 22)).top(), 100 + 22 + 1);                       // under it when there is room
+        QVERIFY(place(tall, QRect(500, 900, 60, 22)).bottom() < 900);                              // over it when there is room only there
+        QVERIFY(place(tall, QRect(500, 700, 60, 22)).bottom() < 700);
+        QVERIFY(place(QSize(134, 800), QRect(500, 500, 60, 22)).left() > 559);                     // beside it when there is room neither under nor over
+        // every pattern of the toolbox, every part with a list: the menu is there, stays, and the pointer is not in it
+        DragRig r(".main\nh: JMP h\n");
+        auto& s = r.ed->session();
+        int menus = 0;
+        for (const auto& entry : r.ed->catalog().entries()) {
+            if (entry.cls != "pattern") continue;
+            std::string err;
+            QVERIFY(s.load(B::serializeDocument(B::importAsm((entry.domains & B::kMain) ? ".main\nh: JMP h\n" : ".peri\nh: JMP h\n", "prog"), s.registry()), err));
+            QApplication::processEvents();
+            s.select({s.document().sections[0].blocks[0].id});
+            emit r.ed->toolbox().activated(QString::fromStdString(entry.id));
+            QApplication::processEvents();
+            r.v().showContent();
+            QApplication::processEvents();
+            for (const auto& t0 : r.sc().editTargets()) {
+                if (t0.options.empty() || t0.flag) continue;
+                BlockScene::EditTarget t = t0;
+                r.v().showBlock(t.rect);
+                QApplication::processEvents();
+                for (const auto& e : r.sc().editTargets()) if (e.blockId == t0.blockId && e.part == t0.part) t = e;
+                const QPoint at = r.at(t.rect.center());
+                QTest::mouseDClick(r.v().viewport(), Qt::LeftButton, Qt::NoModifier, at);
+                QApplication::processEvents();
+                QMenu* m = r.ed->choiceMenu();
+                const QByteArray where = QByteArray(entry.id.c_str()) + " " + t.part.c_str();
+                QVERIFY2(m && m->isVisible(), where.constData());
+                QVERIFY2(!m->geometry().contains(r.v().viewport()->mapToGlobal(at)), (where + ": the menu is under the pointer").constData());
+                QTest::qWait(60);
+                QVERIFY2(r.ed->choiceMenu() == m && m->isVisible(), (where + ": it stays").constData());
+                menus++;
+                m->close();
+                QApplication::processEvents();
+                QTest::qWait(5);
+            }
+        }
+        QVERIFY2(menus >= 8, qPrintable(QString::number(menus)));
+    }
+
+    // The other kind of list: the box that is typed into, with a drop-down of the names that fit (labels, CSRs, numbers ...). Its list opens with the
+    // arrow and stays; an item picked from it is the value. When the text in the box was one of the items (a branch to "start", and there is a label
+    // "start"), opening the list was taken for a choice: the list was gone at once, with the editor.
+    void theDropDownOfATypedPartStaysOpenAndPicks() {
+        DragRig r(".equ LIMIT = 4\n.csr C = 0x120\n.csr D = 0x121\n.main\nstart: MOV CONST(1, 1) -> MAIN_SCRATCHPAD[0..0]\n EXEC_CSR WRITE8 C, 1\nmid: ALU ADD unsigned\n JMP start\n");
+        auto& s = r.ed->session();
+        auto* fe = r.ed->findChild<acide::FieldEditor*>("fieldEditor");
+        QVERIFY(fe);
+        auto arrowOf = [&]() {
+            QStyleOptionComboBox opt;
+            opt.initFrom(fe);
+            opt.editable = true;
+            opt.subControls = QStyle::SC_All;
+            return fe->style()->subControlRect(QStyle::CC_ComboBox, &opt, QStyle::SC_ComboBoxArrow, fe).center();
+        };
+        int opened = 0, inList = 0;
+        // every typed part that has a list: the arrow opens it, and it is still open after the release and a moment later
+        const std::vector<BlockScene::EditTarget> all = r.sc().editTargets();
+        for (const auto& t0 : all) {
+            if (t0.flag || !t0.options.empty()) continue;
+            BlockScene::EditTarget t = t0;
+            r.v().showBlock(t.rect);
+            QApplication::processEvents();
+            for (const auto& e : r.sc().editTargets()) if (e.blockId == t0.blockId && e.part == t0.part) t = e;
+            QTest::mouseDClick(r.v().viewport(), Qt::LeftButton, Qt::NoModifier, r.at(t.rect.center()));
+            QApplication::processEvents();
+            if (!fe->isVisible() || !fe->isEditable()) continue;
+            const QByteArray where = QByteArray(t.part.c_str()) + " '" + t.text.c_str() + "'";
+            if (fe->count() > 0) {
+                const bool textIsAnItem = fe->findText(QString::fromStdString(t.text), Qt::MatchFixedString) >= 0;
+                fe->lineEdit()->setFocus();
+                QApplication::processEvents();
+                QTest::mousePress(fe, Qt::LeftButton, Qt::NoModifier, arrowOf());
+                QApplication::processEvents();
+                QVERIFY2(fe->isOpen() && fe->view()->isVisible(), (where + ": the arrow opens the list").constData());
+                QTest::mouseRelease(fe->view()->viewport(), Qt::LeftButton, Qt::NoModifier, QPoint(-40, -40));
+                QApplication::processEvents();
+                QTest::qWait(120);
+                QVERIFY2(fe->isOpen() && fe->isVisible() && fe->view()->isVisible(), (where + ": ... and it stays open").constData());
+                opened++;
+                if (textIsAnItem) inList++;
+                fe->hidePopup();
+                QApplication::processEvents();
+                QVERIFY2(fe->isOpen() && fe->isVisible(), (where + ": closing the list without a choice leaves the editor").constData());
+            }
+            QTest::keyClick(fe->lineEdit(), Qt::Key_Escape);
+            QApplication::processEvents();
+            QVERIFY(!fe->isVisible());
+        }
+        QVERIFY2(opened >= 3 && inList >= 1, qPrintable(QString("%1 lists opened, %2 of a part whose text is one of the items").arg(opened).arg(inList)));
+        // an item picked from the list is the value
+        std::string jmp;
+        for (const auto& sec : s.document().sections) for (const auto& b : sec.blocks) if (b.type == "jmp") jmp = b.id;
+        BlockScene::EditTarget t;
+        for (const auto& e : r.sc().editTargets()) if (e.blockId == jmp && e.part == "target") t = e;
+        QVERIFY(!t.blockId.empty());
+        QCOMPARE(QString::fromStdString(t.text), QString("start"));
+        QTest::mouseDClick(r.v().viewport(), Qt::LeftButton, Qt::NoModifier, r.at(t.rect.center()));
+        QApplication::processEvents();
+        QVERIFY(fe->isVisible());
+        const int mid = fe->findText("mid");
+        QVERIFY(mid >= 0);
+        QTest::mousePress(fe, Qt::LeftButton, Qt::NoModifier, arrowOf());
+        QTest::mouseRelease(fe, Qt::LeftButton, Qt::NoModifier, arrowOf());
+        QApplication::processEvents();
+        QVERIFY(fe->view()->isVisible());
+        const QRect item = fe->view()->visualRect(fe->model()->index(mid, 0));
+        QTest::qWait(QApplication::doubleClickInterval() + 80);                                    // (a release right after the list opened is ignored by the box)
+        QTest::mouseMove(fe->view()->viewport(), item.center());
+        QTest::mouseClick(fe->view()->viewport(), Qt::LeftButton, Qt::NoModifier, item.center());
+        QApplication::processEvents();
+        QApplication::processEvents();
+        QVERIFY2(!fe->isVisible(), "a choice from the list closes the editor");
+        const asmcore::blocks::Block* b = s.document().find(jmp);
+        const asmcore::blocks::BlockDef* d = s.registry().find("jmp");
+        QCOMPARE(QString::fromStdString(asmcore::blocks::partText(*b, *d, "target", s.registry())), QString("mid"));
     }
 
     void aClosedChoiceIsPickedFromAMenuThatStays() {

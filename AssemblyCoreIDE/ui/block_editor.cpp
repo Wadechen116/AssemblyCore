@@ -22,6 +22,9 @@
 #include <QClipboard>
 #include <QApplication>
 #include <QTimer>
+#include <QScreen>
+#include <QGuiApplication>
+#include <QPointer>
 #include <QVBoxLayout>
 
 #include "blocks/block_tidy.h"
@@ -875,10 +878,6 @@ void BlockEditor::editInstructionParams(const std::string& blockId, const QPoint
                  tr("Cycle time (%1)").arg(names), tr("Related (the hardware around it, the decoder)"), globalPos);
 }
 
-// The names that fit a part: the choices of its field, else the symbols of the kind its socket takes (CSRs, services, devices, numbers, labels, procedures).
-// A closed choice (only the listed values make sense: for / forever, ...) is picked from a menu that opens under the part. A menu is what Windows users
-// know (the right-button menus work the same way) and it stays until something is picked or Esc is pressed; a drop-down list opened in the middle of a double
-// click was closed again by the click that was still going on.
 QString BlockEditor::noneText() { return tr("(none)"); }
 
 // The lists of a block that are not on it now: an optional choice that is empty is not drawn on a component (a number has no "bits" until it is given
@@ -915,6 +914,10 @@ void BlockEditor::addHiddenChoices(QMenu& menu, const std::string& blockId) {
     }
 }
 
+// The names that fit a part: the choices of its field, else the symbols of the kind its socket takes (CSRs, services, devices, numbers, labels, procedures).
+// A closed choice (only the listed values make sense: for / forever, ...) is picked from a menu that opens under the part. A menu is what Windows users
+// know (the right-button menus work the same way) and it stays until something is picked or Esc is pressed; a drop-down list opened in the middle of a double
+// click was closed again by the click that was still going on.
 void BlockEditor::showChoiceMenu(const BlockScene::EditTarget& t) {
     if (choiceMenu_) { choiceMenu_->close(); choiceMenu_->deleteLater(); choiceMenu_ = nullptr; }
     auto* menu = new QMenu(this);
@@ -939,7 +942,29 @@ void BlockEditor::showChoiceMenu(const BlockScene::EditTarget& t) {
     });
     view_->showBlock(t.rect);
     const QRect r = view_->mapFromScene(t.rect).boundingRect();
-    menu->popup(view_->viewport()->mapToGlobal(r.bottomLeft()));
+    const QRect part(view_->viewport()->mapToGlobal(r.topLeft()), r.size());
+    popupChoiceMenu(menu, part);
+}
+
+// Where the menu of a part goes: under it; if there is no room under it, over it; if there is no room there either, beside it. Never over the part itself,
+// which is where the pointer is. (Left to itself a menu that does not fit under the part is slid up the screen until it does -- over the pointer.)
+QPoint BlockEditor::choiceMenuPosition(const QSize& menu, const QRect& part, const QRect& screen) {
+    const int gap = 2;
+    int x = std::max(screen.left(), std::min(part.left(), screen.right() - menu.width() + 1));
+    if (part.bottom() + gap + menu.height() <= screen.bottom() + 1) return QPoint(x, part.bottom() + gap);          // under
+    if (part.top() - gap - menu.height() >= screen.top()) return QPoint(x, part.top() - gap - menu.height());        // over
+    // beside: as high as the screen allows (a list longer than the screen scrolls)
+    const int y = std::max(screen.top(), std::min(part.top(), screen.bottom() - menu.height() + 1));
+    if (part.right() + gap + menu.width() <= screen.right() + 1) return QPoint(part.right() + gap, y);
+    if (part.left() - gap - menu.width() >= screen.left()) return QPoint(part.left() - gap - menu.width(), y);
+    return QPoint(x, part.bottom() + gap);                                                                           // (a screen smaller than the menu: as it was)
+}
+
+void BlockEditor::popupChoiceMenu(QMenu* menu, const QRect& part) {
+    QScreen* screen = QGuiApplication::screenAt(part.center());
+    if (!screen) screen = QGuiApplication::primaryScreen();
+    const QRect area = screen ? screen->availableGeometry() : QRect(0, 0, 1920, 1080);
+    menu->popup(choiceMenuPosition(menu->sizeHint(), part, area));
 }
 
 // Puts a part's new text into the program (one undo step), or says why not.

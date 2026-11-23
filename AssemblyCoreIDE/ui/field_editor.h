@@ -32,6 +32,7 @@ private:
     void showPopupWhenReleased(int tries);
     bool strayClose();
     bool shown_ = false;
+    bool listJustClosed_ = false;                             // the drop-down closed in this very call: an "activated" now is a choice from it
     QElapsedTimer shownClock_;
     void showHint(const QString& text);
     bool open_ = false, editable_ = true;

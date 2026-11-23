@@ -18,6 +18,10 @@ FieldEditor::FieldEditor(QWidget* parent) : QComboBox(parent) {
     setMaxVisibleItems(14);
     connect(this, QOverload<int>::of(&QComboBox::activated), this, [this] {                                       // a choice from the list is the answer
         if (!open_) return;
+        // ... a choice FROM THE LIST: the list was just closed by it. The box also says "activated" by itself when the text in it is one of the items and it
+        // loses the focus -- which is what opening the list does. That was taken for a choice: the list of a part whose text is in its list (a label, the
+        // name of a CSR) opened and was gone at once, with the editor.
+        if (!listJustClosed_) return;
         if (strayClose()) return;
         finish(true, 0);
     });
@@ -89,6 +93,8 @@ bool FieldEditor::strayClose() {
 }
 
 void FieldEditor::hidePopup() {
+    listJustClosed_ = true;                                                                               // (a choice is announced right after this, in the same call)
+    QTimer::singleShot(0, this, [this] { listJustClosed_ = false; });
     QComboBox::hidePopup();
     if (open_ && !editable_) QTimer::singleShot(0, this, [this] {                                          // (after `activated`, if there was a choice)
         if (open_ && !strayClose()) finish(true, 0);

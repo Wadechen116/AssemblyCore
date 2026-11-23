@@ -1,4 +1,5 @@
 #pragma once
+#include <functional>
 // The tab of a .acblk file: one program that can be looked at in two pages -- the blocks, or the assembler text they generate. A pair of
 // radio buttons at the top switches the page. Both pages show the same BlockSession, so a block selected on one is the line marked on the
 // other. (M2: looking only; editing arrives with the next milestone.)
@@ -85,6 +86,7 @@ public:
     QString infoText() const;
     static QString noneText();                                // what the empty option of a list is called in the menus
     void addHiddenChoices(QMenu& menu, const std::string& blockId);   // the optional lists of a block that are not drawn on it (see the .cpp)
+    static QPoint choiceMenuPosition(const QSize& menu, const QRect& part, const QRect& screen);   // where the menu of a part goes (never over the part)
     QMenu* choiceMenu() const { return choiceMenu_; }         // the menu of a closed choice while it is open (for tests)
     void jumpTo(const QString& kind);                         // "floating" / "raw" / "problems": select the next such block and show it (the counts of the status line are links)
     void selectBlock(const std::string& id, bool reveal = true);
@@ -152,6 +154,7 @@ private:
     void beginTextEdit(const BlockScene::EditTarget& t);
     void applyFieldValue(const BlockScene::EditTarget& t, const QString& text);
     QMenu* choiceMenu_ = nullptr;
+    void popupChoiceMenu(QMenu* menu, const QRect& part);
     void refreshExecution(const SimUpdate* update = nullptr);     // the blocks of the lines Main and Peri are executing get one colour each; heat, flash and values on top
     void rebuildPcMap();                                     // which block made the instruction at each pc (while the debugged program is what the blocks generate)
 public:
