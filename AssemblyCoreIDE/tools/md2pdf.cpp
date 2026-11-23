@@ -191,8 +191,8 @@ int main(int argc, char** argv) {
     QTextDocument doc;
     doc.setDefaultFont(base);
     doc.setDocumentMargin(0);
-    loadImages(doc, markdown, QFileInfo(QString::fromLocal8Bit(argv[1])).absolutePath());
     doc.setMarkdown(markdown, QTextDocument::MarkdownDialectGitHub);
+    loadImages(doc, markdown, QFileInfo(QString::fromLocal8Bit(argv[1])).absolutePath());     // (after setMarkdown: that forgets the resources given before)
     styleTables(doc);
 
     QPdfWriter pdf(QString::fromLocal8Bit(argv[2]));

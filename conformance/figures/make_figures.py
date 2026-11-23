@@ -37,7 +37,9 @@ class Fig:
         fam = "DejaVu Sans Mono" if mono else FONT
         size = round(size * SCALE, 1)
         if within is not None and width_of(s, size) > within: problems.append(f"{self.name}: '{s}' is about {width_of(s, size):.0f} wide, the box allows {within}")
-        self.out.append(f'<text x="{x}" y="{y}" font-family="{fam}" font-size="{size}" font-weight="{weight}" text-anchor="{anchor}" fill="{fill}">{esc(s)}</text>')
+        # the CJK font md2pdf has comes without a bold face, and Qt does not thicken it: bold text is also outlined in its own colour
+        bold = f' stroke="{fill}" stroke-width="{round(size * 0.07, 2)}" stroke-linejoin="round"' if weight == "bold" else ""
+        self.out.append(f'<text x="{x}" y="{y}" font-family="{fam}" font-size="{size}" font-weight="{weight}" text-anchor="{anchor}" fill="{fill}"{bold}>{esc(s)}</text>')
     def box(self, x, y, w, h, lines, style=FILE, size=15, bold_first=True, rx=6, dash=None, mono=False):
         """A rectangle with centred lines of text; the first line is the name of the thing."""
         self.rect(x, y, w, h, style, rx, dash=dash)

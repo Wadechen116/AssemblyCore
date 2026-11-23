@@ -1,31 +1,31 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1000" height="500" viewBox="0 0 1000 500">
 <rect x="0" y="0" width="1000" height="500" fill="#ffffff"/>
-<text x="500" y="26" font-family="WenQuanYi Zen Hei" font-size="22.0" font-weight="bold" text-anchor="middle" fill="#1f2937">圖 6　測試平台需要的東西</text>
+<text x="500" y="26" font-family="WenQuanYi Zen Hei" font-size="22.0" font-weight="bold" text-anchor="middle" fill="#1f2937" stroke="#1f2937" stroke-width="1.54" stroke-linejoin="round">圖 6　測試平台需要的東西</text>
 <rect x="40" y="70" width="190" height="70" rx="6" fill="#fff1dc" stroke="#c0771a" stroke-width="1.6"/>
-<text x="135.0" y="99.954" font-family="WenQuanYi Zen Hei" font-size="16.8" font-weight="bold" text-anchor="middle" fill="#1f2937">映像載入</text>
+<text x="135.0" y="99.954" font-family="WenQuanYi Zen Hei" font-size="16.8" font-weight="bold" text-anchor="middle" fill="#1f2937" stroke="#1f2937" stroke-width="1.18" stroke-linejoin="round">映像載入</text>
 <text x="135.0" y="122.15639999999999" font-family="WenQuanYi Zen Hei" font-size="15.1" font-weight="normal" text-anchor="middle" fill="#374151">SRAM 初始值 或 Boot</text>
 <rect x="40" y="170" width="190" height="70" rx="6" fill="#fff1dc" stroke="#c0771a" stroke-width="1.6"/>
-<text x="135.0" y="199.954" font-family="WenQuanYi Zen Hei" font-size="16.8" font-weight="bold" text-anchor="middle" fill="#1f2937">區段位置載入</text>
+<text x="135.0" y="199.954" font-family="WenQuanYi Zen Hei" font-size="16.8" font-weight="bold" text-anchor="middle" fill="#1f2937" stroke="#1f2937" stroke-width="1.18" stroke-linejoin="round">區段位置載入</text>
 <text x="135.0" y="222.15640000000002" font-family="WenQuanYi Zen Hei" font-size="15.1" font-weight="normal" text-anchor="middle" fill="#374151">12 個 layout 暫存器</text>
 <rect x="40" y="270" width="190" height="70" rx="6" fill="#fff1dc" stroke="#c0771a" stroke-width="1.6"/>
-<text x="135.0" y="299.954" font-family="WenQuanYi Zen Hei" font-size="16.8" font-weight="bold" text-anchor="middle" fill="#1f2937">重置與啟動</text>
+<text x="135.0" y="299.954" font-family="WenQuanYi Zen Hei" font-size="16.8" font-weight="bold" text-anchor="middle" fill="#1f2937" stroke="#1f2937" stroke-width="1.18" stroke-linejoin="round">重置與啟動</text>
 <text x="135.0" y="322.1564" font-family="WenQuanYi Zen Hei" font-size="15.1" font-weight="normal" text-anchor="middle" fill="#374151">兩個 sequencer 從 PC 0</text>
 <rect x="310" y="60" width="380" height="290" rx="10" fill="#e7f4ea" stroke="#3d8b56" stroke-width="2.2"/>
-<text x="500" y="90" font-family="WenQuanYi Zen Hei" font-size="19.7" font-weight="bold" text-anchor="middle" fill="#1f2937">受測設計（DUT）</text>
+<text x="500" y="90" font-family="WenQuanYi Zen Hei" font-size="19.7" font-weight="bold" text-anchor="middle" fill="#1f2937" stroke="#1f2937" stroke-width="1.38" stroke-linejoin="round">受測設計（DUT）</text>
 <rect x="330" y="110" width="160" height="56" rx="6" fill="#ffffff" stroke="#3d8b56" stroke-width="1.6"/>
-<text x="410.0" y="144.0552" font-family="WenQuanYi Zen Hei" font-size="16.8" font-weight="bold" text-anchor="middle" fill="#1f2937">程式 SRAM</text>
+<text x="410.0" y="144.0552" font-family="WenQuanYi Zen Hei" font-size="16.8" font-weight="bold" text-anchor="middle" fill="#1f2937" stroke="#1f2937" stroke-width="1.18" stroke-linejoin="round">程式 SRAM</text>
 <rect x="510" y="110" width="160" height="56" rx="6" fill="#ffffff" stroke="#3d8b56" stroke-width="1.6"/>
-<text x="590.0" y="144.0552" font-family="WenQuanYi Zen Hei" font-size="16.8" font-weight="bold" text-anchor="middle" fill="#1f2937">layout 暫存器</text>
+<text x="590.0" y="144.0552" font-family="WenQuanYi Zen Hei" font-size="16.8" font-weight="bold" text-anchor="middle" fill="#1f2937" stroke="#1f2937" stroke-width="1.18" stroke-linejoin="round">layout 暫存器</text>
 <rect x="330" y="190" width="160" height="60" rx="6" fill="#ffffff" stroke="#3d8b56" stroke-width="1.6"/>
-<text x="410.0" y="214.954" font-family="WenQuanYi Zen Hei" font-size="16.8" font-weight="bold" text-anchor="middle" fill="#1f2937">Main</text>
+<text x="410.0" y="214.954" font-family="WenQuanYi Zen Hei" font-size="16.8" font-weight="bold" text-anchor="middle" fill="#1f2937" stroke="#1f2937" stroke-width="1.18" stroke-linejoin="round">Main</text>
 <text x="410.0" y="237.15640000000002" font-family="WenQuanYi Zen Hei" font-size="15.1" font-weight="normal" text-anchor="middle" fill="#374151">sequencer</text>
 <rect x="510" y="190" width="160" height="60" rx="6" fill="#ffffff" stroke="#3d8b56" stroke-width="1.6"/>
-<text x="590.0" y="214.954" font-family="WenQuanYi Zen Hei" font-size="16.8" font-weight="bold" text-anchor="middle" fill="#1f2937">Peri</text>
+<text x="590.0" y="214.954" font-family="WenQuanYi Zen Hei" font-size="16.8" font-weight="bold" text-anchor="middle" fill="#1f2937" stroke="#1f2937" stroke-width="1.18" stroke-linejoin="round">Peri</text>
 <text x="590.0" y="237.15640000000002" font-family="WenQuanYi Zen Hei" font-size="15.1" font-weight="normal" text-anchor="middle" fill="#374151">sequencer</text>
 <rect x="330" y="276" width="160" height="56" rx="6" fill="#ffffff" stroke="#3d8b56" stroke-width="1.6"/>
-<text x="410.0" y="310.0552" font-family="WenQuanYi Zen Hei" font-size="16.8" font-weight="bold" text-anchor="middle" fill="#1f2937">CSR 匯流排</text>
+<text x="410.0" y="310.0552" font-family="WenQuanYi Zen Hei" font-size="16.8" font-weight="bold" text-anchor="middle" fill="#1f2937" stroke="#1f2937" stroke-width="1.18" stroke-linejoin="round">CSR 匯流排</text>
 <rect x="510" y="276" width="160" height="56" rx="6" fill="#ffffff" stroke="#3d8b56" stroke-width="1.6"/>
-<text x="590.0" y="310.0552" font-family="WenQuanYi Zen Hei" font-size="16.8" font-weight="bold" text-anchor="middle" fill="#1f2937">I2C 主控</text>
+<text x="590.0" y="310.0552" font-family="WenQuanYi Zen Hei" font-size="16.8" font-weight="bold" text-anchor="middle" fill="#1f2937" stroke="#1f2937" stroke-width="1.18" stroke-linejoin="round">I2C 主控</text>
 <line x1="230" y1="105" x2="330" y2="132" stroke="#6b7280" stroke-width="1.8"/>
 <polygon points="330.0,132.0 318.1,134.0 320.7,124.3" fill="#6b7280"/>
 <line x1="230" y1="205" x2="270" y2="205" stroke="#6b7280" stroke-width="1.8"/>
@@ -38,11 +38,11 @@
 <line x1="296" y1="220" x2="330" y2="220" stroke="#6b7280" stroke-width="1.8"/>
 <polygon points="330.0,220.0 319.0,225.0 319.0,215.0" fill="#6b7280"/>
 <rect x="770" y="70" width="200" height="84" rx="6" fill="#fff1dc" stroke="#c0771a" stroke-width="1.6"/>
-<text x="870.0" y="95.8528" font-family="WenQuanYi Zen Hei" font-size="16.8" font-weight="bold" text-anchor="middle" fill="#1f2937">I2C 裝置模型</text>
+<text x="870.0" y="95.8528" font-family="WenQuanYi Zen Hei" font-size="16.8" font-weight="bold" text-anchor="middle" fill="#1f2937" stroke="#1f2937" stroke-width="1.18" stroke-linejoin="round">I2C 裝置模型</text>
 <text x="870.0" y="118.0552" font-family="WenQuanYi Zen Hei" font-size="15.1" font-weight="normal" text-anchor="middle" fill="#374151">位址 0x2A – 0x2F</text>
 <text x="870.0" y="140.2576" font-family="WenQuanYi Zen Hei" font-size="15.1" font-weight="normal" text-anchor="middle" fill="#374151">各有指定的回應</text>
 <rect x="770" y="184" width="200" height="84" rx="6" fill="#fff1dc" stroke="#c0771a" stroke-width="1.6"/>
-<text x="870.0" y="209.8528" font-family="WenQuanYi Zen Hei" font-size="16.8" font-weight="bold" text-anchor="middle" fill="#1f2937">錯誤與停止狀態</text>
+<text x="870.0" y="209.8528" font-family="WenQuanYi Zen Hei" font-size="16.8" font-weight="bold" text-anchor="middle" fill="#1f2937" stroke="#1f2937" stroke-width="1.18" stroke-linejoin="round">錯誤與停止狀態</text>
 <text x="870.0" y="232.0552" font-family="WenQuanYi Zen Hei" font-size="15.1" font-weight="normal" text-anchor="middle" fill="#374151">Main 與 Peri 各自的</text>
 <text x="870.0" y="254.2576" font-family="WenQuanYi Zen Hei" font-size="15.1" font-weight="normal" text-anchor="middle" fill="#374151">只有第 4 層需要</text>
 <line x1="670" y1="304" x2="730" y2="304" stroke="#6b7280" stroke-width="1.8"/>
@@ -53,11 +53,11 @@
 <line x1="670" y1="220" x2="770" y2="225" stroke="#6b7280" stroke-width="1.8"/>
 <polygon points="770.0,225.0 758.8,229.4 759.3,219.5" fill="#6b7280"/>
 <rect x="250" y="400" width="300" height="76" rx="6" fill="#fff1dc" stroke="#c0771a" stroke-width="1.6"/>
-<text x="400.0" y="421.8528" font-family="WenQuanYi Zen Hei" font-size="16.8" font-weight="bold" text-anchor="middle" fill="#1f2937">CSR 寫入紀錄</text>
+<text x="400.0" y="421.8528" font-family="WenQuanYi Zen Hei" font-size="16.8" font-weight="bold" text-anchor="middle" fill="#1f2937" stroke="#1f2937" stroke-width="1.18" stroke-linejoin="round">CSR 寫入紀錄</text>
 <text x="400.0" y="444.0552" font-family="WenQuanYi Zen Hei" font-size="15.1" font-weight="normal" text-anchor="middle" fill="#374151">位址、值、第幾個 ISA 週期</text>
 <text x="400.0" y="466.2576" font-family="WenQuanYi Zen Hei" font-size="15.1" font-weight="normal" text-anchor="middle" fill="#374151">所有測試都靠它</text>
 <rect x="590" y="400" width="300" height="76" rx="6" fill="#fff1dc" stroke="#c0771a" stroke-width="1.6"/>
-<text x="740.0" y="421.8528" font-family="WenQuanYi Zen Hei" font-size="16.8" font-weight="bold" text-anchor="middle" fill="#1f2937">I2C 交易紀錄</text>
+<text x="740.0" y="421.8528" font-family="WenQuanYi Zen Hei" font-size="16.8" font-weight="bold" text-anchor="middle" fill="#1f2937" stroke="#1f2937" stroke-width="1.18" stroke-linejoin="round">I2C 交易紀錄</text>
 <text x="740.0" y="444.0552" font-family="WenQuanYi Zen Hei" font-size="15.1" font-weight="normal" text-anchor="middle" fill="#374151">裝置位址、讀或寫、資料、ACK</text>
 <text x="740.0" y="466.2576" font-family="WenQuanYi Zen Hei" font-size="15.1" font-weight="normal" text-anchor="middle" fill="#374151">第 2 層需要</text>
 <line x1="410" y1="332" x2="410" y2="400" stroke="#6b7280" stroke-width="1.8"/>

@@ -1,9 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1000" height="560" viewBox="0 0 1000 560">
 <rect x="0" y="0" width="1000" height="560" fill="#ffffff"/>
-<text x="500" y="26" font-family="WenQuanYi Zen Hei" font-size="22.0" font-weight="bold" text-anchor="middle" fill="#1f2937">圖 8　b01：用三次寫入的先後，判斷計時器是兩顆還是一顆</text>
+<text x="500" y="26" font-family="WenQuanYi Zen Hei" font-size="22.0" font-weight="bold" text-anchor="middle" fill="#1f2937" stroke="#1f2937" stroke-width="1.54" stroke-linejoin="round">圖 8　b01：用三次寫入的先後，判斷計時器是兩顆還是一顆</text>
 <rect x="20" y="46" width="960" height="240" rx="8" fill="#f6fbf7" stroke="#b5d8bf" stroke-width="1.2"/>
-<text x="40" y="72" font-family="WenQuanYi Zen Hei" font-size="17.4" font-weight="bold" text-anchor="start" fill="#3d8b56">兩顆獨立的計時器（規格的定義）</text>
-<text x="34" y="122" font-family="WenQuanYi Zen Hei" font-size="16.8" font-weight="bold" text-anchor="start" fill="#1f2937">Main</text>
+<text x="40" y="72" font-family="WenQuanYi Zen Hei" font-size="17.4" font-weight="bold" text-anchor="start" fill="#3d8b56" stroke="#3d8b56" stroke-width="1.22" stroke-linejoin="round">兩顆獨立的計時器（規格的定義）</text>
+<text x="34" y="122" font-family="WenQuanYi Zen Hei" font-size="16.8" font-weight="bold" text-anchor="start" fill="#1f2937" stroke="#1f2937" stroke-width="1.18" stroke-linejoin="round">Main</text>
 <line x1="110" y1="136" x2="800" y2="136" stroke="#c9ced6" stroke-width="1.2"/>
 <rect x="110" y="96" width="70" height="40" rx="6" fill="#e8f0fb" stroke="#3b6fb5" stroke-width="1.6"/>
 <text x="145.0" y="121.22" font-family="WenQuanYi Zen Hei" font-size="14.5" font-weight="normal" text-anchor="middle" fill="#1f2937">短</text>
@@ -17,14 +17,14 @@
 <text x="641.0" y="121.22" font-family="WenQuanYi Zen Hei" font-size="14.5" font-weight="normal" text-anchor="middle" fill="#1f2937">長</text>
 <line x1="182" y1="88" x2="182" y2="150" stroke="#3b6fb5" stroke-width="2.2"/>
 <circle cx="182" cy="136" r="6" fill="#3b6fb5"/>
-<text x="182" y="168" font-family="WenQuanYi Zen Hei" font-size="15.7" font-weight="bold" text-anchor="middle" fill="#3b6fb5">RES+0</text>
+<text x="182" y="168" font-family="WenQuanYi Zen Hei" font-size="15.7" font-weight="bold" text-anchor="middle" fill="#3b6fb5" stroke="#3b6fb5" stroke-width="1.1" stroke-linejoin="round">RES+0</text>
 <line x1="256" y1="88" x2="256" y2="150" stroke="#3b6fb5" stroke-width="2.2"/>
 <circle cx="256" cy="136" r="6" fill="#3b6fb5"/>
-<text x="256" y="168" font-family="WenQuanYi Zen Hei" font-size="15.7" font-weight="bold" text-anchor="middle" fill="#3b6fb5">RES+1</text>
+<text x="256" y="168" font-family="WenQuanYi Zen Hei" font-size="15.7" font-weight="bold" text-anchor="middle" fill="#3b6fb5" stroke="#3b6fb5" stroke-width="1.1" stroke-linejoin="round">RES+1</text>
 <line x1="718" y1="88" x2="718" y2="150" stroke="#3d8b56" stroke-width="2.2"/>
 <circle cx="718" cy="136" r="6" fill="#3d8b56"/>
-<text x="718" y="168" font-family="WenQuanYi Zen Hei" font-size="15.7" font-weight="bold" text-anchor="middle" fill="#3d8b56">完成標記</text>
-<text x="34" y="222" font-family="WenQuanYi Zen Hei" font-size="16.8" font-weight="bold" text-anchor="start" fill="#1f2937">Peri</text>
+<text x="718" y="168" font-family="WenQuanYi Zen Hei" font-size="15.7" font-weight="bold" text-anchor="middle" fill="#3d8b56" stroke="#3d8b56" stroke-width="1.1" stroke-linejoin="round">完成標記</text>
+<text x="34" y="222" font-family="WenQuanYi Zen Hei" font-size="16.8" font-weight="bold" text-anchor="start" fill="#1f2937" stroke="#1f2937" stroke-width="1.18" stroke-linejoin="round">Peri</text>
 <line x1="110" y1="236" x2="800" y2="236" stroke="#c9ced6" stroke-width="1.2"/>
 <rect x="110" y="196" width="232" height="40" rx="6" fill="#fff1dc" stroke="#c0771a" stroke-width="1.6"/>
 <text x="226.0" y="221.22" font-family="WenQuanYi Zen Hei" font-size="14.5" font-weight="normal" text-anchor="middle" fill="#1f2937">長（65000 tick）</text>
@@ -32,16 +32,16 @@
 <text x="462.0" y="221.22" font-family="WenQuanYi Zen Hei" font-size="14.5" font-weight="normal" text-anchor="middle" fill="#1f2937">長（65000 tick）</text>
 <line x1="580" y1="188" x2="580" y2="250" stroke="#c0771a" stroke-width="2.2"/>
 <circle cx="580" cy="236" r="6" fill="#c0771a"/>
-<text x="580" y="268" font-family="WenQuanYi Zen Hei" font-size="15.7" font-weight="bold" text-anchor="middle" fill="#c0771a">RES+8</text>
+<text x="580" y="268" font-family="WenQuanYi Zen Hei" font-size="15.7" font-weight="bold" text-anchor="middle" fill="#c0771a" stroke="#c0771a" stroke-width="1.1" stroke-linejoin="round">RES+8</text>
 <rect x="820" y="110" width="146" height="130" rx="6" fill="#ffffff" stroke="#3d8b56" stroke-width="1.6"/>
-<text x="893.0" y="137.97279999999998" font-family="WenQuanYi Zen Hei" font-size="16.2" font-weight="bold" text-anchor="middle" fill="#1f2937">先後順序</text>
+<text x="893.0" y="137.97279999999998" font-family="WenQuanYi Zen Hei" font-size="16.2" font-weight="bold" text-anchor="middle" fill="#1f2937" stroke="#1f2937" stroke-width="1.13" stroke-linejoin="round">先後順序</text>
 <text x="893.0" y="159.40959999999998" font-family="WenQuanYi Zen Hei" font-size="14.5" font-weight="normal" text-anchor="middle" fill="#374151">RES+0</text>
 <text x="893.0" y="180.84639999999996" font-family="WenQuanYi Zen Hei" font-size="14.5" font-weight="normal" text-anchor="middle" fill="#374151">→ RES+1</text>
 <text x="893.0" y="202.28319999999997" font-family="WenQuanYi Zen Hei" font-size="14.5" font-weight="normal" text-anchor="middle" fill="#374151">→ RES+8</text>
 <text x="893.0" y="223.71999999999997" font-family="WenQuanYi Zen Hei" font-size="14.5" font-weight="normal" text-anchor="middle" fill="#374151">→ 完成標記</text>
 <rect x="20" y="304" width="960" height="240" rx="8" fill="#fef6f5" stroke="#ecc0bb" stroke-width="1.2"/>
-<text x="40" y="330" font-family="WenQuanYi Zen Hei" font-size="17.4" font-weight="bold" text-anchor="start" fill="#c0392b">只有一顆共用的計時器（和規格不同）</text>
-<text x="34" y="380" font-family="WenQuanYi Zen Hei" font-size="16.8" font-weight="bold" text-anchor="start" fill="#1f2937">Main</text>
+<text x="40" y="330" font-family="WenQuanYi Zen Hei" font-size="17.4" font-weight="bold" text-anchor="start" fill="#c0392b" stroke="#c0392b" stroke-width="1.22" stroke-linejoin="round">只有一顆共用的計時器（和規格不同）</text>
+<text x="34" y="380" font-family="WenQuanYi Zen Hei" font-size="16.8" font-weight="bold" text-anchor="start" fill="#1f2937" stroke="#1f2937" stroke-width="1.18" stroke-linejoin="round">Main</text>
 <line x1="110" y1="394" x2="800" y2="394" stroke="#c9ced6" stroke-width="1.2"/>
 <rect x="110" y="354" width="70" height="40" rx="6" fill="#e8f0fb" stroke="#3b6fb5" stroke-width="1.6"/>
 <text x="145.0" y="379.22" font-family="WenQuanYi Zen Hei" font-size="14.5" font-weight="normal" text-anchor="middle" fill="#1f2937">短</text>
@@ -51,22 +51,22 @@
 <text x="333.0" y="379.22" font-family="WenQuanYi Zen Hei" font-size="14.5" font-weight="normal" text-anchor="middle" fill="#1f2937">長</text>
 <line x1="182" y1="346" x2="182" y2="408" stroke="#3b6fb5" stroke-width="2.2"/>
 <circle cx="182" cy="394" r="6" fill="#3b6fb5"/>
-<text x="182" y="426" font-family="WenQuanYi Zen Hei" font-size="15.7" font-weight="bold" text-anchor="middle" fill="#3b6fb5">RES+0</text>
+<text x="182" y="426" font-family="WenQuanYi Zen Hei" font-size="15.7" font-weight="bold" text-anchor="middle" fill="#3b6fb5" stroke="#3b6fb5" stroke-width="1.1" stroke-linejoin="round">RES+0</text>
 <line x1="256" y1="346" x2="256" y2="408" stroke="#3b6fb5" stroke-width="2.2"/>
 <circle cx="256" cy="394" r="6" fill="#3b6fb5"/>
-<text x="256" y="426" font-family="WenQuanYi Zen Hei" font-size="15.7" font-weight="bold" text-anchor="middle" fill="#3b6fb5">RES+1</text>
-<text x="34" y="480" font-family="WenQuanYi Zen Hei" font-size="16.8" font-weight="bold" text-anchor="start" fill="#1f2937">Peri</text>
+<text x="256" y="426" font-family="WenQuanYi Zen Hei" font-size="15.7" font-weight="bold" text-anchor="middle" fill="#3b6fb5" stroke="#3b6fb5" stroke-width="1.1" stroke-linejoin="round">RES+1</text>
+<text x="34" y="480" font-family="WenQuanYi Zen Hei" font-size="16.8" font-weight="bold" text-anchor="start" fill="#1f2937" stroke="#1f2937" stroke-width="1.18" stroke-linejoin="round">Peri</text>
 <line x1="110" y1="494" x2="800" y2="494" stroke="#c9ced6" stroke-width="1.2"/>
 <rect x="110" y="454" width="70" height="40" rx="6" fill="#fde9e7" stroke="#c0392b" stroke-width="1.6"/>
 <text x="145.0" y="479.22" font-family="WenQuanYi Zen Hei" font-size="14.5" font-weight="normal" text-anchor="middle" fill="#1f2937">被蓋掉</text>
 <line x1="184" y1="446" x2="184" y2="508" stroke="#c0392b" stroke-width="2.2"/>
 <circle cx="184" cy="494" r="6" fill="#c0392b"/>
-<text x="184" y="526" font-family="WenQuanYi Zen Hei" font-size="15.7" font-weight="bold" text-anchor="middle" fill="#c0392b">RES+8 提前出現</text>
+<text x="184" y="526" font-family="WenQuanYi Zen Hei" font-size="15.7" font-weight="bold" text-anchor="middle" fill="#c0392b" stroke="#c0392b" stroke-width="1.1" stroke-linejoin="round">RES+8 提前出現</text>
 <text x="420" y="372" font-family="WenQuanYi Zen Hei" font-size="14.5" font-weight="normal" text-anchor="start" fill="#6b7280">（之後和上面相同）</text>
 <text x="330" y="470" font-family="WenQuanYi Zen Hei" font-size="15.7" font-weight="normal" text-anchor="start" fill="#c0392b">Main 啟動計時器時，把 Peri 正在等的那一次蓋掉了，</text>
 <text x="330" y="490" font-family="WenQuanYi Zen Hei" font-size="15.7" font-weight="normal" text-anchor="start" fill="#c0392b">Peri 跟著 Main 的短計時一起「完成」。</text>
 <rect x="820" y="368" width="146" height="130" rx="6" fill="#ffffff" stroke="#c0392b" stroke-width="1.6"/>
-<text x="893.0" y="406.69120000000004" font-family="WenQuanYi Zen Hei" font-size="16.2" font-weight="bold" text-anchor="middle" fill="#1f2937">判定</text>
+<text x="893.0" y="406.69120000000004" font-family="WenQuanYi Zen Hei" font-size="16.2" font-weight="bold" text-anchor="middle" fill="#1f2937" stroke="#1f2937" stroke-width="1.13" stroke-linejoin="round">判定</text>
 <text x="893.0" y="428.12800000000004" font-family="WenQuanYi Zen Hei" font-size="14.5" font-weight="normal" text-anchor="middle" fill="#374151">RES+8 不晚於</text>
 <text x="893.0" y="449.56480000000005" font-family="WenQuanYi Zen Hei" font-size="14.5" font-weight="normal" text-anchor="middle" fill="#374151">RES+1</text>
 <text x="893.0" y="471.00160000000005" font-family="WenQuanYi Zen Hei" font-size="14.5" font-weight="normal" text-anchor="middle" fill="#374151">→ 只有一顆</text>

@@ -1,51 +1,51 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1000" height="500" viewBox="0 0 1000 500">
 <rect x="0" y="0" width="1000" height="500" fill="#ffffff"/>
-<text x="500" y="26" font-family="WenQuanYi Zen Hei" font-size="22.0" font-weight="bold" text-anchor="middle" fill="#1f2937">圖 1　整件事的全貌：誰做什麼、資料怎麼流動</text>
+<text x="500" y="26" font-family="WenQuanYi Zen Hei" font-size="22.0" font-weight="bold" text-anchor="middle" fill="#1f2937" stroke="#1f2937" stroke-width="1.54" stroke-linejoin="round">圖 1　整件事的全貌：誰做什麼、資料怎麼流動</text>
 <rect x="20" y="48" width="440" height="330" rx="10" fill="#f7faff" stroke="#b7cbe8" stroke-width="1.2"/>
-<text x="240" y="72" font-family="WenQuanYi Zen Hei" font-size="18.6" font-weight="bold" text-anchor="middle" fill="#3b6fb5">軟體這一側（我們）</text>
+<text x="240" y="72" font-family="WenQuanYi Zen Hei" font-size="18.6" font-weight="bold" text-anchor="middle" fill="#3b6fb5" stroke="#3b6fb5" stroke-width="1.3" stroke-linejoin="round">軟體這一側（我們）</text>
 <rect x="540" y="48" width="440" height="330" rx="10" fill="#f5fbf6" stroke="#b5d8bf" stroke-width="1.2"/>
-<text x="760" y="72" font-family="WenQuanYi Zen Hei" font-size="18.6" font-weight="bold" text-anchor="middle" fill="#3d8b56">硬體這一側（你們）</text>
+<text x="760" y="72" font-family="WenQuanYi Zen Hei" font-size="18.6" font-weight="bold" text-anchor="middle" fill="#3d8b56" stroke="#3d8b56" stroke-width="1.3" stroke-linejoin="round">硬體這一側（你們）</text>
 <rect x="40" y="90" width="180" height="62" rx="6" fill="#f4f5f7" stroke="#8a93a0" stroke-width="1.6"/>
-<text x="130.0" y="115.78" font-family="WenQuanYi Zen Hei" font-size="17.4" font-weight="bold" text-anchor="middle" fill="#1f2937">測試原始碼</text>
+<text x="130.0" y="115.78" font-family="WenQuanYi Zen Hei" font-size="17.4" font-weight="bold" text-anchor="middle" fill="#1f2937" stroke="#1f2937" stroke-width="1.22" stroke-linejoin="round">測試原始碼</text>
 <text x="130.0" y="138.748" font-family="WenQuanYi Zen Hei" font-size="15.7" font-weight="normal" text-anchor="middle" fill="#374151">*.asm</text>
 <rect x="260" y="90" width="180" height="62" rx="6" fill="#e8f0fb" stroke="#3b6fb5" stroke-width="1.6"/>
-<text x="350.0" y="115.78" font-family="WenQuanYi Zen Hei" font-size="17.4" font-weight="bold" text-anchor="middle" fill="#1f2937">組譯器</text>
+<text x="350.0" y="115.78" font-family="WenQuanYi Zen Hei" font-size="17.4" font-weight="bold" text-anchor="middle" fill="#1f2937" stroke="#1f2937" stroke-width="1.22" stroke-linejoin="round">組譯器</text>
 <text x="350.0" y="138.748" font-family="WenQuanYi Zen Hei" font-size="15.7" font-weight="normal" text-anchor="middle" fill="#374151">asmc.exe</text>
 <line x1="220" y1="121" x2="260" y2="121" stroke="#6b7280" stroke-width="1.8"/>
 <polygon points="260.0,121.0 249.0,126.0 249.0,116.0" fill="#6b7280"/>
 <rect x="260" y="190" width="180" height="70" rx="6" fill="#f4f5f7" stroke="#8a93a0" stroke-width="1.6"/>
-<text x="350.0" y="219.78" font-family="WenQuanYi Zen Hei" font-size="17.4" font-weight="bold" text-anchor="middle" fill="#1f2937">映像＋區段位置</text>
+<text x="350.0" y="219.78" font-family="WenQuanYi Zen Hei" font-size="17.4" font-weight="bold" text-anchor="middle" fill="#1f2937" stroke="#1f2937" stroke-width="1.22" stroke-linejoin="round">映像＋區段位置</text>
 <text x="350.0" y="242.748" font-family="WenQuanYi Zen Hei" font-size="15.7" font-weight="normal" text-anchor="middle" fill="#374151">out\&lt;測試名&gt;\</text>
 <line x1="350" y1="152" x2="350" y2="190" stroke="#6b7280" stroke-width="1.8"/>
 <polygon points="350.0,190.0 345.0,179.0 355.0,179.0" fill="#6b7280"/>
 <rect x="40" y="190" width="180" height="70" rx="6" fill="#e8f0fb" stroke="#3b6fb5" stroke-width="1.6"/>
-<text x="130.0" y="219.78" font-family="WenQuanYi Zen Hei" font-size="17.4" font-weight="bold" text-anchor="middle" fill="#1f2937">模擬器（模型）</text>
+<text x="130.0" y="219.78" font-family="WenQuanYi Zen Hei" font-size="17.4" font-weight="bold" text-anchor="middle" fill="#1f2937" stroke="#1f2937" stroke-width="1.22" stroke-linejoin="round">模擬器（模型）</text>
 <text x="130.0" y="242.748" font-family="WenQuanYi Zen Hei" font-size="15.7" font-weight="normal" text-anchor="middle" fill="#374151">asmsim.exe</text>
 <line x1="260" y1="225" x2="220" y2="225" stroke="#6b7280" stroke-width="1.8"/>
 <polygon points="220.0,225.0 231.0,220.0 231.0,230.0" fill="#6b7280"/>
 <rect x="40" y="296" width="400" height="64" rx="6" fill="#f4f5f7" stroke="#8a93a0" stroke-width="1.6"/>
-<text x="240.0" y="322.78000000000003" font-family="WenQuanYi Zen Hei" font-size="17.4" font-weight="bold" text-anchor="middle" fill="#1f2937">預期結果</text>
+<text x="240.0" y="322.78000000000003" font-family="WenQuanYi Zen Hei" font-size="17.4" font-weight="bold" text-anchor="middle" fill="#1f2937" stroke="#1f2937" stroke-width="1.22" stroke-linejoin="round">預期結果</text>
 <text x="240.0" y="345.74800000000005" font-family="WenQuanYi Zen Hei" font-size="15.7" font-weight="normal" text-anchor="middle" fill="#374151">EXPECTED.md　TIMING.md　FAULTS.md</text>
 <line x1="130" y1="260" x2="130" y2="296" stroke="#6b7280" stroke-width="1.8"/>
 <polygon points="130.0,296.0 125.0,285.0 135.0,285.0" fill="#6b7280"/>
 <rect x="560" y="190" width="180" height="70" rx="6" fill="#e7f4ea" stroke="#3d8b56" stroke-width="1.6"/>
-<text x="650.0" y="219.78" font-family="WenQuanYi Zen Hei" font-size="17.4" font-weight="bold" text-anchor="middle" fill="#1f2937">載入</text>
+<text x="650.0" y="219.78" font-family="WenQuanYi Zen Hei" font-size="17.4" font-weight="bold" text-anchor="middle" fill="#1f2937" stroke="#1f2937" stroke-width="1.22" stroke-linejoin="round">載入</text>
 <text x="650.0" y="242.748" font-family="WenQuanYi Zen Hei" font-size="15.7" font-weight="normal" text-anchor="middle" fill="#374151">RTL 模擬或 FPGA</text>
 <line x1="440" y1="225" x2="560" y2="225" stroke="#3b6fb5" stroke-width="2.6"/>
 <polygon points="560.0,225.0 549.0,230.0 549.0,220.0" fill="#3b6fb5"/>
 <text x="500" y="214" font-family="WenQuanYi Zen Hei" font-size="15.1" font-weight="normal" text-anchor="middle" fill="#3b6fb5">① 交付</text>
 <rect x="780" y="190" width="180" height="70" rx="6" fill="#e7f4ea" stroke="#3d8b56" stroke-width="1.6"/>
-<text x="870.0" y="219.78" font-family="WenQuanYi Zen Hei" font-size="17.4" font-weight="bold" text-anchor="middle" fill="#1f2937">執行</text>
+<text x="870.0" y="219.78" font-family="WenQuanYi Zen Hei" font-size="17.4" font-weight="bold" text-anchor="middle" fill="#1f2937" stroke="#1f2937" stroke-width="1.22" stroke-linejoin="round">執行</text>
 <text x="870.0" y="242.748" font-family="WenQuanYi Zen Hei" font-size="15.7" font-weight="normal" text-anchor="middle" fill="#374151">到完成標記為止</text>
 <line x1="740" y1="225" x2="780" y2="225" stroke="#6b7280" stroke-width="1.8"/>
 <polygon points="780.0,225.0 769.0,230.0 769.0,220.0" fill="#6b7280"/>
 <rect x="560" y="296" width="400" height="64" rx="6" fill="#fff1dc" stroke="#c0771a" stroke-width="1.6"/>
-<text x="760.0" y="322.78000000000003" font-family="WenQuanYi Zen Hei" font-size="17.4" font-weight="bold" text-anchor="middle" fill="#1f2937">② 記錄</text>
+<text x="760.0" y="322.78000000000003" font-family="WenQuanYi Zen Hei" font-size="17.4" font-weight="bold" text-anchor="middle" fill="#1f2937" stroke="#1f2937" stroke-width="1.22" stroke-linejoin="round">② 記錄</text>
 <text x="760.0" y="345.74800000000005" font-family="WenQuanYi Zen Hei" font-size="15.7" font-weight="normal" text-anchor="middle" fill="#374151">CSR 寫入　I2C 交易　週期數　錯誤狀態</text>
 <line x1="870" y1="260" x2="870" y2="296" stroke="#6b7280" stroke-width="1.8"/>
 <polygon points="870.0,296.0 865.0,285.0 875.0,285.0" fill="#6b7280"/>
 <rect x="300" y="410" width="400" height="62" rx="6" fill="#fffbe6" stroke="#b59b2a" stroke-width="1.6"/>
-<text x="500.0" y="435.78000000000003" font-family="WenQuanYi Zen Hei" font-size="17.4" font-weight="bold" text-anchor="middle" fill="#1f2937">③ 比對：實際看到的 與 預期結果</text>
+<text x="500.0" y="435.78000000000003" font-family="WenQuanYi Zen Hei" font-size="17.4" font-weight="bold" text-anchor="middle" fill="#1f2937" stroke="#1f2937" stroke-width="1.22" stroke-linejoin="round">③ 比對：實際看到的 與 預期結果</text>
 <text x="500.0" y="458.74800000000005" font-family="WenQuanYi Zen Hei" font-size="15.7" font-weight="normal" text-anchor="middle" fill="#374151">不同之處就是我們要的資訊</text>
 <line x1="240" y1="360" x2="240" y2="441" stroke="#6b7280" stroke-width="1.8"/>
 <line x1="240" y1="441" x2="300" y2="441" stroke="#6b7280" stroke-width="1.8"/>

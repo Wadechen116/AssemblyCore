@@ -1,37 +1,37 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1000" height="540" viewBox="0 0 1000 540">
 <rect x="0" y="0" width="1000" height="540" fill="#ffffff"/>
-<text x="500" y="26" font-family="WenQuanYi Zen Hei" font-size="22.0" font-weight="bold" text-anchor="middle" fill="#1f2937">圖 10　第 4 層：一份故意寫壞的映像怎麼做出來、執行時看什麼</text>
+<text x="500" y="26" font-family="WenQuanYi Zen Hei" font-size="22.0" font-weight="bold" text-anchor="middle" fill="#1f2937" stroke="#1f2937" stroke-width="1.54" stroke-linejoin="round">圖 10　第 4 層：一份故意寫壞的映像怎麼做出來、執行時看什麼</text>
 <rect x="30" y="60" width="190" height="66" rx="6" fill="#f4f5f7" stroke="#8a93a0" stroke-width="1.6"/>
-<text x="125.0" y="88.128" font-family="WenQuanYi Zen Hei" font-size="16.2" font-weight="bold" text-anchor="middle" fill="#1f2937">合法的小程式</text>
+<text x="125.0" y="88.128" font-family="WenQuanYi Zen Hei" font-size="16.2" font-weight="bold" text-anchor="middle" fill="#1f2937" stroke="#1f2937" stroke-width="1.13" stroke-linejoin="round">合法的小程式</text>
 <text x="125.0" y="109.56479999999999" font-family="WenQuanYi Zen Hei" font-size="14.5" font-weight="normal" text-anchor="middle" fill="#374151">f_&lt;編號&gt;.asm（載體）</text>
 <line x1="220" y1="93" x2="280" y2="93" stroke="#6b7280" stroke-width="1.8"/>
 <polygon points="280.0,93.0 269.0,98.0 269.0,88.0" fill="#6b7280"/>
 <text x="250" y="84" font-family="WenQuanYi Zen Hei" font-size="15.1" font-weight="normal" text-anchor="middle" fill="#4b5563">組譯</text>
 <rect x="280" y="60" width="180" height="66" rx="6" fill="#e8f0fb" stroke="#3b6fb5" stroke-width="1.6"/>
-<text x="370.0" y="88.128" font-family="WenQuanYi Zen Hei" font-size="16.2" font-weight="bold" text-anchor="middle" fill="#1f2937">合法的映像</text>
+<text x="370.0" y="88.128" font-family="WenQuanYi Zen Hei" font-size="16.2" font-weight="bold" text-anchor="middle" fill="#1f2937" stroke="#1f2937" stroke-width="1.13" stroke-linejoin="round">合法的映像</text>
 <text x="370.0" y="109.56479999999999" font-family="WenQuanYi Zen Hei" font-size="14.5" font-weight="normal" text-anchor="middle" fill="#374151">f_&lt;編號&gt;_carrier.*</text>
 <line x1="460" y1="93" x2="610" y2="93" stroke="#c0392b" stroke-width="2.4"/>
 <polygon points="610.0,93.0 599.0,98.0 599.0,88.0" fill="#c0392b"/>
 <text x="535" y="82" font-family="WenQuanYi Zen Hei" font-size="15.1" font-weight="normal" text-anchor="middle" fill="#c0392b">改 1–2 個位元組</text>
 <rect x="610" y="60" width="170" height="66" rx="6" fill="#fde9e7" stroke="#c0392b" stroke-width="1.6"/>
-<text x="695.0" y="88.128" font-family="WenQuanYi Zen Hei" font-size="16.2" font-weight="bold" text-anchor="middle" fill="#1f2937">寫壞的映像</text>
+<text x="695.0" y="88.128" font-family="WenQuanYi Zen Hei" font-size="16.2" font-weight="bold" text-anchor="middle" fill="#1f2937" stroke="#1f2937" stroke-width="1.13" stroke-linejoin="round">寫壞的映像</text>
 <text x="695.0" y="109.56479999999999" font-family="WenQuanYi Zen Hei" font-size="14.5" font-weight="normal" text-anchor="middle" fill="#374151">f_&lt;編號&gt;.*</text>
 <line x1="780" y1="93" x2="830" y2="93" stroke="#6b7280" stroke-width="1.8"/>
 <polygon points="830.0,93.0 819.0,98.0 819.0,88.0" fill="#6b7280"/>
 <rect x="830" y="60" width="150" height="66" rx="6" fill="#e7f4ea" stroke="#3d8b56" stroke-width="1.6"/>
-<text x="905.0" y="98.8464" font-family="WenQuanYi Zen Hei" font-size="16.2" font-weight="bold" text-anchor="middle" fill="#1f2937">在硬體上執行</text>
-<text x="40" y="172" font-family="WenQuanYi Zen Hei" font-size="16.8" font-weight="bold" text-anchor="start" fill="#1f2937">程式的內容（以 F4 為例：把 MOV 的描述子索引改成表格裡沒有的 63）</text>
+<text x="905.0" y="98.8464" font-family="WenQuanYi Zen Hei" font-size="16.2" font-weight="bold" text-anchor="middle" fill="#1f2937" stroke="#1f2937" stroke-width="1.13" stroke-linejoin="round">在硬體上執行</text>
+<text x="40" y="172" font-family="WenQuanYi Zen Hei" font-size="16.8" font-weight="bold" text-anchor="start" fill="#1f2937" stroke="#1f2937" stroke-width="1.18" stroke-linejoin="round">程式的內容（以 F4 為例：把 MOV 的描述子索引改成表格裡沒有的 63）</text>
 <rect x="60" y="190" width="190" height="62" rx="6" fill="#fff1dc" stroke="#c0771a" stroke-width="1.6"/>
-<text x="155.0" y="215.954" font-family="WenQuanYi Zen Hei" font-size="16.8" font-weight="bold" text-anchor="middle" fill="#1f2937">寫入 RES+0</text>
+<text x="155.0" y="215.954" font-family="WenQuanYi Zen Hei" font-size="16.8" font-weight="bold" text-anchor="middle" fill="#1f2937" stroke="#1f2937" stroke-width="1.18" stroke-linejoin="round">寫入 RES+0</text>
 <text x="155.0" y="238.15640000000002" font-family="WenQuanYi Zen Hei" font-size="15.1" font-weight="normal" text-anchor="middle" fill="#374151">= 0xF0</text>
 <rect x="270" y="190" width="190" height="62" rx="6" fill="#fde9e7" stroke="#c0392b" stroke-width="1.6"/>
-<text x="365.0" y="215.954" font-family="WenQuanYi Zen Hei" font-size="16.8" font-weight="bold" text-anchor="middle" fill="#1f2937">受測指令</text>
+<text x="365.0" y="215.954" font-family="WenQuanYi Zen Hei" font-size="16.8" font-weight="bold" text-anchor="middle" fill="#1f2937" stroke="#1f2937" stroke-width="1.18" stroke-linejoin="round">受測指令</text>
 <text x="365.0" y="238.15640000000002" font-family="WenQuanYi Zen Hei" font-size="15.1" font-weight="normal" text-anchor="middle" fill="#374151">0x80 → 0xBF</text>
 <rect x="480" y="190" width="190" height="62" rx="6" fill="#fff1dc" stroke="#c0771a" stroke-width="1.6"/>
-<text x="575.0" y="215.954" font-family="WenQuanYi Zen Hei" font-size="16.8" font-weight="bold" text-anchor="middle" fill="#1f2937">寫入 RES+1</text>
+<text x="575.0" y="215.954" font-family="WenQuanYi Zen Hei" font-size="16.8" font-weight="bold" text-anchor="middle" fill="#1f2937" stroke="#1f2937" stroke-width="1.18" stroke-linejoin="round">寫入 RES+1</text>
 <text x="575.0" y="238.15640000000002" font-family="WenQuanYi Zen Hei" font-size="15.1" font-weight="normal" text-anchor="middle" fill="#374151">= 0x0F</text>
 <rect x="690" y="190" width="190" height="62" rx="6" fill="#e7f4ea" stroke="#3d8b56" stroke-width="1.6"/>
-<text x="785.0" y="215.954" font-family="WenQuanYi Zen Hei" font-size="16.8" font-weight="bold" text-anchor="middle" fill="#1f2937">寫入完成標記</text>
+<text x="785.0" y="215.954" font-family="WenQuanYi Zen Hei" font-size="16.8" font-weight="bold" text-anchor="middle" fill="#1f2937" stroke="#1f2937" stroke-width="1.18" stroke-linejoin="round">寫入完成標記</text>
 <text x="785.0" y="238.15640000000002" font-family="WenQuanYi Zen Hei" font-size="15.1" font-weight="normal" text-anchor="middle" fill="#374151">0x67F = 0xA5</text>
 <line x1="250" y1="221" x2="270" y2="221" stroke="#6b7280" stroke-width="1.8"/>
 <polygon points="270.0,221.0 259.0,226.0 259.0,216.0" fill="#6b7280"/>
@@ -43,31 +43,31 @@
 <text x="365" y="272" font-family="WenQuanYi Zen Hei" font-size="14.5" font-weight="normal" text-anchor="middle" fill="#c0392b">pc = 2</text>
 <text x="575" y="272" font-family="WenQuanYi Zen Hei" font-size="14.5" font-weight="normal" text-anchor="middle" fill="#4b5563">「它之後還在執行」</text>
 <text x="785" y="272" font-family="WenQuanYi Zen Hei" font-size="14.5" font-weight="normal" text-anchor="middle" fill="#4b5563">「跑到結尾了」</text>
-<text x="40" y="320" font-family="WenQuanYi Zen Hei" font-size="16.8" font-weight="bold" text-anchor="start" fill="#1f2937">可能看到的兩種結果</text>
+<text x="40" y="320" font-family="WenQuanYi Zen Hei" font-size="16.8" font-weight="bold" text-anchor="start" fill="#1f2937" stroke="#1f2937" stroke-width="1.18" stroke-linejoin="round">可能看到的兩種結果</text>
 <rect x="40" y="338" width="920" height="86" rx="8" fill="#e7f4ea" stroke="#3d8b56" stroke-width="1.3"/>
-<text x="60" y="368" font-family="WenQuanYi Zen Hei" font-size="16.8" font-weight="bold" text-anchor="start" fill="#3d8b56">甲　硬體偵測到，在受測指令停止</text>
+<text x="60" y="368" font-family="WenQuanYi Zen Hei" font-size="16.8" font-weight="bold" text-anchor="start" fill="#3d8b56" stroke="#3d8b56" stroke-width="1.18" stroke-linejoin="round">甲　硬體偵測到，在受測指令停止</text>
 <text x="60" y="394" font-family="WenQuanYi Zen Hei" font-size="15.1" font-weight="normal" text-anchor="start" fill="#374151">模擬器目前的做法。請再記錄：在哪一級發現、</text>
 <text x="60" y="412" font-family="WenQuanYi Zen Hei" font-size="15.1" font-weight="normal" text-anchor="start" fill="#374151">怎麼回報、之後是停住還是重置</text>
 <rect x="560" y="358" width="124" height="46" rx="6" fill="#fff1dc" stroke="#c0771a" stroke-width="1.6"/>
-<text x="622.0" y="376.302" font-family="WenQuanYi Zen Hei" font-size="15.7" font-weight="bold" text-anchor="middle" fill="#1f2937">RES+0</text>
+<text x="622.0" y="376.302" font-family="WenQuanYi Zen Hei" font-size="15.7" font-weight="bold" text-anchor="middle" fill="#1f2937" stroke="#1f2937" stroke-width="1.1" stroke-linejoin="round">RES+0</text>
 <text x="622.0" y="396.9732" font-family="WenQuanYi Zen Hei" font-size="13.9" font-weight="normal" text-anchor="middle" fill="#374151">有</text>
 <rect x="696" y="358" width="124" height="46" rx="6" fill="#f4f5f7" stroke="#8a93a0" stroke-width="1.6" stroke-dasharray="5,4"/>
-<text x="758.0" y="376.302" font-family="WenQuanYi Zen Hei" font-size="15.7" font-weight="bold" text-anchor="middle" fill="#1f2937">RES+1</text>
+<text x="758.0" y="376.302" font-family="WenQuanYi Zen Hei" font-size="15.7" font-weight="bold" text-anchor="middle" fill="#1f2937" stroke="#1f2937" stroke-width="1.1" stroke-linejoin="round">RES+1</text>
 <text x="758.0" y="396.9732" font-family="WenQuanYi Zen Hei" font-size="13.9" font-weight="normal" text-anchor="middle" fill="#374151">沒有</text>
 <rect x="832" y="358" width="124" height="46" rx="6" fill="#f4f5f7" stroke="#8a93a0" stroke-width="1.6" stroke-dasharray="5,4"/>
-<text x="894.0" y="376.302" font-family="WenQuanYi Zen Hei" font-size="15.7" font-weight="bold" text-anchor="middle" fill="#1f2937">完成標記</text>
+<text x="894.0" y="376.302" font-family="WenQuanYi Zen Hei" font-size="15.7" font-weight="bold" text-anchor="middle" fill="#1f2937" stroke="#1f2937" stroke-width="1.1" stroke-linejoin="round">完成標記</text>
 <text x="894.0" y="396.9732" font-family="WenQuanYi Zen Hei" font-size="13.9" font-weight="normal" text-anchor="middle" fill="#374151">沒有</text>
 <rect x="40" y="438" width="920" height="86" rx="8" fill="#fffbe6" stroke="#b59b2a" stroke-width="1.3"/>
-<text x="60" y="468" font-family="WenQuanYi Zen Hei" font-size="16.8" font-weight="bold" text-anchor="start" fill="#b59b2a">乙　硬體沒有偵測，照樣往下執行</text>
+<text x="60" y="468" font-family="WenQuanYi Zen Hei" font-size="16.8" font-weight="bold" text-anchor="start" fill="#b59b2a" stroke="#b59b2a" stroke-width="1.18" stroke-linejoin="round">乙　硬體沒有偵測，照樣往下執行</text>
 <text x="60" y="494" font-family="WenQuanYi Zen Hei" font-size="15.1" font-weight="normal" text-anchor="start" fill="#374151">這不算失敗，是我們需要知道的事實。</text>
 <text x="60" y="512" font-family="WenQuanYi Zen Hei" font-size="15.1" font-weight="normal" text-anchor="start" fill="#374151">請照實記錄，模擬器會改成和硬體一樣</text>
 <rect x="560" y="458" width="124" height="46" rx="6" fill="#fff1dc" stroke="#c0771a" stroke-width="1.6"/>
-<text x="622.0" y="476.302" font-family="WenQuanYi Zen Hei" font-size="15.7" font-weight="bold" text-anchor="middle" fill="#1f2937">RES+0</text>
+<text x="622.0" y="476.302" font-family="WenQuanYi Zen Hei" font-size="15.7" font-weight="bold" text-anchor="middle" fill="#1f2937" stroke="#1f2937" stroke-width="1.1" stroke-linejoin="round">RES+0</text>
 <text x="622.0" y="496.9732" font-family="WenQuanYi Zen Hei" font-size="13.9" font-weight="normal" text-anchor="middle" fill="#374151">有</text>
 <rect x="696" y="458" width="124" height="46" rx="6" fill="#fff1dc" stroke="#c0771a" stroke-width="1.6"/>
-<text x="758.0" y="476.302" font-family="WenQuanYi Zen Hei" font-size="15.7" font-weight="bold" text-anchor="middle" fill="#1f2937">RES+1</text>
+<text x="758.0" y="476.302" font-family="WenQuanYi Zen Hei" font-size="15.7" font-weight="bold" text-anchor="middle" fill="#1f2937" stroke="#1f2937" stroke-width="1.1" stroke-linejoin="round">RES+1</text>
 <text x="758.0" y="496.9732" font-family="WenQuanYi Zen Hei" font-size="13.9" font-weight="normal" text-anchor="middle" fill="#374151">有</text>
 <rect x="832" y="458" width="124" height="46" rx="6" fill="#fff1dc" stroke="#c0771a" stroke-width="1.6"/>
-<text x="894.0" y="476.302" font-family="WenQuanYi Zen Hei" font-size="15.7" font-weight="bold" text-anchor="middle" fill="#1f2937">完成標記</text>
+<text x="894.0" y="476.302" font-family="WenQuanYi Zen Hei" font-size="15.7" font-weight="bold" text-anchor="middle" fill="#1f2937" stroke="#1f2937" stroke-width="1.1" stroke-linejoin="round">完成標記</text>
 <text x="894.0" y="496.9732" font-family="WenQuanYi Zen Hei" font-size="13.9" font-weight="normal" text-anchor="middle" fill="#374151">有</text>
 </svg>

@@ -1,23 +1,23 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1000" height="440" viewBox="0 0 1000 440">
 <rect x="0" y="0" width="1000" height="440" fill="#ffffff"/>
-<text x="500" y="26" font-family="WenQuanYi Zen Hei" font-size="22.0" font-weight="bold" text-anchor="middle" fill="#1f2937">圖 9　第 3 層的量測方法：兩段相減，消掉標記本身的時間</text>
+<text x="500" y="26" font-family="WenQuanYi Zen Hei" font-size="22.0" font-weight="bold" text-anchor="middle" fill="#1f2937" stroke="#1f2937" stroke-width="1.54" stroke-linejoin="round">圖 9　第 3 層的量測方法：兩段相減，消掉標記本身的時間</text>
 <line x1="40" y1="170" x2="960" y2="170" stroke="#1f2937" stroke-width="2.2"/>
 <line x1="940" y1="170" x2="968" y2="170" stroke="#1f2937" stroke-width="2.2"/>
 <polygon points="968.0,170.0 957.0,175.0 957.0,165.0" fill="#1f2937"/>
 <line x1="80" y1="80" x2="80" y2="170" stroke="#c0771a" stroke-width="2.4"/>
 <circle cx="80" cy="170" r="7.5" fill="#c0771a"/>
 <rect x="22" y="42" width="116" height="38" rx="6" fill="#fff1dc" stroke="#c0771a" stroke-width="1.6"/>
-<text x="80.0" y="67.0552" font-family="WenQuanYi Zen Hei" font-size="16.8" font-weight="bold" text-anchor="middle" fill="#1f2937">標記 k</text>
+<text x="80.0" y="67.0552" font-family="WenQuanYi Zen Hei" font-size="16.8" font-weight="bold" text-anchor="middle" fill="#1f2937" stroke="#1f2937" stroke-width="1.18" stroke-linejoin="round">標記 k</text>
 <text x="80" y="194" font-family="WenQuanYi Zen Hei" font-size="14.5" font-weight="normal" text-anchor="middle" fill="#4b5563">寫入 RES+k</text>
 <line x1="310" y1="80" x2="310" y2="170" stroke="#c0771a" stroke-width="2.4"/>
 <circle cx="310" cy="170" r="7.5" fill="#c0771a"/>
 <rect x="252" y="42" width="116" height="38" rx="6" fill="#fff1dc" stroke="#c0771a" stroke-width="1.6"/>
-<text x="310.0" y="67.0552" font-family="WenQuanYi Zen Hei" font-size="16.8" font-weight="bold" text-anchor="middle" fill="#1f2937">標記 k+1</text>
+<text x="310.0" y="67.0552" font-family="WenQuanYi Zen Hei" font-size="16.8" font-weight="bold" text-anchor="middle" fill="#1f2937" stroke="#1f2937" stroke-width="1.18" stroke-linejoin="round">標記 k+1</text>
 <text x="310" y="194" font-family="WenQuanYi Zen Hei" font-size="14.5" font-weight="normal" text-anchor="middle" fill="#4b5563">寫入 RES+k+1</text>
 <line x1="880" y1="80" x2="880" y2="170" stroke="#c0771a" stroke-width="2.4"/>
 <circle cx="880" cy="170" r="7.5" fill="#c0771a"/>
 <rect x="822" y="42" width="116" height="38" rx="6" fill="#fff1dc" stroke="#c0771a" stroke-width="1.6"/>
-<text x="880.0" y="67.0552" font-family="WenQuanYi Zen Hei" font-size="16.8" font-weight="bold" text-anchor="middle" fill="#1f2937">標記 k+2</text>
+<text x="880.0" y="67.0552" font-family="WenQuanYi Zen Hei" font-size="16.8" font-weight="bold" text-anchor="middle" fill="#1f2937" stroke="#1f2937" stroke-width="1.18" stroke-linejoin="round">標記 k+2</text>
 <text x="880" y="194" font-family="WenQuanYi Zen Hei" font-size="14.5" font-weight="normal" text-anchor="middle" fill="#4b5563">寫入 RES+k+2</text>
 <rect x="104" y="116" width="42" height="40" rx="6" fill="#e8f0fb" stroke="#3b6fb5" stroke-width="1.6"/>
 <text x="125.0" y="141.22" font-family="WenQuanYi Zen Hei" font-size="14.5" font-weight="normal" text-anchor="middle" fill="#1f2937">指令</text>
@@ -51,24 +51,24 @@
 <text x="794.0" y="141.22" font-family="WenQuanYi Zen Hei" font-size="14.5" font-weight="normal" text-anchor="middle" fill="#1f2937">指令</text>
 <rect x="818" y="116" width="40" height="40" rx="6" fill="#e8f0fb" stroke="#3b6fb5" stroke-width="1.6"/>
 <text x="838.0" y="141.22" font-family="WenQuanYi Zen Hei" font-size="14.5" font-weight="normal" text-anchor="middle" fill="#1f2937">指令</text>
-<text x="195" y="102" font-family="WenQuanYi Zen Hei" font-size="15.7" font-weight="bold" text-anchor="middle" fill="#3b6fb5">N1 = 4 道同樣的指令</text>
-<text x="595" y="102" font-family="WenQuanYi Zen Hei" font-size="15.7" font-weight="bold" text-anchor="middle" fill="#3b6fb5">N2 = 12 道同樣的指令</text>
+<text x="195" y="102" font-family="WenQuanYi Zen Hei" font-size="15.7" font-weight="bold" text-anchor="middle" fill="#3b6fb5" stroke="#3b6fb5" stroke-width="1.1" stroke-linejoin="round">N1 = 4 道同樣的指令</text>
+<text x="595" y="102" font-family="WenQuanYi Zen Hei" font-size="15.7" font-weight="bold" text-anchor="middle" fill="#3b6fb5" stroke="#3b6fb5" stroke-width="1.1" stroke-linejoin="round">N2 = 12 道同樣的指令</text>
 <line x1="80" y1="222" x2="310" y2="222" stroke="#3d8b56" stroke-width="1.8"/>
 <polygon points="310.0,222.0 299.0,227.0 299.0,217.0" fill="#3d8b56"/>
 <polygon points="80.0,222.0 91.0,217.0 91.0,227.0" fill="#3d8b56"/>
-<text x="195" y="244" font-family="WenQuanYi Zen Hei" font-size="16.2" font-weight="bold" text-anchor="middle" fill="#3d8b56">第一段：量到 A 個週期</text>
+<text x="195" y="244" font-family="WenQuanYi Zen Hei" font-size="16.2" font-weight="bold" text-anchor="middle" fill="#3d8b56" stroke="#3d8b56" stroke-width="1.13" stroke-linejoin="round">第一段：量到 A 個週期</text>
 <line x1="310" y1="222" x2="880" y2="222" stroke="#3d8b56" stroke-width="1.8"/>
 <polygon points="880.0,222.0 869.0,227.0 869.0,217.0" fill="#3d8b56"/>
 <polygon points="310.0,222.0 321.0,217.0 321.0,227.0" fill="#3d8b56"/>
-<text x="595" y="244" font-family="WenQuanYi Zen Hei" font-size="16.2" font-weight="bold" text-anchor="middle" fill="#3d8b56">第二段：量到 B 個週期</text>
+<text x="595" y="244" font-family="WenQuanYi Zen Hei" font-size="16.2" font-weight="bold" text-anchor="middle" fill="#3d8b56" stroke="#3d8b56" stroke-width="1.13" stroke-linejoin="round">第二段：量到 B 個週期</text>
 <rect x="60" y="290" width="420" height="124" rx="6" fill="#fffbe6" stroke="#b59b2a" stroke-width="1.6"/>
-<text x="270.0" y="312.32800000000003" font-family="WenQuanYi Zen Hei" font-size="17.4" font-weight="bold" text-anchor="middle" fill="#1f2937">一道指令的時間</text>
+<text x="270.0" y="312.32800000000003" font-family="WenQuanYi Zen Hei" font-size="17.4" font-weight="bold" text-anchor="middle" fill="#1f2937" stroke="#1f2937" stroke-width="1.22" stroke-linejoin="round">一道指令的時間</text>
 <text x="270.0" y="335.29600000000005" font-family="WenQuanYi Zen Hei" font-size="15.7" font-weight="normal" text-anchor="middle" fill="#374151">＝（B − A）÷（N2 − N1）</text>
 <text x="270.0" y="358.264" font-family="WenQuanYi Zen Hei" font-size="15.7" font-weight="normal" text-anchor="middle" fill="#374151"></text>
 <text x="270.0" y="381.232" font-family="WenQuanYi Zen Hei" font-size="15.7" font-weight="normal" text-anchor="middle" fill="#374151">每一段都含一次標記寫入的時間，</text>
 <text x="270.0" y="404.20000000000005" font-family="WenQuanYi Zen Hei" font-size="15.7" font-weight="normal" text-anchor="middle" fill="#374151">相減之後正好消掉</text>
 <rect x="520" y="290" width="420" height="124" rx="6" fill="#f4f5f7" stroke="#8a93a0" stroke-width="1.6"/>
-<text x="730.0" y="323.812" font-family="WenQuanYi Zen Hei" font-size="17.4" font-weight="bold" text-anchor="middle" fill="#1f2937">例：t01_alu 從 SRAM 取指時的預測</text>
+<text x="730.0" y="323.812" font-family="WenQuanYi Zen Hei" font-size="17.4" font-weight="bold" text-anchor="middle" fill="#1f2937" stroke="#1f2937" stroke-width="1.22" stroke-linejoin="round">例：t01_alu 從 SRAM 取指時的預測</text>
 <text x="730.0" y="346.78000000000003" font-family="WenQuanYi Zen Hei" font-size="15.7" font-weight="normal" text-anchor="middle" fill="#374151">A = 27　B = 67</text>
 <text x="730.0" y="369.748" font-family="WenQuanYi Zen Hei" font-size="15.7" font-weight="normal" text-anchor="middle" fill="#374151">（67 − 27）÷（12 − 4）＝ 5 個週期</text>
 <text x="730.0" y="392.716" font-family="WenQuanYi Zen Hei" font-size="15.7" font-weight="normal" text-anchor="middle" fill="#374151">其中取指 4、執行 1</text>
