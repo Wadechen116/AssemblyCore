@@ -16,7 +16,7 @@
 
 | 檔案 | 說明 |
 |---|---|
-| `HW_TEAM_GUIDE.md` | **給硬體團隊的使用說明**：四層怎麼跑、測試平台要準備什麼、要回報什麼（流程導向；本文件則說明設計與自我檢查） |
+| `HW_TEAM_GUIDE.md`、`HW_TEAM_GUIDE.pdf` | **給硬體團隊的使用說明**（PDF 由 Markdown 轉出：`md2pdf HW_TEAM_GUIDE.md HW_TEAM_GUIDE.pdf --title "…"`，改了 Markdown 要重轉）：四層怎麼跑、測試平台要準備什麼、要回報什麼（流程導向；本文件則說明設計與自我檢查） |
 | `EXPECTED.md` | **從這裡開始**：每支測試每個位址的預期值、取決於什麼假設、結果不同時怎麼判讀 |
 | `cNN_*.asm`、`bNN_*.asm` | 測試程式的原始碼（c＝第 1 層，b＝第 2 層） |
 | `*.expected.csv` | 同一份預期值，CSV（UTF-8，可用 Excel 開） |
