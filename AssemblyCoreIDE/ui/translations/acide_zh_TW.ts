@@ -1904,6 +1904,14 @@ Double click on the time line: wind the simulator back to that cycle (what is la
         <source>Right button: Set parameters... (parameters: %1)</source>
         <translation>按右鍵：設定參數…（共 %1 個參數）</translation>
     </message>
+    <message>
+        <source>Time line</source>
+        <translation>時間軸</translation>
+    </message>
+    <message>
+        <source>Show or hide what is under the diagram: the run controls, the cycle slider and the sequencers. Hidden, the diagram has the whole page</source>
+        <translation>顯示或隱藏架構圖下方的整塊區域：執行控制、週期滑動顯示區與定序器。隱藏後整頁都給架構圖</translation>
+    </message>
 </context>
 <context>
     <name>ListingPanel</name>

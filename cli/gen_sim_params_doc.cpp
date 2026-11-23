@@ -6,7 +6,7 @@ int main() {
     std::puts("> 這份表由 `gen_sim_params_doc` 從目錄產生（程式碼是唯一來源；目錄變動後執行 `gen_sim_params_doc > docs/SIM_PARAMS.md`；`asmcore_sim_tests` 會檢查每個參數都在這裡）。");
     std::puts("> **初始值**＝規劃值：沒有設定時模擬器用的數字，等於改這些功能之前的行為。上 FPGA 量到實際值後，用下面任何一種方式覆寫，並把狀態標成 `measured`／`confirmed`。\n");
     std::puts("## 在 IDE 裡\n");
-    std::puts("**Debug → Simulator**（`Ctrl+Shift+M`，工具列也有按鈕；專案樹雙擊 `.simparams`、狀態列的「Parameters: …」也會開）開**模擬器頁面**：上面是 ISA Top 架構圖，下面是執行狀態的時間軸，整頁都給圖與時間軸。參數在它所屬的地方設定，改一個值馬上看到差異。\n");
+    std::puts("**Debug → Simulator**（`Ctrl+Shift+M`，工具列也有按鈕；專案樹雙擊 `.simparams`、狀態列的「Parameters: …」也會開）開**模擬器頁面**：上面是 ISA Top 架構圖，下面是執行狀態的時間軸，整頁都給圖與時間軸。架構圖標題列的**時間軸**按鈕可以把下方整塊（執行控制、週期滑動顯示區、定序器）收起來，整頁都給架構圖；再按一次恢復，設定會記住。參數在它所屬的地方設定，改一個值馬上看到差異。\n");
     std::puts("- **ISA Top 方塊（硬體參數）**：標題旁有 ⚙ 的方塊（Decoder、Status Flag、Timer、Frame Timing、result_slot、CSR Arbiter、CSR、Data Xfer、i2ch、i2cm_top）按**右鍵 → 設定參數…**，跳出只有該方塊參數的小視窗，每個都有編輯器、單位、初始值與 ↺ 還原；改過的參數讓 ⚙ 變成琥珀色。圖的空白處按右鍵 →「整體參數」：ISA 時脈、模擬速度、排程規則。");
     std::puts("- **積木（指令參數）**：在積木上按**右鍵 → 設定參數…**，依這塊積木產生的指令列出它的**指令週期**參數（例如 MOV 的 `latency.mov_setup`、`latency.mov_byte`），下面再列**相關參數**（取指令週期、I2C 路徑、仲裁器、旗標取樣…）。數值元件（例如 MOV 的常數）會列出它所屬指令的參數。");
     std::puts("- **所有參數視窗**（ISA Top 標題列的「所有參數…」、圖的空白處右鍵、或在模擬器頁面按 `Ctrl+F`）：所有參數分組列出，雙擊「值」直接改（數字、true／false、選項）；**值**欄粗體橘色＝和初始值不同；**狀態**欄選 planning／measured／confirmed；**備註**欄記量測方式。選到一列，下面會顯示說明、範圍、以及在 FPGA 上怎麼量。右鍵「還原為初始值」「釘選到快速參數」；上方有 Load／Save／Save As（`.simparams` 檔，Save As 會把它登記進專案的 `simparams =`；值一改，分頁標題就出現 `*`，Save／Save All 一起存）、Reset all、「只看有改的」。尚未被模擬器使用的參數以斜體加「（尚未被模擬器使用）」標示，值照樣存進檔案。");

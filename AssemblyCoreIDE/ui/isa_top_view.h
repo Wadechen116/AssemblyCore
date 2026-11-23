@@ -41,6 +41,7 @@ public:
     void refreshValues();                                     // read every row again from the simulator's current state
     // the parameters of a box (its params) in a small window near globalPos; "" = the overall ones (instr_params.h: globalParamKeys)
     void editParams(const std::string& boxId, const QPoint& globalPos);
+    void setHint(QWidget* w) { hint_ = w; if (w) w->setVisible(!live_); }   // shown while nothing is debugged (the panel's header has it)
 
 protected:
     void resizeEvent(QResizeEvent* e) override;
@@ -62,6 +63,7 @@ private:
     double zoom_ = 1;
     bool fit_ = true, fitAll_ = false;
     bool live_ = false;
+    QWidget* hint_ = nullptr;
     std::map<std::string, std::pair<qint64, bool>> lit_;      // wire -> (when, peri?)
     std::map<std::string, std::pair<qint64, bool>> pulse_;    // box -> (when, peri?)
     std::vector<std::vector<std::string>> values_;            // [box][row]

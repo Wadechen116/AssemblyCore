@@ -1671,8 +1671,18 @@ public:
         // and all of them in the "All parameters" window (the button above the diagram)
         right_ = new QSplitter(Qt::Vertical);
         right_->setObjectName("simulatorRight");
-        right_->addWidget(createIsaTopPanel(ctx));                         // the ISA Top diagram, live ...
-        right_->addWidget(new ExecutionPanel(ctx));                        // ... above the time line of the same run
+        QWidget* top = createIsaTopPanel(ctx);
+        auto* exec = new ExecutionPanel(ctx);
+        right_->addWidget(top);                                            // the ISA Top diagram, live ...
+        right_->addWidget(exec);                                           // ... above the time line of the same run
+        // the switch in the diagram's header: the time line (all of it) off, and the diagram has the page
+        if (auto* sw = top->findChild<QPushButton*>("isaTopTimeline")) {
+            exec->setVisible(sw->isChecked());
+            connect(sw, &QPushButton::toggled, this, [this, exec](bool on) {
+                ctx_.settings.set("simulator.timeline", on ? "1" : "0");
+                exec->setVisible(on);
+            });
+        }
         right_->setStretchFactor(0, 3);
         right_->setStretchFactor(1, 2);
         right_->setSizes({420, 300});

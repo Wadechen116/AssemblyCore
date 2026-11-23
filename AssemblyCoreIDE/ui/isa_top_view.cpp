@@ -28,6 +28,10 @@
 
 namespace acide {
 
+// Room above the diagram, in its own units: a wire may run along the top edge (EXEC_CSR does, 8 units under it) and its name is written above it,
+// which was outside the canvas (cut off under the header of the panel).
+static const double kTopRoom = 16;
+
 namespace {
 
 const qint64 kLitMs = 700, kPulseMs = 500, kFlashMs = 800;
@@ -60,7 +64,7 @@ public:
     double scale() const { return v_.zoom_; }
     const IsaBox* boxAtPoint(const QPoint& p) const {
         const double s = scale();
-        const double x = p.x() / s, y = p.y() / s;
+        const double x = p.x() / s, y = p.y() / s - kTopRoom;
         const IsaBox* hit = nullptr;
         for (const IsaBox& b : v_.layout_.boxes) if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) hit = &b;
         return hit;
@@ -74,6 +78,7 @@ protected:
         p.fillRect(rect(), pal.color(QPalette::Window));
         const bool dark = pal.color(QPalette::Window).lightness() < 128;
         p.scale(scale(), scale());
+        p.translate(0, kTopRoom);                                                          // (room above the diagram: see kTopRoom)
         const qint64 now = v_.clock_.elapsed();
         const IsaLayout& L = v_.layout_;
         // wires
@@ -202,11 +207,6 @@ protected:
                 p.setBrush(Qt::NoBrush);
                 p.drawRoundedRect(r.adjusted(-1, -1, 1, 1), 7, 7);
             }
-        }
-        if (!v_.live_) {
-            p.setFont(ui_);
-            p.setPen(dark ? QColor("#e6c15a") : QColor("#8a5a00"));
-            p.drawText(QRectF(20, 2, 700, 16), Qt::AlignLeft | Qt::AlignVCenter, QCoreApplication::translate("IsaTopView", "Start debugging (F5) to see the diagram live: the values below are what the simulator holds."));
         }
     }
     void mouseMoveEvent(QMouseEvent* e) override {
@@ -347,10 +347,10 @@ void IsaTopView::setZoom(double z) {
 void IsaTopView::rescale() {
     if (fit_) {
         double z = (double)(viewport()->width() - 2) / layout_.width;
-        if (fitAll_) z = std::min(z, (double)(viewport()->height() - 2) / layout_.height);
+        if (fitAll_) z = std::min(z, (double)(viewport()->height() - 2) / (layout_.height + kTopRoom));
         zoom_ = std::max(0.2, std::min(1.5, z));
     }
-    canvas_->resize((int)(layout_.width * zoom_), (int)(layout_.height * zoom_));
+    canvas_->resize((int)(layout_.width * zoom_), (int)((layout_.height + kTopRoom) * zoom_));
     canvas_->update();
 }
 
@@ -382,6 +382,7 @@ std::string IsaTopView::instrAt(int domain, uint32_t pc) {
 void IsaTopView::refreshValues() {
     ViewPtr view = ctx_.debugger.session().view();
     live_ = view && ctx_.debugger.active();
+    if (hint_) hint_->setVisible(!live_);
     const qint64 now = clock_.elapsed();
     if (values_.size() != layout_.boxes.size()) {
         values_.assign(layout_.boxes.size(), {});
@@ -461,7 +462,7 @@ std::string IsaTopView::valueOf(const std::string& box, const std::string& label
     return "<none>";
 }
 QRect IsaTopView::boxRect(const std::string& id) const {
-    if (const IsaBox* b = layout_.box(id)) return QRect((int)(b->x * zoom_), (int)(b->y * zoom_), (int)(b->w * zoom_), (int)(b->h * zoom_));
+    if (const IsaBox* b = layout_.box(id)) return QRect((int)(b->x * zoom_), (int)((b->y + kTopRoom) * zoom_), (int)(b->w * zoom_), (int)(b->h * zoom_));
     return QRect();
 }
 
@@ -503,7 +504,14 @@ QWidget* createIsaTopPanel(AppContext& ctx) {
     f.setBold(true);
     title->setFont(f);
     top->addWidget(title);
-    top->addStretch(1);
+    // what was written on the diagram itself (over its top wire): while nothing is debugged
+    auto* hint = new QLabel(QCoreApplication::translate("IsaTopView", "Start debugging (F5) to see the diagram live: the values below are what the simulator holds."));
+    hint->setObjectName("isaTopHint");
+    hint->setStyleSheet("color: #b8860b;");
+    hint->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);                    // (a narrow page cuts it instead of pushing the buttons out)
+    hint->setToolTip(hint->text());
+    top->addSpacing(10);
+    top->addWidget(hint, 1);
     auto* fit = new QPushButton(QCoreApplication::translate("IsaTopView", "Fit"));
     fit->setObjectName("isaTopFit");
     fit->setToolTip(QCoreApplication::translate("IsaTopView", "The whole diagram in the view (double click on the empty canvas does the same; Ctrl+wheel zooms)"));
@@ -515,6 +523,13 @@ QWidget* createIsaTopPanel(AppContext& ctx) {
     auto* params = new QPushButton(QCoreApplication::translate("IsaTopView", "All parameters..."));
     params->setObjectName("isaTopAllParams");
     params->setToolTip(QCoreApplication::translate("IsaTopView", "Every simulator parameter: search, the parameter file, restart with them. The parameters of one part: the right button on its box (a box with \xE2\x9A\x99 has some)"));
+    // the time line under the diagram (run controls, the cycle slider, the sequencers) on / off: off = the whole page for the diagram
+    auto* timeline = new QPushButton(QCoreApplication::translate("IsaTopView", "Time line"));
+    timeline->setObjectName("isaTopTimeline");
+    timeline->setCheckable(true);
+    timeline->setChecked(ctx.settings.get("simulator.timeline", "1") != "0");
+    timeline->setToolTip(QCoreApplication::translate("IsaTopView", "Show or hide what is under the diagram: the run controls, the cycle slider and the sequencers. Hidden, the diagram has the whole page"));
+    top->addWidget(timeline);
     top->addWidget(params);
     top->addSpacing(12);
     top->addWidget(wide);
@@ -523,6 +538,7 @@ QWidget* createIsaTopPanel(AppContext& ctx) {
     lay->addLayout(top);
     auto* view = new IsaTopView(ctx);
     lay->addWidget(view, 1);
+    view->setHint(hint);
     QObject::connect(fit, &QPushButton::clicked, view, [view] { view->fit(); });
     QObject::connect(wide, &QPushButton::clicked, view, [view] { view->fitWidth(); });
     QObject::connect(one, &QPushButton::clicked, view, [view] { view->setZoom(1.0); });

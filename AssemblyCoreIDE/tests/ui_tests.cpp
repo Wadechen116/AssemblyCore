@@ -1206,6 +1206,29 @@ private slots:
         QApplication::processEvents();
         QVERIFY2(!page->findChild<QTreeWidget*>("paramsTree"), "the parameter table is not on the page any more: the diagram and the time line have all of it");
         QVERIFY2(isa->isVisible() && view->isVisible() && isa->width() > page->width() - 40, "the diagram is as wide as the page");
+        {   // nothing of the diagram is under the header: the name of the wire along the top edge has room, and the "start debugging" hint is a
+            // label of the header (it was written over that wire)
+            auto* top = static_cast<acide::IsaTopView*>(isa);
+            QVERIFY2(top->boxRect("main_dec").top() >= (int)(30 * top->zoom()), "room above the first box for the wire and its name");
+            auto* hint = page->findChild<QLabel*>("isaTopHint");
+            QVERIFY(hint && hint->isVisible() && hint->parentWidget() != top->canvas());
+            // the switch: the time line (run controls, cycle slider, sequencers) off -> the diagram has the page; the setting remembers it
+            auto* sw = page->findChild<QPushButton*>("isaTopTimeline");
+            auto* exec = page->findChild<QWidget*>("executionPanel");
+            QVERIFY(sw && exec && sw->isCheckable() && sw->isChecked() && exec->isVisible());
+            const int heightBefore = isa->height();
+            sw->click();
+            QApplication::processEvents();
+            QVERIFY2(!exec->isVisible() && !view->isVisible(), "the whole time line is hidden");
+            QVERIFY2(isa->height() > heightBefore + 100, "... and the diagram got its room");
+            QCOMPARE(r.f.ctx.settings.get("simulator.timeline", "1"), std::string("0"));
+            if (qEnvironmentVariableIsSet("ACIDE_SHOT")) page->grab().save(qEnvironmentVariable("ACIDE_SHOT") + "/sim_hidden.png");
+            sw->click();
+            QApplication::processEvents();
+            QVERIFY(exec->isVisible() && view->isVisible());
+            QCOMPARE(r.f.ctx.settings.get("simulator.timeline", "0"), std::string("1"));
+            if (qEnvironmentVariableIsSet("ACIDE_SHOT")) page->grab().save(qEnvironmentVariable("ACIDE_SHOT") + "/sim_shown.png");
+        }
         // every parameter is in the "All parameters" window (the button above the diagram)
         page->findChild<QPushButton*>("isaTopAllParams")->click();
         QWidget* all = acide::allParamsWindow(r.f.ctx);
