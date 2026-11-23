@@ -596,10 +596,22 @@ protected:
             p.save();
             p.setClipRect(QRectF(kLeft, lane.top() - 14, width() - kLeft - kRight, lane.height() + kGhost + 18));
             if (base_) {                                                                     // the ghost lane: the baseline, outlined
-                for (size_t k = 0; k < bidx_[d].size(); k++) {
+                // (a long run zoomed out puts many instructions on one pixel: one of them is drawn there, not all -- that was most of the time a
+                // repaint took)
+                size_t first = 0;
+                {
+                    size_t lo = 0, hi = bidx_[d].size();
+                    while (lo < hi) { const size_t mid = (lo + hi) / 2; if ((double)base_->rows[bidx_[d][mid]].at < t0_) lo = mid + 1; else hi = mid; }
+                    first = lo > 0 ? lo - 1 : 0;
+                }
+                double drawnTo = -1e18;
+                for (size_t k = first; k < bidx_[d].size(); k++) {
                     const size_t i = bidx_[d][k];
                     const double x0 = xOf((double)base_->rows[i].at), x1 = xOf((double)base_->endOf(i));
-                    if (x1 < kLeft || x0 > width() - kRight) continue;
+                    if (x0 > width() - kRight) break;
+                    if (x1 < kLeft) continue;
+                    if (x1 < drawnTo + 1) continue;
+                    drawnTo = std::max(x1, x0 + 1);
                     QColor c = kindColor(base_->rows[i].what);
                     p.setPen(c);
                     p.setBrush(Qt::NoBrush);
@@ -641,16 +653,21 @@ protected:
                 while (lo < hi) { const size_t mid = (lo + hi) / 2; if ((double)cur_->rows[idx_[d][mid]].at < t0_) lo = mid + 1; else hi = mid; }
                 kFirst = lo > 0 ? lo - 1 : 0;
             }
+            double drawnTo = -1e18;                                                          // (as above: one instruction per pixel)
+            if (d == 0) drawn_ = 0;
             for (size_t k = kFirst; k < idx_[d].size(); k++) {                               // the current run
                 const size_t i = idx_[d][k];
                 const QRectF r = rowRect(d, k);
                 if (r.left() > width() - kRight) break;
                 if (r.right() < kLeft) continue;
+                const bool sel = (sel_[0] == d && sel_[1] == (int)k), hov = (hov_[0] == d && hov_[1] == (int)k);
+                if (r.right() < drawnTo + 1 && !sel && !hov) continue;
+                drawnTo = r.right();
+                drawn_++;
                 QColor c = kindColor(cur_->rows[i].what);
                 p.setPen(Qt::NoPen);
                 p.setBrush(c);
                 p.drawRect(r);
-                const bool sel = (sel_[0] == d && sel_[1] == (int)k), hov = (hov_[0] == d && hov_[1] == (int)k);
                 if (sel || hov) { p.setPen(QPen(text, sel ? 2 : 1)); p.setBrush(Qt::NoBrush); p.drawRect(r.adjusted(0.5, 0.5, -0.5, -0.5)); }
                 if (diff_ && k < diff_->matched[d] && base_ && k < bidx_[d].size()) {       // late: a red tick on the top edge (the dimmer the earlier)
                     const long long delta = (long long)cur_->rows[i].at - (long long)base_->rows[bidx_[d][k]].at;
@@ -662,6 +679,8 @@ protected:
                 }
             }
             const auto firstMark = std::lower_bound(cur_->marks.begin(), cur_->marks.end(), t0_, [](const TraceMarker& m, double t) { return (double)m.at < t; });
+            double markDrawnAt[256];
+            std::fill(std::begin(markDrawnAt), std::end(markDrawnAt), -1e18);
             for (auto mi = firstMark; mi != cur_->marks.end(); ++mi) {                       // what happens between the sequencers
                 const TraceMarker& m = *mi;
                 if ((double)m.at > t1_) break;
@@ -673,6 +692,9 @@ protected:
                 if (x < kLeft || x > width() - kRight) continue;
                 const double y = lane.top() - 6;
                 const bool hot = (int)(mi - cur_->marks.begin()) == hovMark_;
+                double& markAt = markDrawnAt[(unsigned char)m.kind];                        // (one marker of a kind per pixel)
+                if (x < markAt + 1 && !hot) continue;
+                markAt = x;
                 p.setPen(Qt::NoPen);
                 const double z = hot ? 1.5 : 1.0;
                 if (m.kind == 'e') { p.setBrush(QColor("#d946ef")); p.drawPolygon(QPolygonF({QPointF(x - 4 * z, y - 4 * z), QPointF(x + 4 * z, y - 4 * z), QPointF(x, y + 3 * z)})); }
@@ -948,6 +970,7 @@ private:
         t0_ = t1_ - span;
     }
     void publish() {                                       // for the tests: what the live view is doing
+        setProperty("rowsDrawn", drawn_);                  // (instruction bars the last repaint drew)
         setProperty("live", live_);
         setProperty("follow", follow_);
         setProperty("t0", t0_);
@@ -961,6 +984,7 @@ private:
         setProperty("plotRight", (double)(width() - kRight));
     }
     double t0_ = 0, t1_ = 100, panFrom_ = 0, panTo_ = 1, pressX_ = 0;
+    mutable int drawn_ = 0;
     long long maxDrift_ = 1;
     int hov_[2] = {-1, -1}, sel_[2] = {-1, -1};
     bool moved_ = false;
@@ -1115,7 +1139,8 @@ public:
         view_->rewindRequested.connect([this](double t) { rewindTo((Cycle)t); });
         connect(live_, &QCheckBox::toggled, this, [this](bool on) { ctx_.settings.set("execution.live", on ? "1" : "0"); refreshMode(); });
         connect(follow_, &QCheckBox::toggled, this, [this](bool on) { view_->setFollow(on); });
-        conns_.add(ctx.debugger.traceChanged, [this] { if (liveShown_) updateLive(); });
+        // (hidden by the switch above the diagram: nothing is refreshed, the history is read once when the panel is shown again)
+        conns_.add(ctx.debugger.traceChanged, [this] { if (liveShown_ && isVisible()) updateLive(); });
         conns_.add(ctx.debugger.updated, [this](const SimUpdate&) { refreshMode(); });
         conns_.add(store_.changed, [this] { if (auto_->isChecked()) timer_.start(); });
         conns_.add(ctx.snapshotChanged, [this](SnapshotPtr) { if (auto_->isChecked()) timer_.start(); });
@@ -1123,6 +1148,9 @@ public:
         if (!liveShown_) run();
     }
     ~ExecutionPanel() override { timer_.stop(); }
+
+protected:
+    void showEvent(QShowEvent* e) override { QWidget::showEvent(e); if (liveShown_) updateLive(); }
 
 private:
     // ---- live: while something is debugged the time line is the history of that session

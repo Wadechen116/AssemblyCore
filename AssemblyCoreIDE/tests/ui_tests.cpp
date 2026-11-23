@@ -1191,6 +1191,37 @@ private slots:
         QVERIFY(r.w->dock("problems")->height() >= 300);
     }
 
+    // A run of 100000 cycles zoomed out to fit has far more instructions than the time line has pixels: a repaint draws about one per pixel, not
+    // every one (each of them was drawn, and a repaint -- showing the time line again with the switch above the diagram -- took long enough to see).
+    void aLongRunIsDrawnOnePerPixel() {
+        Rig r(".csr C = 0x120\n.main\nl: EXEC_CSR WRITE8 C, 1\n    EXEC_CSR SET8 C, 2\n    JMP l\n");
+        std::string perr;
+        QVERIFY2(r.f.dbg.simParams().set("fetch.source", "frontend", perr), perr.c_str());     // (short instructions: as many as the cycles allow)
+        QWidget* page = r.w->openSimulator();
+        r.w->resize(1300, 800);
+        r.w->show();
+        QApplication::processEvents();
+        auto* view = page->findChild<QWidget*>("executionView");
+        auto* table = page->findChild<QPushButton*>("executionRun");
+        QVERIFY(view && table);
+        table->click();
+        QApplication::processEvents();
+        view->grab();
+        view->resize(view->width() - 1, view->height());                                        // (publishes what the repaint counted)
+        view->grab();
+        view->resize(view->width() + 1, view->height());
+        const int drawn = view->property("rowsDrawn").toInt();
+        QVERIFY2(drawn > 100, qPrintable(QString("the run is there: %1 bars").arg(drawn)));
+        QVERIFY2(drawn <= 2 * view->width(), qPrintable(QString("%1 bars drawn on %2 pixels").arg(drawn).arg(view->width())));
+        // the switch: hidden and shown again, the time line is the same
+        auto* sw = page->findChild<QPushButton*>("isaTopTimeline");
+        sw->click();
+        QApplication::processEvents();
+        sw->click();
+        QApplication::processEvents();
+        QVERIFY(view->isVisible());
+    }
+
     void theSimulatorPageHoldsTheParametersAndTheExecutionTogether() {
         Rig r(kProg);
         const int before = r.w->tabs()->count();
