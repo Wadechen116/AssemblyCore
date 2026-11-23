@@ -17,6 +17,8 @@ usage: make_conformance.py [--bin-dir DIR] [--out DIR] [--res-base 0x600] [--che
 import os, subprocess, sys
 
 here = os.path.dirname(os.path.abspath(__file__))
+for _stream in (sys.stdout, sys.stderr):                 # a console that cannot show a character (cp950 ...) must not stop the run
+    if hasattr(_stream, "reconfigure"): _stream.reconfigure(errors="replace")
 argv = sys.argv[1:]
 def opt(name, default):
     return argv[argv.index(name) + 1] if name in argv else default
